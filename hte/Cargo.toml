@@ -1,0 +1,7 @@
+[package]
+name = "hte"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+raw-cpuid = "11.0"

@@ -1,0 +1,1 @@
+pub struct PatternToFunctionPipeline; impl PatternToFunctionPipeline { pub fn new() -> Self { Self } pub fn process(&self) {} }

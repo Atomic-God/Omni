@@ -1,0 +1,9 @@
+[package]
+name = "runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core-vsa = { path = "../core-vsa" }
+hte = { path = "../hte" }
+perception = { path = "../perception" }
