@@ -9,3 +9,10 @@ memory = { path = "../memory" }
 hte = { path = "../hte" }
 log = "0.4"
 env_logger = "0.10"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "omni_bench"
+harness = false

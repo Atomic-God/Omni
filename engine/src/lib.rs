@@ -1,4 +1,5 @@
 use cognition::CognitionCore;
+use cognition::traits::{PerceptionModule, ReasoningModule};
 use log::{error, info};
 
 /// OmniMind is the high-level interface for the Omni Forge system.

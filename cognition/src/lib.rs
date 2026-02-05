@@ -2,6 +2,13 @@ use core_vsa::HyperVector;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod tokenizer;
+pub mod traits;
+pub mod index;
+
+use traits::{PerceptionModule, ReasoningModule};
+use index::LshIndex;
+
 /// The core cognitive engine implementing BEAGLE-style learning and VSA reasoning.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CognitionCore {
@@ -11,13 +18,33 @@ pub struct CognitionCore {
     pub semantic_memory: HashMap<String, HyperVector>,
     /// Explicit relation graph for symbolic reasoning (e.g., "is-a" relationships).
     pub relation_graph: HashMap<String, Vec<String>>,
-    /// Episodic memory storing structural sentence vectors.
-    pub sentence_memory: Vec<HyperVector>,
+    /// Episodic memory storing structural sentence vectors via LSH Index.
+    pub sentence_memory: LshIndex,
 }
 
 impl Default for CognitionCore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl PerceptionModule for CognitionCore {
+    fn learn_text(&mut self, text: &str) {
+        self.learn_text_internal(text);
+    }
+}
+
+impl ReasoningModule for CognitionCore {
+    fn infer(&self, start: &str, target: &str) -> bool {
+        self.infer_internal(start, target)
+    }
+
+    fn query(&self, query_str: &str) -> String {
+        self.query_internal(query_str)
+    }
+
+    fn sentence_vector(&self, sentence: &str) -> Option<HyperVector> {
+        self.sentence_vector_internal(sentence)
     }
 }
 
@@ -28,16 +55,12 @@ impl CognitionCore {
             index_memory: HashMap::new(),
             semantic_memory: HashMap::new(),
             relation_graph: HashMap::new(),
-            sentence_memory: Vec::new(),
+            sentence_memory: LshIndex::default(),
         }
     }
 
-    pub fn learn_text(&mut self, text: &str) {
-        let words: Vec<String> = text
-            .split_whitespace()
-            .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
-            .filter(|s| !s.is_empty())
-            .collect();
+    fn learn_text_internal(&mut self, text: &str) {
+        let words = tokenizer::tokenize(text);
 
         // 1. Index Learning
         for word in &words {
@@ -98,13 +121,12 @@ impl CognitionCore {
 
         // 4. Episodic Memory
         if let Some(sv) = self.sentence_vector(text) {
-            self.sentence_memory.push(sv);
+            self.sentence_memory.insert(sv);
         }
     }
 
-    pub fn query(&self, query_str: &str) -> String {
-        let clean_query = query_str.replace("?", "").to_lowercase();
-        let words: Vec<&str> = clean_query.split_whitespace().collect();
+    fn query_internal(&self, query_str: &str) -> String {
+        let words = tokenizer::tokenize(query_str);
 
         if words.len() < 3 {
             return "Query too short.".to_string();
@@ -112,8 +134,8 @@ impl CognitionCore {
 
         if words[0] == "what" && words[1] == "does"
             && words.len() >= 4 {
-                let subject = words[2];
-                let verb = words[3];
+                let subject = &words[2];
+                let verb = &words[3];
                 let objects = self.query_subject_action(subject, verb);
                 if !objects.is_empty() {
                     return objects[0].clone();
@@ -122,7 +144,7 @@ impl CognitionCore {
                 }
             }
 
-        let subject = words[1];
+        let subject = &words[1];
         let target = words.last().unwrap();
 
         if self.infer(subject, target) {
@@ -132,7 +154,7 @@ impl CognitionCore {
         }
     }
 
-    pub fn infer(&self, start: &str, target: &str) -> bool {
+    fn infer_internal(&self, start: &str, target: &str) -> bool {
         let threshold = 0.02;
         let mut queue = std::collections::VecDeque::new();
         let mut visited = std::collections::HashSet::new();
@@ -163,12 +185,8 @@ impl CognitionCore {
         false
     }
 
-    fn sentence_vector(&self, sentence: &str) -> Option<HyperVector> {
-        let words: Vec<String> = sentence
-            .split_whitespace()
-            .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
-            .filter(|s| !s.is_empty())
-            .collect();
+    fn sentence_vector_internal(&self, sentence: &str) -> Option<HyperVector> {
+        let words = tokenizer::tokenize(sentence);
 
         if words.len() >= 3 {
             let s_vec = self.semantic_memory.get(&words[0])?;
@@ -208,18 +226,7 @@ impl CognitionCore {
             .bind(&core_vsa::ROLE_SUBJECT)
             .bundle(&v_vec.bind(&core_vsa::ROLE_VERB));
 
-        let mut best_sim = -1.0;
-        let mut best_sentence: Option<&HyperVector> = None;
-
-        for sentence in &self.sentence_memory {
-            let sim = sentence.similarity(&query);
-            if sim > best_sim {
-                best_sim = sim;
-                best_sentence = Some(sentence);
-            }
-        }
-
-        if let Some(sent) = best_sentence {
+        if let Some(sent) = self.sentence_memory.search(&query) {
             let object_guess = sent.bind(&core_vsa::ROLE_OBJECT);
             let mut results: Vec<(String, f32)> = self
                 .semantic_memory
