@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 core-vsa = { path = "../core-vsa" }
+rand = "0.8"
+simsimd = "4.4.0"
+serde = { version = "1.0", features = ["derive"] }
