@@ -23,7 +23,8 @@ fn main() {
             // 3. Train on example sentences
             let corpus = [
                 "the dog is an animal",
-                "the animal breathes air"
+                "the animal is living",
+                "the living thing grows"
             ];
 
             println!("Training Mind on {} sentences...", corpus.len());
@@ -35,17 +36,27 @@ fn main() {
         }
     };
 
-    // 4. Relation Inference
-    let a = "dog";
-    let b = "animal";
-    let c = "breathes";
+    println!("\nOmni Forge Interactive Mode. Type 'exit' to quit.");
+    println!("Ask: 'Does dog grow?', 'Is dog animal?'");
 
-    // Debug similarities
-    if let Some(s) = mind.similarity(a, b) { println!("Sim({}, {}): {}", a, b, s); }
-    if let Some(s) = mind.similarity(b, c) { println!("Sim({}, {}): {}", b, c, s); }
+    loop {
+        use std::io::{self, Write};
+        print!("> ");
+        io::stdout().flush().unwrap();
 
-    let inferred = mind.infer_relation(a, b, c);
-    println!("\nInfer Relation: {} -> {} -> {}? {}", a, b, c, inferred);
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_err() {
+            break;
+        }
+
+        let input = input.trim();
+        if input == "exit" {
+            break;
+        }
+
+        let response = mind.answer(input);
+        println!("Mind: {}", response);
+    }
 
     // 6. Persist Memory
     if let Err(e) = mind.save("memory.json") {

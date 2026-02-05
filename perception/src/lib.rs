@@ -10,6 +10,8 @@ pub struct Beagle {
     pub index_memory: HashMap<String, HyperVector>,
     // Learned meaning (Contextual Vector)
     pub semantic_memory: HashMap<String, HyperVector>,
+    // Explicit relation graph for symbolic reasoning
+    pub relation_graph: HashMap<String, Vec<String>>,
 }
 
 impl Beagle {
@@ -17,7 +19,27 @@ impl Beagle {
         Self {
             index_memory: HashMap::new(),
             semantic_memory: HashMap::new(),
+            relation_graph: HashMap::new(),
         }
+    }
+
+    pub fn sentence_vector(&self, sentence: &str) -> Option<HyperVector> {
+        let words: Vec<String> = sentence
+            .split_whitespace()
+            .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let mut bundle: Option<HyperVector> = None;
+        for word in words {
+            if let Some(vec) = self.semantic_memory.get(&word) {
+                bundle = match bundle {
+                    Some(b) => Some(b.bundle(vec)),
+                    None => Some(vec.clone()),
+                };
+            }
+        }
+        bundle
     }
 
     fn get_or_create_index(&mut self, word: &str) -> HyperVector {
@@ -44,6 +66,28 @@ impl Beagle {
         // 1. Ensure all words exist in index
         for word in &words {
             self.get_or_create_index(word);
+        }
+
+        // 1.5. Graph Learning (Simple Heuristic)
+        // If sentence matches "A is B" or "A B" (e.g. "animal breathes"), link them.
+        for i in 0..words.len() {
+            if words[i] == "is" && i > 0 && i + 1 < words.len() {
+                let subject = words[i-1].clone();
+                let object = words[i+1].clone();
+                self.relation_graph.entry(subject).or_insert_with(Vec::new).push(object);
+            }
+            // For "animal breathes" (noun verb), assume adjacent implies potential relation if no "is"
+            // This is very simple; real BEAGLE doesn't do this, but Omni Forge v5 requirements ask for it.
+            // Let's rely on explicit "is" or specific training structure for now to keep it clean,
+            // or allow "subject verb" linking.
+            if i + 1 < words.len() && words[i] != "is" && words[i+1] != "is" && words[i] != "the" && words[i] != "an" {
+                 // Potentially link neighbors? Let's stick to explicit "is" and "noun verb" if strictly asked.
+                 // The prompt: "Every learned sentence like 'dog is animal' should record: dog -> animal"
+                 // And example "animal breathes" -> animal -> breathes.
+                 let a = words[i].clone();
+                 let b = words[i+1].clone();
+                 self.relation_graph.entry(a).or_insert_with(Vec::new).push(b);
+            }
         }
 
         // 2. Context Learning (Bag-of-Words Context)
@@ -110,11 +154,63 @@ impl Beagle {
         Ok(beagle)
     }
 
-    pub fn infer_relation(&self, a: &str, b: &str, c: &str) -> bool {
+    pub fn infer_relation(&self, start: &str, target: &str) -> bool {
         let threshold = 0.02;
-        let sim_ab = self.similarity(a, b).unwrap_or(0.0);
-        let sim_bc = self.similarity(b, c).unwrap_or(0.0);
-        sim_ab > threshold && sim_bc > threshold
+        let mut queue = std::collections::VecDeque::new();
+        let mut visited = std::collections::HashSet::new();
+
+        queue.push_back(start.to_string());
+        visited.insert(start.to_string());
+
+        while let Some(current) = queue.pop_front() {
+            if current == target {
+                return true;
+            }
+
+            // 1. Check Explicit Graph Neighbors
+            if let Some(neighbors) = self.relation_graph.get(&current) {
+                for neighbor in neighbors {
+                    if !visited.contains(neighbor) {
+                        visited.insert(neighbor.clone());
+                        queue.push_back(neighbor.clone());
+                    }
+                }
+            }
+
+            // 2. Check Implicit Similarity Neighbors (Soft Links)
+            // This is expensive (scan all memory), so limiting to "most_similar" logic
+            let similar_words = self.most_similar(&current);
+            for (word, score) in similar_words {
+                if score > threshold && !visited.contains(&word) {
+                    visited.insert(word.clone());
+                    queue.push_back(word);
+                }
+            }
+        }
+        false
+    }
+
+    pub fn answer(&self, query: &str) -> String {
+        // Simple parser for "Does X Y?" or "Is X Y?"
+        // Remove punctuation
+        let clean_query = query.replace("?", "").to_lowercase();
+        let words: Vec<&str> = clean_query.split_whitespace().collect();
+
+        if words.len() < 3 {
+            return "Query too short.".to_string();
+        }
+
+        // Logic: Extract Subject and Object/Verb
+        // "Does dog breathe" -> Subject: dog, Target: breathe
+        // "Is dog animal" -> Subject: dog, Target: animal
+        let subject = words[1];
+        let target = words.last().unwrap(); // Simple assumption
+
+        if self.infer_relation(subject, target) {
+            "Yes".to_string()
+        } else {
+            "No".to_string()
+        }
     }
 }
 
