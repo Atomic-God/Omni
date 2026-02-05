@@ -1,41 +1,37 @@
-use perception::Beagle;
+use engine::OmniMind;
 use hte;
 
 fn main() {
     println!("Omni Forge Mind Factory Starting...");
 
-    // 1. Hardware Truth Engine Check
+    // Hardware check
     println!("Initializing Hardware Truth Engine...");
     let profile = hte::detect();
     println!("HTE Profile Detected:\n{:#?}", profile);
 
-    // 2. Initialize Cognitive Core (Beagle Mind)
-    println!("Initializing BEAGLE Mind...");
-    let mind = match Beagle::load("memory.json") {
-        Ok(m) => {
-            println!("Memory Loaded from 'memory.json'.");
-            m
-        },
-        Err(_) => {
-            println!("No existing memory found. Creating new mind.");
-            let mut m = Beagle::new();
+    println!("Initializing OmniMind...");
+    let mut mind = OmniMind::new();
 
-            // 3. Train on example sentences
-            let corpus = [
-                "the dog is an animal",
-                "the animal is living",
-                "the living thing grows",
-                "dog eats food"
-            ];
+    // Try to load existing memory
+    if let Err(_) = mind.load("memory.json") {
+        println!("No existing memory found. Creating new mind.");
 
-            println!("Training Mind on {} sentences...", corpus.len());
-            for sentence in corpus {
-                m.learn_sentence(sentence);
-            }
-            println!("Mind trained");
-            m
+        // Train on initial corpus
+        let corpus = [
+            "the dog is an animal",
+            "the animal is living",
+            "the living thing grows",
+            "dog eats food"
+        ];
+
+        println!("Training Mind on {} sentences...", corpus.len());
+        for sentence in corpus {
+            mind.learn(sentence);
         }
-    };
+        println!("Mind trained");
+    } else {
+        println!("Memory Loaded from 'memory.json'.");
+    }
 
     println!("\nOmni Forge Interactive Mode. Type 'exit' to quit.");
     println!("Ask: 'Does dog grow?', 'Is dog animal?', 'What does dog eat?'");
@@ -55,11 +51,11 @@ fn main() {
             break;
         }
 
-        let response = mind.answer(input);
+        let response = mind.ask(input);
         println!("Mind: {}", response);
     }
 
-    // 6. Persist Memory
+    // Save on exit
     if let Err(e) = mind.save("memory.json") {
         eprintln!("Failed to save memory: {}", e);
     } else {

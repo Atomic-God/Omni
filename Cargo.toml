@@ -2,8 +2,10 @@
 members = [
     "hte",
     "core-vsa",
-    "perception",
     "fabricator",
     "runtime",
+    "cognition",
+    "memory",
+    "engine",
 ]
 resolver = "2"

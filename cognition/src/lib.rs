@@ -1,0 +1,219 @@
+use core_vsa::HyperVector;
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+pub struct CognitionCore {
+    pub index_memory: HashMap<String, HyperVector>,
+    pub semantic_memory: HashMap<String, HyperVector>,
+    pub relation_graph: HashMap<String, Vec<String>>,
+    pub sentence_memory: Vec<HyperVector>,
+}
+
+impl CognitionCore {
+    pub fn new() -> Self {
+        Self {
+            index_memory: HashMap::new(),
+            semantic_memory: HashMap::new(),
+            relation_graph: HashMap::new(),
+            sentence_memory: Vec::new(),
+        }
+    }
+
+    pub fn learn_text(&mut self, text: &str) {
+        let words: Vec<String> = text
+            .split_whitespace()
+            .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        // 1. Index Learning
+        for word in &words {
+            if !self.index_memory.contains_key(word) {
+                let vec = HyperVector::random();
+                self.index_memory.insert(word.clone(), vec.clone());
+                self.semantic_memory.insert(word.clone(), HyperVector::random());
+            }
+        }
+
+        // 2. Graph Learning (X is Y)
+        for i in 0..words.len() {
+            if words[i] == "is" && i > 0 && i + 1 < words.len() {
+                let subject = words[i-1].clone();
+                let object = words[i+1].clone();
+                self.relation_graph.entry(subject).or_insert_with(Vec::new).push(object);
+            }
+            if i + 1 < words.len() && words[i] != "is" && words[i+1] != "is" && words[i] != "the" && words[i] != "an" {
+                 let a = words[i].clone();
+                 let b = words[i+1].clone();
+                 self.relation_graph.entry(a).or_insert_with(Vec::new).push(b);
+            }
+        }
+
+        // 3. Semantic Context Learning
+        for (i, target_word) in words.iter().enumerate() {
+            let mut context_bundle: Option<HyperVector> = None;
+            for (j, context_word) in words.iter().enumerate() {
+                if i == j { continue; }
+                let context_vec = self.index_memory.get(context_word).unwrap();
+                context_bundle = match context_bundle {
+                    Some(b) => Some(b.bundle(context_vec)),
+                    None => Some(context_vec.clone()),
+                };
+            }
+            if let Some(ctx) = context_bundle {
+                if let Some(current_semantic) = self.semantic_memory.get(target_word) {
+                    let new_semantic = current_semantic.bundle(&ctx);
+                    self.semantic_memory.insert(target_word.clone(), new_semantic);
+                }
+            }
+        }
+
+        // 4. Episodic Memory
+        if let Some(sv) = self.sentence_vector(text) {
+            self.sentence_memory.push(sv);
+        }
+    }
+
+    pub fn query(&self, query_str: &str) -> String {
+        let clean_query = query_str.replace("?", "").to_lowercase();
+        let words: Vec<&str> = clean_query.split_whitespace().collect();
+
+        if words.len() < 3 {
+            return "Query too short.".to_string();
+        }
+
+        if words[0] == "what" && words[1] == "does" {
+            if words.len() >= 4 {
+                let subject = words[2];
+                let verb = words[3];
+                let objects = self.query_subject_action(subject, verb);
+                if !objects.is_empty() {
+                    return objects[0].clone();
+                } else {
+                    return "Unknown".to_string();
+                }
+            }
+        }
+
+        let subject = words[1];
+        let target = words.last().unwrap();
+
+        if self.infer(subject, target) {
+            "Yes".to_string()
+        } else {
+            "No".to_string()
+        }
+    }
+
+    pub fn infer(&self, start: &str, target: &str) -> bool {
+        let threshold = 0.02;
+        let mut queue = std::collections::VecDeque::new();
+        let mut visited = std::collections::HashSet::new();
+
+        queue.push_back(start.to_string());
+        visited.insert(start.to_string());
+
+        while let Some(current) = queue.pop_front() {
+            if current == target {
+                return true;
+            }
+            if let Some(neighbors) = self.relation_graph.get(&current) {
+                for neighbor in neighbors {
+                    if !visited.contains(neighbor) {
+                        visited.insert(neighbor.clone());
+                        queue.push_back(neighbor.clone());
+                    }
+                }
+            }
+            let similar_words = self.most_similar(&current);
+            for (word, score) in similar_words {
+                if score > threshold && !visited.contains(&word) {
+                    visited.insert(word.clone());
+                    queue.push_back(word);
+                }
+            }
+        }
+        false
+    }
+
+    fn sentence_vector(&self, sentence: &str) -> Option<HyperVector> {
+        let words: Vec<String> = sentence
+            .split_whitespace()
+            .map(|s| s.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if words.len() >= 3 {
+            let s_vec = self.semantic_memory.get(&words[0])?;
+            let v_vec = self.semantic_memory.get(&words[1])?;
+            let o_vec = self.semantic_memory.get(&words[2])?;
+
+            let s_bound = s_vec.bind(&core_vsa::ROLE_SUBJECT);
+            let v_bound = v_vec.bind(&core_vsa::ROLE_VERB);
+            let o_bound = o_vec.bind(&core_vsa::ROLE_OBJECT);
+
+            Some(s_bound.bundle(&v_bound).bundle(&o_bound))
+        } else {
+            let mut bundle: Option<HyperVector> = None;
+            for word in words {
+                if let Some(vec) = self.semantic_memory.get(&word) {
+                    bundle = match bundle {
+                        Some(b) => Some(b.bundle(vec)),
+                        None => Some(vec.clone()),
+                    };
+                }
+            }
+            bundle
+        }
+    }
+
+    fn query_subject_action(&self, subject: &str, verb: &str) -> Vec<String> {
+        let s_vec = match self.semantic_memory.get(subject) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let v_vec = match self.semantic_memory.get(verb) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+
+        let query = s_vec.bind(&core_vsa::ROLE_SUBJECT)
+            .bundle(&v_vec.bind(&core_vsa::ROLE_VERB));
+
+        let mut best_sim = -1.0;
+        let mut best_sentence: Option<&HyperVector> = None;
+
+        for sentence in &self.sentence_memory {
+            let sim = sentence.similarity(&query);
+            if sim > best_sim {
+                best_sim = sim;
+                best_sentence = Some(sentence);
+            }
+        }
+
+        if let Some(sent) = best_sentence {
+            let object_guess = sent.bind(&core_vsa::ROLE_OBJECT);
+            let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
+                .map(|(k, v)| (k.clone(), object_guess.similarity(v)))
+                .collect();
+
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            results.into_iter().take(5).map(|(k, _)| k).collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn most_similar(&self, word: &str) -> Vec<(String, f32)> {
+        let target_vec = match self.semantic_memory.get(word) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
+            .map(|(k, v)| (k.clone(), target_vec.similarity(v)))
+            .collect();
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.into_iter().take(5).collect()
+    }
+}
