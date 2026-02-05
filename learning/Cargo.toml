@@ -1,0 +1,9 @@
+[package]
+name = "learning"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cognition = { path = "../cognition" }
+ingestion = { path = "../ingestion" }
+log = "0.4"

@@ -10,4 +10,6 @@ engine = { path = "../engine" }
 perception = { path = "../perception" }
 cognition = { path = "../cognition" }
 memory = { path = "../memory" }
+ingestion = { path = "../ingestion" }
+learning = { path = "../learning" }
 log = "0.4"

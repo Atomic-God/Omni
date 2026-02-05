@@ -34,8 +34,8 @@ impl PerceptionModule for CognitionCore {
 }
 
 impl ReasoningModule for CognitionCore {
-    fn infer(&self, start: &str, target: &str) -> bool {
-        self.infer_internal(start, target)
+    fn infer(&self, start: &str, target: &str) -> Option<Vec<String>> {
+        self.infer(start, target)
     }
 
     fn query(&self, query_str: &str) -> String {
@@ -139,42 +139,54 @@ impl CognitionCore {
         let subject = &words[1];
         let target = words.last().unwrap();
 
-        if self.infer(subject, target) {
-            "Yes".to_string()
+        if let Some(path) = self.infer(subject, target) {
+            format!("Yes. Reasoning: {}", path.join(" -> "))
         } else {
-            "No".to_string()
+            "No connection found.".to_string()
         }
     }
 
-    fn infer_internal(&self, start: &str, target: &str) -> bool {
+    pub fn infer(&self, start: &str, target: &str) -> Option<Vec<String>> {
         let threshold = 0.02;
+        // Queue: (CurrentNode, PathSoFar)
         let mut queue = std::collections::VecDeque::new();
         let mut visited = std::collections::HashSet::new();
 
-        queue.push_back(start.to_string());
+        queue.push_back((start.to_string(), vec![start.to_string()]));
         visited.insert(start.to_string());
 
-        while let Some(current) = queue.pop_front() {
+        while let Some((current, path)) = queue.pop_front() {
             if current == target {
-                return true;
+                return Some(path);
             }
+
+            // Limit depth to avoid explosion in prototype
+            if path.len() > 5 { continue; }
+
+            // 1. Explicit
             if let Some(neighbors) = self.relation_graph.get(&current) {
                 for neighbor in neighbors {
                     if !visited.contains(neighbor) {
                         visited.insert(neighbor.clone());
-                        queue.push_back(neighbor.clone());
+                        let mut new_path = path.clone();
+                        new_path.push(neighbor.clone());
+                        queue.push_back((neighbor.clone(), new_path));
                     }
                 }
             }
+
+            // 2. Implicit
             let similar_words = self.most_similar(&current);
             for (word, score) in similar_words {
                 if score > threshold && !visited.contains(&word) {
                     visited.insert(word.clone());
-                    queue.push_back(word);
+                    let mut new_path = path.clone();
+                    new_path.push(word.clone());
+                    queue.push_back((word.clone(), new_path));
                 }
             }
         }
-        false
+        None
     }
 
     fn sentence_vector_internal(&self, sentence: &str) -> Option<HyperVector> {

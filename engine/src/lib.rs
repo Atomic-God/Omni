@@ -1,7 +1,7 @@
 use cognition::traits::{PerceptionModule, ReasoningModule};
 use cognition::CognitionCore;
 use log::{error, info};
-use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore};
+use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies};
 use perception::decoder::TextDecoder;
 
 /// Trait for extending OmniMind capabilities.
@@ -63,7 +63,9 @@ impl OmniMind {
 
     /// Generates text from a raw HyperVector using the Perception layer (Decoder).
     pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {
-        let decoder = TextDecoder::new(self.cognition.index_memory.clone());
+        // Use semantic_memory for decoding because sentence vectors are bundles of semantic vectors.
+        // Index vectors are random/orthogonal and won't match the learned semantic composition.
+        let decoder = TextDecoder::new(self.cognition.semantic_memory.clone());
         decoder.decode_svo(hv).0
     }
 
@@ -80,6 +82,10 @@ impl OmniMind {
             },
             encoder_config: EncoderConfig {
                 model_name: "beagle-v5".to_string(),
+            },
+            learning_policies: LearningPolicies {
+                reinforcement_rate: 0.1,
+                decay_rate: 0.01,
             },
         };
 

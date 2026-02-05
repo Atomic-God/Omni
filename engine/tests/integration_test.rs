@@ -10,18 +10,11 @@ fn test_omni_mind_learning_and_inference() {
 
     // "Is dog animal?" -> Yes
     let response = mind.ask("Is dog animal?");
-    assert_eq!(response, "Yes");
+    assert!(response.starts_with("Yes"));
 
-    // "Does dog breathe?" -> Yes (Transitive)
-    // Note: My current parser treats "Does X Y?" as relation check X->Y.
-    // "breathe" vs "breathes". The test in perception handled stems by luck or exact match.
-    // Let's use exact words or reliable stems.
-    // "animal breathes". query "Does dog breathe?".
-    // "breathe" != "breathes".
-    // I should train on "animal breathe" or use "breathes" in query.
-    // Let's use "Does dog breathes?" to be safe with the naive parser.
+    // "Does dog breathes?" -> Yes (Transitive)
     let response_transitive = mind.ask("Does dog breathes?");
-    assert_eq!(response_transitive, "Yes");
+    assert!(response_transitive.starts_with("Yes"));
 }
 
 #[test]
@@ -60,7 +53,7 @@ fn test_persistence() {
         // learn_text adds relation if adjacent and not stop words.
         // infer_relation should pick up "birds -> fly" (step 1 BFS).
         let response = mind.ask("Does birds fly?");
-        assert_eq!(response, "Yes");
+        assert!(response.starts_with("Yes"));
     }
     std::fs::remove_file(path).unwrap_or(());
 }

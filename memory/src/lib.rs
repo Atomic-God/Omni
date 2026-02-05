@@ -23,12 +23,19 @@ pub struct EncoderConfig {
     pub model_name: String,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LearningPolicies {
+    pub reinforcement_rate: f32,
+    pub decay_rate: f32,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct MindPack {
     pub version: String,
     pub memory: MemoryStore,
     pub vocab: VocabStore,
     pub encoder_config: EncoderConfig,
+    pub learning_policies: LearningPolicies,
 }
 
 pub fn save_mind(mind: &MindPack, path: &str) -> Result<(), std::io::Error> {

@@ -12,7 +12,7 @@ pub trait MemoryModule {
 }
 
 pub trait ReasoningModule {
-    fn infer(&self, start: &str, target: &str) -> bool;
+    fn infer(&self, start: &str, target: &str) -> Option<Vec<String>>;
     fn query(&self, query_str: &str) -> String;
     fn sentence_vector(&self, sentence: &str) -> Option<HyperVector>;
 }
