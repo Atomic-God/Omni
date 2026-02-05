@@ -1,13 +1,18 @@
-use rand::prelude::*;
-use serde::{Serialize, Deserialize};
 use once_cell::sync::Lazy;
+use rand::prelude::*;
+use serde::{Deserialize, Serialize};
 
 const DIMENSION: usize = 10_000;
 
-pub static ROLE_SUBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
-pub static ROLE_VERB: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
-pub static ROLE_OBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
+/// Static hypervector representing the Subject role in an SVO structure.
+pub static ROLE_SUBJECT: Lazy<HyperVector> = Lazy::new(HyperVector::random);
+/// Static hypervector representing the Verb role in an SVO structure.
+pub static ROLE_VERB: Lazy<HyperVector> = Lazy::new(HyperVector::random);
+/// Static hypervector representing the Object role in an SVO structure.
+pub static ROLE_OBJECT: Lazy<HyperVector> = Lazy::new(HyperVector::random);
 
+/// A high-dimensional vector supporting VSA operations.
+/// Currently implements a bipolar (±1) model with dimension 10,000.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperVector {
     values: Vec<i8>, // Stores ±1
@@ -27,7 +32,9 @@ impl HyperVector {
     /// Equivalent to XOR in binary space.
     pub fn bind(&self, other: &Self) -> Self {
         assert_eq!(self.values.len(), other.values.len(), "Dimension mismatch");
-        let values: Vec<i8> = self.values.iter()
+        let values: Vec<i8> = self
+            .values
+            .iter()
             .zip(other.values.iter())
             .map(|(a, b)| a * b)
             .collect();
@@ -39,7 +46,9 @@ impl HyperVector {
     pub fn bundle(&self, other: &Self) -> Self {
         assert_eq!(self.values.len(), other.values.len(), "Dimension mismatch");
         let mut rng = rand::thread_rng();
-        let values: Vec<i8> = self.values.iter()
+        let values: Vec<i8> = self
+            .values
+            .iter()
             .zip(other.values.iter())
             .map(|(&a, &b)| {
                 let sum = a as i16 + b as i16;
@@ -47,8 +56,10 @@ impl HyperVector {
                     1
                 } else if sum < 0 {
                     -1
+                } else if rng.gen() {
+                    1
                 } else {
-                    if rng.gen() { 1 } else { -1 }
+                    -1
                 }
             })
             .collect();
@@ -59,7 +70,9 @@ impl HyperVector {
     /// Since magnitude is constant (sqrt(N)), this is just dot product / N.
     pub fn similarity(&self, other: &Self) -> f32 {
         assert_eq!(self.values.len(), other.values.len(), "Dimension mismatch");
-        let dot_product: i32 = self.values.iter()
+        let dot_product: i32 = self
+            .values
+            .iter()
             .zip(other.values.iter())
             .map(|(&a, &b)| (a as i32) * (b as i32))
             .sum();

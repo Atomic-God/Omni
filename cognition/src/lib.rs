@@ -1,16 +1,28 @@
 use core_vsa::HyperVector;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize)]
+/// The core cognitive engine implementing BEAGLE-style learning and VSA reasoning.
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CognitionCore {
+    /// Static random ID for each word (Environmental Vector).
     pub index_memory: HashMap<String, HyperVector>,
+    /// Learned meaning (Contextual Vector) derived from co-occurrence.
     pub semantic_memory: HashMap<String, HyperVector>,
+    /// Explicit relation graph for symbolic reasoning (e.g., "is-a" relationships).
     pub relation_graph: HashMap<String, Vec<String>>,
+    /// Episodic memory storing structural sentence vectors.
     pub sentence_memory: Vec<HyperVector>,
 }
 
+impl Default for CognitionCore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CognitionCore {
+    /// Creates a new, empty CognitionCore.
     pub fn new() -> Self {
         Self {
             index_memory: HashMap::new(),
@@ -32,21 +44,33 @@ impl CognitionCore {
             if !self.index_memory.contains_key(word) {
                 let vec = HyperVector::random();
                 self.index_memory.insert(word.clone(), vec.clone());
-                self.semantic_memory.insert(word.clone(), HyperVector::random());
+                self.semantic_memory
+                    .insert(word.clone(), HyperVector::random());
             }
         }
 
         // 2. Graph Learning (X is Y)
         for i in 0..words.len() {
             if words[i] == "is" && i > 0 && i + 1 < words.len() {
-                let subject = words[i-1].clone();
-                let object = words[i+1].clone();
-                self.relation_graph.entry(subject).or_insert_with(Vec::new).push(object);
+                let subject = words[i - 1].clone();
+                let object = words[i + 1].clone();
+                self.relation_graph
+                    .entry(subject)
+                    .or_default()
+                    .push(object);
             }
-            if i + 1 < words.len() && words[i] != "is" && words[i+1] != "is" && words[i] != "the" && words[i] != "an" {
-                 let a = words[i].clone();
-                 let b = words[i+1].clone();
-                 self.relation_graph.entry(a).or_insert_with(Vec::new).push(b);
+            if i + 1 < words.len()
+                && words[i] != "is"
+                && words[i + 1] != "is"
+                && words[i] != "the"
+                && words[i] != "an"
+            {
+                let a = words[i].clone();
+                let b = words[i + 1].clone();
+                self.relation_graph
+                    .entry(a)
+                    .or_default()
+                    .push(b);
             }
         }
 
@@ -54,7 +78,9 @@ impl CognitionCore {
         for (i, target_word) in words.iter().enumerate() {
             let mut context_bundle: Option<HyperVector> = None;
             for (j, context_word) in words.iter().enumerate() {
-                if i == j { continue; }
+                if i == j {
+                    continue;
+                }
                 let context_vec = self.index_memory.get(context_word).unwrap();
                 context_bundle = match context_bundle {
                     Some(b) => Some(b.bundle(context_vec)),
@@ -64,7 +90,8 @@ impl CognitionCore {
             if let Some(ctx) = context_bundle {
                 if let Some(current_semantic) = self.semantic_memory.get(target_word) {
                     let new_semantic = current_semantic.bundle(&ctx);
-                    self.semantic_memory.insert(target_word.clone(), new_semantic);
+                    self.semantic_memory
+                        .insert(target_word.clone(), new_semantic);
                 }
             }
         }
@@ -83,8 +110,8 @@ impl CognitionCore {
             return "Query too short.".to_string();
         }
 
-        if words[0] == "what" && words[1] == "does" {
-            if words.len() >= 4 {
+        if words[0] == "what" && words[1] == "does"
+            && words.len() >= 4 {
                 let subject = words[2];
                 let verb = words[3];
                 let objects = self.query_subject_action(subject, verb);
@@ -94,7 +121,6 @@ impl CognitionCore {
                     return "Unknown".to_string();
                 }
             }
-        }
 
         let subject = words[1];
         let target = words.last().unwrap();
@@ -178,7 +204,8 @@ impl CognitionCore {
             None => return Vec::new(),
         };
 
-        let query = s_vec.bind(&core_vsa::ROLE_SUBJECT)
+        let query = s_vec
+            .bind(&core_vsa::ROLE_SUBJECT)
             .bundle(&v_vec.bind(&core_vsa::ROLE_VERB));
 
         let mut best_sim = -1.0;
@@ -194,7 +221,9 @@ impl CognitionCore {
 
         if let Some(sent) = best_sentence {
             let object_guess = sent.bind(&core_vsa::ROLE_OBJECT);
-            let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
+            let mut results: Vec<(String, f32)> = self
+                .semantic_memory
+                .iter()
                 .map(|(k, v)| (k.clone(), object_guess.similarity(v)))
                 .collect();
 
@@ -210,7 +239,9 @@ impl CognitionCore {
             Some(v) => v,
             None => return Vec::new(),
         };
-        let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
+        let mut results: Vec<(String, f32)> = self
+            .semantic_memory
+            .iter()
             .map(|(k, v)| (k.clone(), target_vec.similarity(v)))
             .collect();
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));

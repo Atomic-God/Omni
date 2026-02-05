@@ -3,7 +3,7 @@ members = [
     "hte",
     "core-vsa",
     "fabricator",
-    "runtime",
+    "cli",
     "cognition",
     "memory",
     "engine",

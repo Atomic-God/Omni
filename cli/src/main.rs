@@ -1,8 +1,9 @@
 use engine::OmniMind;
-use hte;
+use log::{info, warn};
 
 fn main() {
-    println!("Omni Forge Mind Factory Starting...");
+    env_logger::init();
+    info!("Omni Forge CLI Starting...");
 
     // Hardware check
     println!("Initializing Hardware Truth Engine...");
@@ -13,7 +14,8 @@ fn main() {
     let mut mind = OmniMind::new();
 
     // Try to load existing memory
-    if let Err(_) = mind.load("memory.json") {
+    if mind.load("memory.json").is_err() {
+        warn!("No existing memory found. Creating new mind.");
         println!("No existing memory found. Creating new mind.");
 
         // Train on initial corpus
@@ -21,7 +23,7 @@ fn main() {
             "the dog is an animal",
             "the animal is living",
             "the living thing grows",
-            "dog eats food"
+            "dog eats food",
         ];
 
         println!("Training Mind on {} sentences...", corpus.len());

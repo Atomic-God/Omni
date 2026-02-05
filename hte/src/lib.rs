@@ -1,6 +1,6 @@
-pub mod topology;
-pub mod isa;
 pub mod dispatch;
+pub mod isa;
+pub mod topology;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use raw_cpuid::CpuId;
@@ -64,7 +64,9 @@ impl HardwareProfile {
     }
 
     fn update_topology(&mut self) {
-        self.logical_cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        self.logical_cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
         self.physical_cores = self.logical_cores; // Fallback logic
 
         let (l1, l2, l3) = topology::detect_cache_sizes();
