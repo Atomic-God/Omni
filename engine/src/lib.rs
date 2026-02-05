@@ -64,7 +64,7 @@ impl OmniMind {
     /// Generates text from a raw HyperVector using the Perception layer (Decoder).
     pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {
         let decoder = TextDecoder::new(self.cognition.index_memory.clone());
-        decoder.decode_svo(hv)
+        decoder.decode_svo(hv).0
     }
 
     /// Saves the current state of the mind to the specified path using MindPack.

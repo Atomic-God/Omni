@@ -288,6 +288,7 @@ version = "0.1.0"
 dependencies = [
  "engine",
  "env_logger",
+ "fabricator",
  "hte",
  "ingest",
  "log",
@@ -489,8 +490,13 @@ dependencies = [
 name = "fabricator"
 version = "0.1.0"
 dependencies = [
+ "cognition",
  "core-vsa",
+ "engine",
  "hte",
+ "log",
+ "memory",
+ "perception",
 ]
 
 [[package]]

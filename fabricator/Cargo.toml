@@ -6,3 +6,8 @@ edition = "2021"
 [dependencies]
 core-vsa = { path = "../core-vsa" }
 hte = { path = "../hte" }
+engine = { path = "../engine" }
+perception = { path = "../perception" }
+cognition = { path = "../cognition" }
+memory = { path = "../memory" }
+log = "0.4"

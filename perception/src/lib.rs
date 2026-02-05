@@ -2,6 +2,8 @@ pub mod decoder;
 pub mod text_encoder;
 pub mod tokenizer;
 pub mod traits;
+pub mod vision_stub;
+pub mod audio_stub;
 
 use core_vsa::HyperVector;
 use std::collections::HashMap;

@@ -11,3 +11,7 @@ pub trait Decoder {
 pub trait ModalEncoder {
     fn encode_bytes(&self, data: &[u8]) -> HyperVector;
 }
+
+pub trait ModalDecoder {
+    fn decode_bytes(&self, hv: &HyperVector) -> Vec<u8>;
+}

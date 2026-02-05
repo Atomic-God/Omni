@@ -24,24 +24,22 @@ impl TextDecoder {
         self.decode(hv)
     }
 
-    pub fn decode_svo(&self, hv: &HyperVector) -> String {
+    pub fn decode_svo(&self, hv: &HyperVector) -> (String, f32) {
         // Unbind S, V, O
         let s_part = hv.bind(&core_vsa::ROLE_SUBJECT);
         let v_part = hv.bind(&core_vsa::ROLE_VERB);
         let o_part = hv.bind(&core_vsa::ROLE_OBJECT);
 
-        let s_word = self.decode(&s_part);
-        let v_word = self.decode(&v_part);
-        let o_word = self.decode(&o_part);
+        let (s_word, s_conf) = self.decode_with_confidence(&s_part);
+        let (v_word, v_conf) = self.decode_with_confidence(&v_part);
+        let (o_word, o_conf) = self.decode_with_confidence(&o_part);
 
-        format!("{} {} {}", s_word, v_word, o_word)
+        let sentence = format!("{} {} {}", s_word, v_word, o_word);
+        let confidence = (s_conf + v_conf + o_conf) / 3.0;
+        (sentence, confidence)
     }
-}
 
-impl Decoder for TextDecoder {
-    fn decode(&self, hv: &HyperVector) -> String {
-        // Find nearest neighbor in vocab
-        // Naive: scan all.
+    pub fn decode_with_confidence(&self, hv: &HyperVector) -> (String, f32) {
         let mut best_word = "unknown".to_string();
         let mut best_sim = -1.0;
 
@@ -52,6 +50,12 @@ impl Decoder for TextDecoder {
                 best_word = word.clone();
             }
         }
-        best_word
+        (best_word, best_sim)
+    }
+}
+
+impl Decoder for TextDecoder {
+    fn decode(&self, hv: &HyperVector) -> String {
+        self.decode_with_confidence(hv).0
     }
 }
