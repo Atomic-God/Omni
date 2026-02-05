@@ -1,6 +1,10 @@
 use core_vsa::HyperVector;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use std::fs::File;
+use std::io::BufReader;
 
+#[derive(Serialize, Deserialize)]
 pub struct Beagle {
     // Static random ID for each word (Environmental Vector)
     pub index_memory: HashMap<String, HyperVector>,
@@ -91,6 +95,19 @@ impl Beagle {
 
         // Take top 5
         results.into_iter().take(5).collect()
+    }
+
+    pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
+        let file = File::create(path)?;
+        serde_json::to_writer(file, self)?;
+        Ok(())
+    }
+
+    pub fn load(path: &str) -> Result<Self, std::io::Error> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let beagle = serde_json::from_reader(reader)?;
+        Ok(beagle)
     }
 }
 

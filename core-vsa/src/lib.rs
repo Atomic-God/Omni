@@ -1,8 +1,9 @@
 use rand::prelude::*;
+use serde::{Serialize, Deserialize};
 
 const DIMENSION: usize = 10_000;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperVector {
     values: Vec<i8>, // Stores ±1
 }
