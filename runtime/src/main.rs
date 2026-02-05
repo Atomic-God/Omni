@@ -28,10 +28,15 @@ fn main() {
 
     println!("Mind trained");
 
-    // 4. Verification (Optional but good for demo)
+    // 4. Verification
     if let Some(sim) = mind.similarity("cat", "dog") {
         println!("Similarity(cat, dog) = {:.4}", sim);
-    } else {
-        println!("Could not calculate similarity (words not in lexicon).");
+    }
+
+    // 5. Semantic Query
+    println!("\nQuery: Most similar to 'dog':");
+    let results = mind.most_similar("dog");
+    for (word, score) in results {
+        println!(" - {}: {:.4}", word, score);
     }
 }

@@ -75,6 +75,23 @@ impl Beagle {
         let v2 = self.semantic_memory.get(word2)?;
         Some(v1.similarity(v2))
     }
+
+    pub fn most_similar(&self, word: &str) -> Vec<(String, f32)> {
+        let target_vec = match self.semantic_memory.get(word) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+
+        let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
+            .map(|(k, v)| (k.clone(), target_vec.similarity(v)))
+            .collect();
+
+        // Sort descending by score
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Take top 5
+        results.into_iter().take(5).collect()
+    }
 }
 
 #[cfg(test)]
