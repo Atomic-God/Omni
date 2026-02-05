@@ -1,45 +1,41 @@
 use engine::OmniMind;
 use log::{info, warn};
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
 
 fn main() {
     env_logger::init();
-    info!("Omni Forge CLI Starting...");
+    info!("Omni Forge CLI v5.1 Starting...");
 
     // Hardware check
     println!("Initializing Hardware Truth Engine...");
     let profile = hte::detect();
     println!("HTE Profile Detected:\n{:#?}", profile);
 
-    println!("Initializing OmniMind...");
-    let mut mind = OmniMind::new();
+    println!("Initializing OmniMind Fabricator...");
+    let mind = OmniMind::new();
+    let mind_arc = Arc::new(Mutex::new(mind));
 
-    // Try to load existing memory
-    if mind.load("memory.json").is_err() {
-        warn!("No existing memory found. Creating new mind.");
-        println!("No existing memory found. Creating new mind.");
-
-        // Train on initial corpus
-        let corpus = [
-            "the dog is an animal",
-            "the animal is living",
-            "the living thing grows",
-            "dog eats food",
-        ];
-
-        println!("Training Mind on {} sentences...", corpus.len());
-        for sentence in corpus {
-            mind.learn(sentence);
+    // Try load mind.omf
+    {
+        let mut m = mind_arc.lock().unwrap();
+        if m.load("mind.omf").is_err() {
+            warn!("No sovereign mind found. Starting fresh.");
+            println!("No mind.omf found. Starting fresh fabrication.");
+        } else {
+            println!("Sovereign Mind Loaded.");
         }
-        println!("Mind trained");
-    } else {
-        println!("Memory Loaded from 'memory.json'.");
     }
 
-    println!("\nOmni Forge Interactive Mode. Type 'exit' to quit.");
-    println!("Ask: 'Does dog grow?', 'Is dog animal?', 'What does dog eat?'");
+    println!("\nOmni Forge Interactive Shell.");
+    println!("Commands:");
+    println!("  train <text>   - Learn from text");
+    println!("  ask <query>    - Query the mind");
+    println!("  save-mind      - Save to mind.omf");
+    println!("  load-mind      - Load from mind.omf");
+    println!("  exit           - Quit");
 
     loop {
-        use std::io::{self, Write};
         print!("> ");
         io::stdout().flush().unwrap();
 
@@ -53,14 +49,40 @@ fn main() {
             break;
         }
 
-        let response = mind.ask(input);
-        println!("Mind: {}", response);
-    }
+        let mut parts = input.splitn(2, ' ');
+        let command = parts.next().unwrap_or("");
+        let args = parts.next().unwrap_or("");
 
-    // Save on exit
-    if let Err(e) = mind.save("memory.json") {
-        eprintln!("Failed to save memory: {}", e);
-    } else {
-        println!("Memory saved to 'memory.json'.");
+        let mut mind = mind_arc.lock().unwrap();
+
+        match command {
+            "train" => {
+                if args.is_empty() {
+                    println!("Usage: train <text>");
+                } else {
+                    mind.learn(args);
+                    println!("Learned.");
+                }
+            }
+            "ask" => {
+                if args.is_empty() {
+                    println!("Usage: ask <query>");
+                } else {
+                    let response = mind.ask(args);
+                    println!("Mind: {}", response);
+                }
+            }
+            "save-mind" => match mind.save("mind.omf") {
+                Ok(_) => println!("Mind saved to mind.omf"),
+                Err(e) => println!("Error saving: {}", e),
+            },
+            "load-mind" => match mind.load("mind.omf") {
+                Ok(_) => println!("Mind loaded."),
+                Err(e) => println!("Error loading: {}", e),
+            },
+            _ => {
+                println!("Unknown command. Try: train, ask, save-mind, load-mind, exit");
+            }
+        }
     }
 }

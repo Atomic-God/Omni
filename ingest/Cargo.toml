@@ -1,11 +1,10 @@
 [package]
-name = "cli"
+name = "ingest"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 engine = { path = "../engine" }
-hte = { path = "../hte" }
-ingest = { path = "../ingest" }
+walkdir = "2.3"
+notify = "6.0"
 log = "0.4"
-env_logger = "0.10"

@@ -1,40 +1,48 @@
-# Omni Forge
+# Omni Forge v5.1
 
 Omni Forge is a standalone, decentralized AI fabrication system based on Neuro-Symbolic Vector Symbolic Architectures (VSA).
 
-## Structure
+## Architecture
 
-*   `core-vsa`: Mathematical engine for Hypervectors (bipolar, 10k dimensions).
-*   `cognition`: Cognitive logic (BEAGLE learning, SVO parsing, inference).
-*   `memory`: Persistence layer (JSON with versioning).
-*   `engine`: High-level facade (`OmniMind`).
-*   `cli`: Interactive terminal interface.
-*   `hte`: Hardware Truth Engine for platform detection.
+*   `core-vsa`: Mathematical engine for Hypervectors (bipolar, 10k dimensions) and Indexing.
+*   `cognition`: Reasoning Core (BEAGLE-style learning, Graph reasoning, Inference).
+*   `perception`: Encoding (Text -> HV) and Decoding (HV -> Text).
+*   `memory`: Persistence layer (Zip-compressed MindPack).
+*   `engine`: OmniMind Fabricator (Facade for all components).
+*   `cli`: Interactive Runtime Shell.
+*   `ingest`: Knowledge ingestion system.
+*   `api`: REST API service.
 
-## Build & Run
+## Fabrication-Runtime Duality
 
-1.  **Install Rust**:
-    ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-    ```
+Omni Forge operates in two modes:
+1.  **Fabrication**: Learning from text/files (`train`, `ingest`).
+2.  **Runtime**: Reasoning and answering (`ask`, `infer`).
 
-2.  **Build**:
-    ```bash
-    cargo build --release
-    ```
+## Usage
 
-3.  **Run CLI**:
-    ```bash
-    cargo run -p cli
-    ```
+### CLI
 
-4.  **Run Library Demo**:
-    ```bash
-    cargo run -p engine --example demo
-    ```
+```bash
+cargo run -p cli
+```
+
+Commands:
+- `train <text>`: Learn from text.
+- `ask <query>`: Ask a question (e.g., "What does dog eat?").
+- `save-mind`: Save state to `mind.omf`.
+- `load-mind`: Load state from `mind.omf`.
+
+### API
+
+```bash
+# Build Docker image
+docker build -t omni-forge .
+# Run
+docker run -p 3000:3000 omni-forge
+```
 
 ## Development
 
 *   **Test**: `cargo test`
-*   **Format**: `cargo fmt`
-*   **Lint**: `cargo clippy`
+*   **Benchmark**: `cargo bench`

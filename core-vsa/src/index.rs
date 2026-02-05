@@ -1,5 +1,5 @@
-use core_vsa::HyperVector;
-use serde::{Serialize, Deserialize};
+use crate::HyperVector;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -10,7 +10,9 @@ pub struct LshIndex {
 
 impl LshIndex {
     pub fn new(num_projections: usize) -> Self {
-        let projections = (0..num_projections).map(|_| HyperVector::random()).collect();
+        let projections = (0..num_projections)
+            .map(|_| HyperVector::random())
+            .collect();
         Self {
             projections,
             buckets: HashMap::new(),

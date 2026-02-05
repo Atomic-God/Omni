@@ -1,0 +1,4 @@
+[omniforge]
+memory_path = "memory.json"
+knowledge_path = "knowledge"
+api_port = 3000

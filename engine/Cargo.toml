@@ -7,6 +7,8 @@ edition = "2021"
 cognition = { path = "../cognition" }
 memory = { path = "../memory" }
 hte = { path = "../hte" }
+perception = { path = "../perception" }
+core-vsa = { path = "../core-vsa" }
 log = "0.4"
 env_logger = "0.10"
 

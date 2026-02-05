@@ -1,6 +1,8 @@
-use rand::prelude::*;
-use serde::{Serialize, Deserialize};
 use once_cell::sync::Lazy;
+use rand::prelude::*;
+use serde::{Deserialize, Serialize};
+
+pub mod index;
 
 // 10,000 bits. 10000 / 64 = 156.25 -> 157 u64s.
 const DIMENSION: usize = 10_000;
@@ -30,7 +32,9 @@ impl HyperVector {
 
     /// Binding operation (XOR).
     pub fn bind(&self, other: &Self) -> Self {
-        let words = self.words.iter()
+        let words = self
+            .words
+            .iter()
             .zip(other.words.iter())
             .map(|(a, b)| a ^ b)
             .collect();
@@ -45,7 +49,9 @@ impl HyperVector {
     /// Simpler: majority(A, B, Random)
     pub fn bundle(&self, other: &Self) -> Self {
         let mut rng = rand::thread_rng();
-        let words = self.words.iter()
+        let words = self
+            .words
+            .iter()
             .zip(other.words.iter())
             .map(|(&a, &b)| {
                 // If bits equal, keep them. If different, random.
@@ -63,7 +69,9 @@ impl HyperVector {
     /// Sim = 1 - 2 * (Hamming / Dim).
     /// Range: 1.0 (identical) to -1.0 (inverse). 0.0 (orthogonal).
     pub fn similarity(&self, other: &Self) -> f32 {
-        let hamming: u32 = self.words.iter()
+        let hamming: u32 = self
+            .words
+            .iter()
             .zip(other.words.iter())
             .map(|(a, b)| (a ^ b).count_ones())
             .sum();

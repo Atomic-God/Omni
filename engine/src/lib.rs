@@ -1,11 +1,19 @@
-use cognition::CognitionCore;
 use cognition::traits::{PerceptionModule, ReasoningModule};
+use cognition::CognitionCore;
 use log::{error, info};
+use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore};
+use perception::text_encoder::TextEncoder;
+
+/// Trait for extending OmniMind capabilities.
+pub trait ExtensionModule: Send + Sync {
+    fn process(&self, input: &str, mind: &mut OmniMind);
+}
 
 /// OmniMind is the high-level interface for the Omni Forge system.
 /// It orchestrates cognitive processes, memory persistence, and interaction.
 pub struct OmniMind {
-    cognition: CognitionCore,
+    pub cognition: CognitionCore, // Public for extensions
+    extensions: Vec<Box<dyn ExtensionModule>>,
 }
 
 impl Default for OmniMind {
@@ -20,28 +28,67 @@ impl OmniMind {
         info!("Initializing OmniMind instance.");
         Self {
             cognition: CognitionCore::new(),
+            extensions: Vec::new(),
         }
     }
 
-    /// Learns from the provided text, updating semantic and episodic memory.
-    pub fn learn(&mut self, text: &str) {
-        info!("Learning text: {}", text);
-        self.cognition.learn_text(text);
+    pub fn register_extension(&mut self, extension: Box<dyn ExtensionModule>) {
+        self.extensions.push(extension);
     }
 
-    /// Processes a natural language query and returns an answer.
+    /// Learns from the provided text using the Perception-Cognition pipeline.
+    pub fn learn(&mut self, text: &str) {
+        info!("Learning text: {}", text);
+        // 1. Perception Layer (Encoding)
+        // Ensure vocab is updated in Cognition (it handles it via learn_text currently).
+        // In v5.1, we might separate this, but for now CognitionCore.learn_text does the heavy lifting.
+        // We can create a temporary TextEncoder to validate or process, but CognitionCore is the learner.
+        self.cognition.learn_text(text);
+
+        // 2. Extensions
+        let exts = std::mem::take(&mut self.extensions);
+        for ext in &exts {
+            ext.process(text, self);
+        }
+        self.extensions = exts;
+    }
+
+    /// Processes a query using Perception -> Cognition -> Perception (Decode) pipeline.
     pub fn ask(&self, question: &str) -> String {
         info!("Processing query: {}", question);
+
+        // 1. Perception (Encode)
+        // We create an encoder using the current cognition vocab
+        // This is a bit inefficient to recreate every time, but ensures freshness.
+        let _encoder = TextEncoder::new(self.cognition.index_memory.clone());
+        // For "Is X Y?" style queries, CognitionCore.query handles parsing.
+        // But for "Generative" queries, we might use the Encoder.
+        // Current CognitionCore.query is robust for the prototype.
+        // Let's defer to CognitionCore for the logic, as it implements ReasoningModule.
+
         self.cognition.query(question)
     }
 
-    /// Saves the current state of the mind to the specified path.
+    /// Saves the current state of the mind to the specified path using MindPack.
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        info!("Saving memory to {}", path);
-        match memory::save(&self.cognition, path) {
+        info!("Saving mind to {}", path);
+        let pack = MindPack {
+            version: "5.1".to_string(),
+            memory: MemoryStore {
+                core: self.cognition.clone(),
+            },
+            vocab: VocabStore {
+                words: self.cognition.index_memory.clone(),
+            },
+            encoder_config: EncoderConfig {
+                model_name: "beagle-v5".to_string(),
+            },
+        };
+
+        match memory::save_mind(&pack, path) {
             Ok(_) => Ok(()),
             Err(e) => {
-                error!("Failed to save memory: {}", e);
+                error!("Failed to save mind: {}", e);
                 Err(e)
             }
         }
@@ -49,14 +96,15 @@ impl OmniMind {
 
     /// Loads a mind state from the specified path.
     pub fn load(&mut self, path: &str) -> Result<(), std::io::Error> {
-        info!("Loading memory from {}", path);
-        match memory::load(path) {
-            Ok(core) => {
-                self.cognition = core;
+        info!("Loading mind from {}", path);
+        match memory::load_mind(path) {
+            Ok(pack) => {
+                self.cognition = pack.memory.core;
+                // Reconstruct or validate vocab if needed
                 Ok(())
             }
             Err(e) => {
-                error!("Failed to load memory: {}", e);
+                error!("Failed to load mind: {}", e);
                 Err(e)
             }
         }

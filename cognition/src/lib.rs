@@ -2,12 +2,11 @@ use core_vsa::HyperVector;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub mod tokenizer;
 pub mod traits;
-pub mod index;
 
+use core_vsa::index::LshIndex;
+use perception::tokenizer;
 use traits::{PerceptionModule, ReasoningModule};
-use index::LshIndex;
 
 /// The core cognitive engine implementing BEAGLE-style learning and VSA reasoning.
 #[derive(Serialize, Deserialize, Clone)]
@@ -77,10 +76,7 @@ impl CognitionCore {
             if words[i] == "is" && i > 0 && i + 1 < words.len() {
                 let subject = words[i - 1].clone();
                 let object = words[i + 1].clone();
-                self.relation_graph
-                    .entry(subject)
-                    .or_default()
-                    .push(object);
+                self.relation_graph.entry(subject).or_default().push(object);
             }
             if i + 1 < words.len()
                 && words[i] != "is"
@@ -90,10 +86,7 @@ impl CognitionCore {
             {
                 let a = words[i].clone();
                 let b = words[i + 1].clone();
-                self.relation_graph
-                    .entry(a)
-                    .or_default()
-                    .push(b);
+                self.relation_graph.entry(a).or_default().push(b);
             }
         }
 
@@ -132,17 +125,16 @@ impl CognitionCore {
             return "Query too short.".to_string();
         }
 
-        if words[0] == "what" && words[1] == "does"
-            && words.len() >= 4 {
-                let subject = &words[2];
-                let verb = &words[3];
-                let objects = self.query_subject_action(subject, verb);
-                if !objects.is_empty() {
-                    return objects[0].clone();
-                } else {
-                    return "Unknown".to_string();
-                }
+        if words[0] == "what" && words[1] == "does" && words.len() >= 4 {
+            let subject = &words[2];
+            let verb = &words[3];
+            let objects = self.query_subject_action(subject, verb);
+            if !objects.is_empty() {
+                return objects[0].clone();
+            } else {
+                return "Unknown".to_string();
             }
+        }
 
         let subject = &words[1];
         let target = words.last().unwrap();

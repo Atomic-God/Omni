@@ -1,44 +1,66 @@
 use cognition::CognitionCore;
+use core_vsa::HyperVector;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
+#[allow(dead_code)]
 const MEMORY_VERSION: &str = "1.0";
 
-#[derive(Serialize, Deserialize)]
-struct VersionedMemory {
-    version: String,
-    core: CognitionCore,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct VocabStore {
+    pub words: HashMap<String, HyperVector>,
 }
 
-pub fn save(core: &CognitionCore, path: &str) -> Result<(), std::io::Error> {
-    let container = VersionedMemory {
-        version: MEMORY_VERSION.to_string(),
-        // Clone is expensive, but for prototype it's safe.
-        // Ideally serialize reference, but serde struct requires ownership or lifetime.
-        // CognitionCore is Clone-able via its fields? No, HashMap and Vec are, but standard derive Serialize implies ownership often unless ref.
-        // Let's rely on standard serialization of the struct fields.
-        // To avoid clone, we can implement custom serializer or just accept the cost.
-        // Or change VersionedMemory to hold a reference: `core: &'a CognitionCore`.
-        core: core.clone(),
-    };
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MemoryStore {
+    pub core: CognitionCore,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct EncoderConfig {
+    pub model_name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MindPack {
+    pub version: String,
+    pub memory: MemoryStore,
+    pub vocab: VocabStore,
+    pub encoder_config: EncoderConfig,
+}
+
+pub fn save_mind(mind: &MindPack, path: &str) -> Result<(), std::io::Error> {
     let file = File::create(path)?;
-    serde_json::to_writer(file, &container)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+    zip.start_file("mind.json", options)?;
+    serde_json::to_writer(&mut zip, mind)?;
+    zip.finish()?;
     Ok(())
 }
 
-pub fn load(path: &str) -> Result<CognitionCore, std::io::Error> {
+pub fn load_mind(path: &str) -> Result<MindPack, std::io::Error> {
+    let file = File::open(path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    let file = archive.by_name("mind.json")?;
+    let mind: MindPack = serde_json::from_reader(file)?;
+    Ok(mind)
+}
+
+// Legacy helpers if needed, or remove. Keeping for compatibility or internal use.
+pub fn save_core(core: &CognitionCore, path: &str) -> Result<(), std::io::Error> {
+    let file = File::create(path)?;
+    serde_json::to_writer(file, core)?;
+    Ok(())
+}
+
+pub fn load_core(path: &str) -> Result<CognitionCore, std::io::Error> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-    let container: VersionedMemory = serde_json::from_reader(reader)?;
-
-    if container.version != MEMORY_VERSION {
-        // Handle migration if needed in future
-        println!(
-            "Warning: Memory version mismatch. Loaded: {}, Current: {}",
-            container.version, MEMORY_VERSION
-        );
-    }
-
-    Ok(container.core)
+    let core: CognitionCore = serde_json::from_reader(reader)?;
+    Ok(core)
 }
