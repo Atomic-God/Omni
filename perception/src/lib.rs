@@ -12,6 +12,8 @@ pub struct Beagle {
     pub semantic_memory: HashMap<String, HyperVector>,
     // Explicit relation graph for symbolic reasoning
     pub relation_graph: HashMap<String, Vec<String>>,
+    // Episodic memory of sentences
+    pub sentence_memory: Vec<HyperVector>,
 }
 
 impl Beagle {
@@ -20,6 +22,7 @@ impl Beagle {
             index_memory: HashMap::new(),
             semantic_memory: HashMap::new(),
             relation_graph: HashMap::new(),
+            sentence_memory: Vec::new(),
         }
     }
 
@@ -30,16 +33,30 @@ impl Beagle {
             .filter(|s| !s.is_empty())
             .collect();
 
-        let mut bundle: Option<HyperVector> = None;
-        for word in words {
-            if let Some(vec) = self.semantic_memory.get(&word) {
-                bundle = match bundle {
-                    Some(b) => Some(b.bundle(vec)),
-                    None => Some(vec.clone()),
-                };
+        if words.len() >= 3 {
+            // SVO binding: Subject * RoleS + Verb * RoleV + Object * RoleO
+            let s_vec = self.semantic_memory.get(&words[0])?;
+            let v_vec = self.semantic_memory.get(&words[1])?;
+            let o_vec = self.semantic_memory.get(&words[2])?;
+
+            let s_bound = s_vec.bind(&core_vsa::ROLE_SUBJECT);
+            let v_bound = v_vec.bind(&core_vsa::ROLE_VERB);
+            let o_bound = o_vec.bind(&core_vsa::ROLE_OBJECT);
+
+            Some(s_bound.bundle(&v_bound).bundle(&o_bound))
+        } else {
+            // Fallback to Bag-of-Words
+            let mut bundle: Option<HyperVector> = None;
+            for word in words {
+                if let Some(vec) = self.semantic_memory.get(&word) {
+                    bundle = match bundle {
+                        Some(b) => Some(b.bundle(vec)),
+                        None => Some(vec.clone()),
+                    };
+                }
             }
+            bundle
         }
-        bundle
     }
 
     fn get_or_create_index(&mut self, word: &str) -> HyperVector {
@@ -116,6 +133,11 @@ impl Beagle {
                 }
             }
         }
+
+        // 3. Episodic Memory (Store sentence vector)
+        if let Some(sv) = self.sentence_vector(sentence) {
+            self.sentence_memory.push(sv);
+        }
     }
 
     pub fn similarity(&self, word1: &str, word2: &str) -> Option<f32> {
@@ -191,8 +213,7 @@ impl Beagle {
     }
 
     pub fn answer(&self, query: &str) -> String {
-        // Simple parser for "Does X Y?" or "Is X Y?"
-        // Remove punctuation
+        // Simple parser
         let clean_query = query.replace("?", "").to_lowercase();
         let words: Vec<&str> = clean_query.split_whitespace().collect();
 
@@ -200,16 +221,73 @@ impl Beagle {
             return "Query too short.".to_string();
         }
 
-        // Logic: Extract Subject and Object/Verb
-        // "Does dog breathe" -> Subject: dog, Target: breathe
-        // "Is dog animal" -> Subject: dog, Target: animal
+        // Handle "What does X Y?" -> query_subject_action(X, Y)
+        if words[0] == "what" && words[1] == "does" {
+            // "What does dog eat" -> subject: dog (2), verb: eat (3)
+            if words.len() >= 4 {
+                let subject = words[2];
+                let verb = words[3];
+                let objects = self.query_subject_action(subject, verb);
+                if !objects.is_empty() {
+                    return objects[0].clone();
+                } else {
+                    return "Unknown".to_string();
+                }
+            }
+        }
+
+        // Handle "Does X Y?" / "Is X Y?"
         let subject = words[1];
-        let target = words.last().unwrap(); // Simple assumption
+        let target = words.last().unwrap();
 
         if self.infer_relation(subject, target) {
             "Yes".to_string()
         } else {
             "No".to_string()
+        }
+    }
+
+    pub fn query_subject_action(&self, subject: &str, verb: &str) -> Vec<String> {
+        let s_vec = match self.semantic_memory.get(subject) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let v_vec = match self.semantic_memory.get(verb) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+
+        // Query = (Subj * RoleS) + (Verb * RoleV)
+        let query = s_vec.bind(&core_vsa::ROLE_SUBJECT)
+            .bundle(&v_vec.bind(&core_vsa::ROLE_VERB));
+
+        // Find closest sentence
+        let mut best_sim = -1.0;
+        let mut best_sentence: Option<&HyperVector> = None;
+
+        for sentence in &self.sentence_memory {
+            let sim = sentence.similarity(&query);
+            if sim > best_sim {
+                best_sim = sim;
+                best_sentence = Some(sentence);
+            }
+        }
+
+        if let Some(sent) = best_sentence {
+            // Decode Object: Sentence * RoleO (Unbinding is binding)
+            // S = (S*Rs) + (V*Rv) + (O*Ro)
+            // S * Ro = (S*Rs*Ro) + (V*Rv*Ro) + (O*Ro*Ro) -> Noise + Noise + O
+            let object_guess = sent.bind(&core_vsa::ROLE_OBJECT);
+
+            // Find closest word in semantic memory to object_guess
+            let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
+                .map(|(k, v)| (k.clone(), object_guess.similarity(v)))
+                .collect();
+
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            results.into_iter().take(5).map(|(k, _)| k).collect()
+        } else {
+            Vec::new()
         }
     }
 }

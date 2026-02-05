@@ -24,7 +24,8 @@ fn main() {
             let corpus = [
                 "the dog is an animal",
                 "the animal is living",
-                "the living thing grows"
+                "the living thing grows",
+                "dog eats food"
             ];
 
             println!("Training Mind on {} sentences...", corpus.len());
@@ -37,7 +38,7 @@ fn main() {
     };
 
     println!("\nOmni Forge Interactive Mode. Type 'exit' to quit.");
-    println!("Ask: 'Does dog grow?', 'Is dog animal?'");
+    println!("Ask: 'Does dog grow?', 'Is dog animal?', 'What does dog eat?'");
 
     loop {
         use std::io::{self, Write};

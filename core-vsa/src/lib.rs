@@ -1,7 +1,12 @@
 use rand::prelude::*;
 use serde::{Serialize, Deserialize};
+use once_cell::sync::Lazy;
 
 const DIMENSION: usize = 10_000;
+
+pub static ROLE_SUBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
+pub static ROLE_VERB: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
+pub static ROLE_OBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperVector {
