@@ -22,10 +22,8 @@ fn main() {
 
             // 3. Train on example sentences
             let corpus = [
-                "The cat runs fast",
-                "The dog runs fast",
-                "The fish swims deep",
-                "The bird flies high"
+                "the dog is an animal",
+                "the animal breathes air"
             ];
 
             println!("Training Mind on {} sentences...", corpus.len());
@@ -37,17 +35,17 @@ fn main() {
         }
     };
 
-    // 4. Verification
-    if let Some(sim) = mind.similarity("cat", "dog") {
-        println!("Similarity(cat, dog) = {:.4}", sim);
-    }
+    // 4. Relation Inference
+    let a = "dog";
+    let b = "animal";
+    let c = "breathes";
 
-    // 5. Semantic Query
-    println!("\nQuery: Most similar to 'dog':");
-    let results = mind.most_similar("dog");
-    for (word, score) in results {
-        println!(" - {}: {:.4}", word, score);
-    }
+    // Debug similarities
+    if let Some(s) = mind.similarity(a, b) { println!("Sim({}, {}): {}", a, b, s); }
+    if let Some(s) = mind.similarity(b, c) { println!("Sim({}, {}): {}", b, c, s); }
+
+    let inferred = mind.infer_relation(a, b, c);
+    println!("\nInfer Relation: {} -> {} -> {}? {}", a, b, c, inferred);
 
     // 6. Persist Memory
     if let Err(e) = mind.save("memory.json") {

@@ -109,6 +109,13 @@ impl Beagle {
         let beagle = serde_json::from_reader(reader)?;
         Ok(beagle)
     }
+
+    pub fn infer_relation(&self, a: &str, b: &str, c: &str) -> bool {
+        let threshold = 0.02;
+        let sim_ab = self.similarity(a, b).unwrap_or(0.0);
+        let sim_bc = self.similarity(b, c).unwrap_or(0.0);
+        sim_ab > threshold && sim_bc > threshold
+    }
 }
 
 #[cfg(test)]
