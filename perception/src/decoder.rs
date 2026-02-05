@@ -4,21 +4,12 @@ use core_vsa::HyperVector;
 use std::collections::HashMap;
 
 pub struct TextDecoder {
-    pub vocab_index: LshIndex, // Should be populated with vocab
-    pub vocab_map: HashMap<String, HyperVector>, // Reverse lookup needed? No, LshIndex stores HVs. We need HV -> String.
-                                                 // LshIndex stores HyperVector. We can't map back to String unless LshIndex stores ID or we have a map.
-                                                 // Let's assume we search LshIndex to get candidate HVs, then find exact match in map?
-                                                 // Actually, simple NN search against vocab map is easier for prototype if LSH doesn't support payload.
-                                                 // I'll add a `reverse_vocab: Vec<(HyperVector, String)>` or similar.
-                                                 // Or just iterate `vocab_map` for now. The prompt says "Use existing LshIndex to speed up".
-                                                 // I need to modify LshIndex to store payload or parallel array.
-                                                 // For now, I will use linear scan over vocab_map for correctness as LshIndex is just HVs.
-                                                 // Wait, prompt says "Compare hypervector against vocab.json word vectors".
+    pub vocab_index: LshIndex,
+    pub vocab_map: HashMap<String, HyperVector>,
 }
 
 impl TextDecoder {
     pub fn new(vocab: HashMap<String, HyperVector>) -> Self {
-        // Build LSH index?
         let mut index = LshIndex::new(64);
         for (_, vec) in &vocab {
             index.insert(vec.clone());
@@ -27,6 +18,23 @@ impl TextDecoder {
             vocab_index: index,
             vocab_map: vocab,
         }
+    }
+
+    pub fn decode_word(&self, hv: &HyperVector) -> String {
+        self.decode(hv)
+    }
+
+    pub fn decode_svo(&self, hv: &HyperVector) -> String {
+        // Unbind S, V, O
+        let s_part = hv.bind(&core_vsa::ROLE_SUBJECT);
+        let v_part = hv.bind(&core_vsa::ROLE_VERB);
+        let o_part = hv.bind(&core_vsa::ROLE_OBJECT);
+
+        let s_word = self.decode(&s_part);
+        let v_word = self.decode(&v_part);
+        let o_word = self.decode(&o_part);
+
+        format!("{} {} {}", s_word, v_word, o_word)
     }
 }
 

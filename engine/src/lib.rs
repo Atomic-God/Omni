@@ -2,7 +2,7 @@ use cognition::traits::{PerceptionModule, ReasoningModule};
 use cognition::CognitionCore;
 use log::{error, info};
 use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore};
-use perception::text_encoder::TextEncoder;
+use perception::decoder::TextDecoder;
 
 /// Trait for extending OmniMind capabilities.
 pub trait ExtensionModule: Send + Sync {
@@ -57,16 +57,14 @@ impl OmniMind {
     pub fn ask(&self, question: &str) -> String {
         info!("Processing query: {}", question);
 
-        // 1. Perception (Encode)
-        // We create an encoder using the current cognition vocab
-        // This is a bit inefficient to recreate every time, but ensures freshness.
-        let _encoder = TextEncoder::new(self.cognition.index_memory.clone());
-        // For "Is X Y?" style queries, CognitionCore.query handles parsing.
-        // But for "Generative" queries, we might use the Encoder.
-        // Current CognitionCore.query is robust for the prototype.
-        // Let's defer to CognitionCore for the logic, as it implements ReasoningModule.
-
+        // Use CognitionCore for reasoning-based answers (Yes/No, Fact retrieval)
         self.cognition.query(question)
+    }
+
+    /// Generates text from a raw HyperVector using the Perception layer (Decoder).
+    pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {
+        let decoder = TextDecoder::new(self.cognition.index_memory.clone());
+        decoder.decode_svo(hv)
     }
 
     /// Saves the current state of the mind to the specified path using MindPack.
