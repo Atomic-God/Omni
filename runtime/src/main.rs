@@ -1,23 +1,37 @@
-use runtime::RuntimeEngine;
+use perception::Beagle;
 use hte;
-use core_vsa::HyperVector;
 
 fn main() {
     println!("Omni Forge Mind Factory Starting...");
-    println!("Initializing Hardware Truth Engine...");
 
+    // 1. Hardware Truth Engine Check
+    println!("Initializing Hardware Truth Engine...");
     let profile = hte::detect();
     println!("HTE Profile Detected:\n{:#?}", profile);
 
-    println!("Initializing Cognitive Core...");
-    // HyperVector dimension is now fixed at 10,000 internally
-    let concept_a = HyperVector::random();
-    let concept_b = HyperVector::random();
-    let bound_concept = concept_a.bind(&concept_b);
+    // 2. Initialize Cognitive Core (Beagle Mind)
+    println!("Initializing BEAGLE Mind...");
+    let mut mind = Beagle::new();
 
-    println!("VSA Test: Created and Bound Hypervectors (Dim: 10000)");
-    println!("Similarity(A, A*B) = {}", concept_a.similarity(&bound_concept));
+    // 3. Train on example sentences
+    let corpus = [
+        "The cat runs fast",
+        "The dog runs fast",
+        "The fish swims deep",
+        "The bird flies high"
+    ];
 
-    let _engine = RuntimeEngine;
-    println!("Mind Factory Initialized.");
+    println!("Training Mind on {} sentences...", corpus.len());
+    for sentence in corpus {
+        mind.learn_sentence(sentence);
+    }
+
+    println!("Mind trained");
+
+    // 4. Verification (Optional but good for demo)
+    if let Some(sim) = mind.similarity("cat", "dog") {
+        println!("Similarity(cat, dog) = {:.4}", sim);
+    } else {
+        println!("Could not calculate similarity (words not in lexicon).");
+    }
 }
