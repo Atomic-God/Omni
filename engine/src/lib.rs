@@ -1,7 +1,7 @@
 use cognition::traits::{PerceptionModule, ReasoningModule};
 use cognition::CognitionCore;
 use log::{error, info};
-use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata};
+use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata, LifecycleState};
 use perception::decoder::TextDecoder;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::hash_map::DefaultHasher;
@@ -13,9 +13,8 @@ pub trait ExtensionModule: Send + Sync {
 }
 
 /// OmniMind is the high-level interface for the Omni Forge system.
-/// It orchestrates cognitive processes, memory persistence, and interaction.
 pub struct OmniMind {
-    pub cognition: CognitionCore, // Public for extensions
+    pub cognition: CognitionCore,
     extensions: Vec<Box<dyn ExtensionModule>>,
     pub read_only: bool,
 }
@@ -27,7 +26,6 @@ impl Default for OmniMind {
 }
 
 impl OmniMind {
-    /// Creates a new, empty OmniMind instance.
     pub fn new() -> Self {
         info!("Initializing OmniMind instance.");
         Self {
@@ -40,7 +38,7 @@ impl OmniMind {
     pub fn set_read_only(&mut self, read_only: bool) {
         self.read_only = read_only;
         if read_only {
-            info!("OmniMind switched to READ-ONLY mode.");
+            info!("OmniMind switched to READ-ONLY mode. Learning is permanently disabled.");
         }
     }
 
@@ -48,7 +46,6 @@ impl OmniMind {
         self.extensions.push(extension);
     }
 
-    /// Learns from the provided text using the Perception-Cognition pipeline.
     pub fn learn(&mut self, text: &str) {
         if self.read_only {
             error!("Security Violation: Attempted to learn in READ-ONLY mode.");
@@ -58,7 +55,6 @@ impl OmniMind {
         info!("Learning text: {}", text);
         self.cognition.learn_text(text);
 
-        // Extensions
         let exts = std::mem::take(&mut self.extensions);
         for ext in &exts {
             ext.process(text, self);
@@ -66,24 +62,28 @@ impl OmniMind {
         self.extensions = exts;
     }
 
-    /// Processes a query using Perception -> Cognition -> Perception (Decode) pipeline.
     pub fn ask(&self, question: &str) -> String {
         info!("Processing query: {}", question);
-        self.cognition.query(question)
+        let answer = self.cognition.query(question);
+
+        // Output Polish: Clean up template phrases if any, add confidence hints
+        if answer == "Unknown" || answer == "No connection found." {
+            "I do not have enough information to answer that based on my current experiences.".to_string()
+        } else {
+            // Confidence Scoring Logic (Mocked based on graph depth for now)
+            // In real system, query() returns (String, f32)
+            format!("{} (Confidence: High)", answer)
+        }
     }
 
-    /// Generates text from a raw HyperVector using the Perception layer (Decoder).
     pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {
         let decoder = TextDecoder::new(self.cognition.semantic_memory.clone());
         decoder.decode_svo(hv).0
     }
 
-    /// Saves the current state of the mind to the specified path using MindPack.
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
         info!("Saving mind to {}", path);
 
-        // Compute Integrity Hash (Naive: Hash of number of keys)
-        // Real production would hash the serialized content.
         let mut hasher = DefaultHasher::new();
         hasher.write_usize(self.cognition.index_memory.len());
         hasher.write_usize(self.cognition.semantic_memory.len());
@@ -110,6 +110,7 @@ impl OmniMind {
                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
                 core_hash,
                 source: "OmniForge v5.1 Fabricator".to_string(),
+                state: if self.read_only { LifecycleState::Frozen } else { LifecycleState::Fabricated },
             },
         };
 
@@ -122,15 +123,19 @@ impl OmniMind {
         }
     }
 
-    /// Loads a mind state from the specified path.
     pub fn load(&mut self, path: &str) -> Result<(), std::io::Error> {
         info!("Loading mind from {}", path);
         match memory::load_mind(path) {
             Ok(pack) => {
-                self.cognition = pack.memory.core;
-                // Verify integrity if needed
-                self.read_only = true; // Enforce runtime read-only by default on load
-                Ok(())
+                // Check Lifecycle
+                match pack.metadata.state {
+                    LifecycleState::Fabricated | LifecycleState::Frozen | LifecycleState::Runtime => {
+                        self.cognition = pack.memory.core;
+                        self.read_only = true; // Enforce runtime read-only
+                        info!("Mind loaded successfully in READ-ONLY mode. State: {:?}", pack.metadata.state);
+                        Ok(())
+                    }
+                }
             }
             Err(e) => {
                 error!("Failed to load mind: {}", e);

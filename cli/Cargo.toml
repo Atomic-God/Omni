@@ -10,3 +10,4 @@ ingestion = { path = "../ingestion" }
 fabricator = { path = "../fabricator" }
 log = "0.4"
 env_logger = "0.10"
+indicatif = "0.18.3"

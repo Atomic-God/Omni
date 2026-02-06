@@ -1,17 +1,20 @@
 use std::path::PathBuf;
 use walkdir::WalkDir;
 use serde::{Serialize, Deserialize};
-use std::fs;
-use log::{info, warn};
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader, Read};
+use log::{info, warn, error};
 use sha2::{Sha256, Digest};
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
+use whatlang::{detect, Lang};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkMetadata {
     pub hash: String,
     pub timestamp: u64,
     pub file_type: String,
+    pub language: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,51 +31,83 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
 
     for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
         if entry.path().is_file() {
-            if let Some(ext) = entry.path().extension() {
-                let ext_str = ext.to_string_lossy().to_lowercase();
-
-                let (content, file_type) = match ext_str.as_str() {
-                    "txt" | "md" | "rs" => {
-                        (fs::read_to_string(entry.path()).ok(), ext_str.clone())
-                    },
-                    "json" => {
-                        (read_json_as_text(entry.path()), "json".to_string())
-                    },
-                    "csv" => {
-                        (fs::read_to_string(entry.path()).ok(), "csv".to_string())
-                    },
-                    "pdf" => {
-                        warn!("PDF ingestion not yet implemented for: {:?}", entry.path());
-                        (None, "pdf".to_string())
-                    },
-                    _ => (None, "unknown".to_string()),
-                };
-
-                if let Some(text) = content {
-                    let file_chunks = chunk_text(&text);
-                    for chunk_text in file_chunks {
-                        let hash = compute_hash(&chunk_text);
-                        if seen_hashes.contains(&hash) {
-                            continue; // Deduplicate
-                        }
-                        seen_hashes.insert(hash.clone());
-
-                        chunks.push(SemanticChunk {
-                            source: entry.path().to_string_lossy().to_string(),
-                            content: chunk_text,
-                            metadata: ChunkMetadata {
-                                hash,
-                                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                file_type: file_type.clone(),
-                            },
-                        });
-                    }
-                }
-            }
+            process_file(entry.path(), &mut chunks, &mut seen_hashes);
         }
     }
     info!("Ingested {} unique chunks.", chunks.len());
     chunks
+}
+
+fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>) {
+    if let Some(ext) = path.extension() {
+        let ext_str = ext.to_string_lossy().to_lowercase();
+
+        match ext_str.as_str() {
+            "txt" | "md" | "rs" | "csv" | "json" => {
+                 match read_file_stream(path) {
+                    Ok(content) => {
+                         // Heuristic Language Detection
+                         let lang = detect(&content).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
+
+                         // Check for binary/garbage
+                         if lang == "unknown" && is_likely_binary(&content) {
+                             warn!("Skipping likely binary file: {:?}", path);
+                             return;
+                         }
+
+                         let file_chunks = chunk_text(&content);
+                         for chunk_text in file_chunks {
+                             let hash = compute_hash(&chunk_text);
+                             if seen_hashes.contains(&hash) {
+                                 continue; // Deduplicate
+                             }
+                             seen_hashes.insert(hash.clone());
+
+                             chunks.push(SemanticChunk {
+                                 source: path.to_string_lossy().to_string(),
+                                 content: chunk_text,
+                                 metadata: ChunkMetadata {
+                                     hash,
+                                     timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                     file_type: ext_str.clone(),
+                                     language: lang.clone(),
+                                 },
+                             });
+                         }
+                    },
+                    Err(e) => warn!("Failed to read file {:?}: {}", path, e),
+                 }
+            },
+            "pdf" => {
+                warn!("PDF support requires external dependencies. Skipping: {:?}", path);
+                // Robust Fallback: Log and skip.
+            },
+            _ => {
+                // Skip unknown extensions quietly
+            }
+        }
+    }
+}
+
+fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut content = String::new();
+
+    // Check file size first to avoid OOM
+    let metadata = fs::metadata(path)?;
+    if metadata.len() > 10 * 1024 * 1024 { // 10MB limit per file for now
+        warn!("File {:?} is too large ({:?} bytes). Truncating ingestion.", path, metadata.len());
+        reader.take(10 * 1024 * 1024).read_to_string(&mut content)?;
+    } else {
+        reader.read_to_string(&mut content)?;
+    }
+    Ok(content)
+}
+
+fn is_likely_binary(text: &str) -> bool {
+    // Simple check: too many null bytes or non-printable chars
+    text.chars().take(100).filter(|c| c.is_control() && !c.is_whitespace()).count() > 5
 }
 
 fn chunk_text(text: &str) -> Vec<String> {
@@ -109,22 +144,4 @@ fn compute_hash(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text);
     hex::encode(hasher.finalize())
-}
-
-fn read_json_as_text(path: &std::path::Path) -> Option<String> {
-    let content = fs::read_to_string(path).ok()?;
-    // Naive flatten: just use the raw JSON string.
-    // In a real system, we might want to extract values.
-    // For now, raw JSON provides context.
-    Some(content)
-}
-
-pub struct DirectoryWatcher {
-    // Legacy watcher logic can remain or be updated
-}
-
-impl DirectoryWatcher {
-    pub fn new(_path: String, _mind: std::sync::Arc<std::sync::Mutex<engine::OmniMind>>) -> notify::Result<Self> {
-        Ok(Self{})
-    }
 }

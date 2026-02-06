@@ -2,9 +2,14 @@ use fabricator::facade::OmniForge;
 use log::{info, error};
 use std::env;
 use std::io::{self, Write};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
 
 fn main() {
-    env_logger::init();
+    // Only init logger if RUST_LOG is set, otherwise default to quiet for CLI cleanliness
+    if env::var("RUST_LOG").is_ok() {
+        env_logger::init();
+    }
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -22,22 +27,43 @@ fn main() {
                 return;
             }
             let data_path = &args[2];
-            info!("Omni Forge v5.1 Fabricator: Ingesting reality from {}", data_path);
+            println!(" Omni Forge v5.1 Fabricator");
+            println!("===============================");
+            println!("Ingesting reality from: {}", data_path);
+
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(ProgressStyle::default_spinner()
+                .template("{spinner:.green} {msg}")
+                .unwrap()
+                .tick_chars("-/|\\"));
+            pb.set_message("Ingesting & Learning...");
+            pb.enable_steady_tick(Duration::from_millis(100));
+
+            // Fabrication happens here (blocking)
             match forge.fabricate_mind(data_path, "mind.omf") {
-                Ok(_) => println!("Success: Mind fabricated to mind.omf"),
-                Err(e) => error!("Fabrication failed: {}", e),
+                Ok(_) => {
+                    pb.finish_with_message("Fabrication Complete!");
+                    println!("Success: Sovereign Mind fabricated to 'mind.omf'");
+                },
+                Err(e) => {
+                    pb.finish_with_message("Fabrication Failed");
+                    error!("Error: {}", e);
+                }
             }
         },
         "run" => {
             let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
-            info!("Omni Forge v5.1 Runtime: Loading sovereign mind from {}...", mind_path);
+            println!(" Omni Forge v5.1 Runtime");
+            println!("===========================");
+            println!("Loading sovereign mind from {}...", mind_path);
 
             if let Err(e) = forge.load_mind(mind_path) {
                 error!("Failed to load mind: {}", e);
+                println!("Error: Could not load mind artifact. Ensure path is correct and file is valid.");
                 return;
             }
 
-            println!("Mind Loaded. Entering Runtime Mode (Read-Only).");
+            println!("Mind Loaded. Entering Read-Only Mode.");
             println!("Type 'exit' to quit.");
 
             loop {
@@ -57,21 +83,26 @@ fn main() {
             let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
             println!("Inspecting mind artifact: {}", mind_path);
             match forge.inspect_mind(mind_path) {
-                Ok(info) => println!("Metadata:\n{}", info),
+                Ok(info) => println!("{}", info), // facade inspect returns formatted string
                 Err(e) => error!("Failed to inspect mind: {}", e),
             }
         },
         "status" => {
-            println!("Omni Forge v5.1 Status: Operational");
-            println!("Host Architecture: {}", std::env::consts::ARCH);
-            println!("Host OS: {}", std::env::consts::OS);
+            println!(" Omni Forge v5.1 Status");
+            println!("========================");
+            println!("System: Operational");
+            println!("Host Arch: {}", std::env::consts::ARCH);
+            println!("Host OS:   {}", std::env::consts::OS);
 
             let profile = hte::detect();
-            println!("Hardware Truth Engine Profile:");
-            println!("  Physical Cores: {}", profile.physical_cores);
-            println!("  Logical Cores: {}", profile.logical_cores);
-            println!("  AVX2: {}", profile.avx2);
-            println!("  NEON: {}", profile.neon);
+            println!("\nHardware Truth Engine (HTE):");
+            println!("  Cores: {} Physical / {} Logical", profile.physical_cores, profile.logical_cores);
+            println!("  AVX2:  {}", if profile.avx2 { "Yes" } else { "No" });
+            println!("  NEON:  {}", if profile.neon { "Yes" } else { "No" });
+
+            if !profile.avx2 && !profile.neon {
+                println!("\n[WARNING] No SIMD acceleration detected. Performance may be degraded.");
+            }
         },
         _ => print_usage(),
     }

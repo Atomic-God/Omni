@@ -1,5 +1,5 @@
 use engine::OmniMind;
-use memory::{MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies, MindMetadata};
+use memory::{MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies, MindMetadata, LifecycleState};
 use log::{info, warn};
 use std::path::PathBuf;
 use learning::LearningEngine;
@@ -19,7 +19,7 @@ impl FabricationPipeline {
     pub fn fabricate(&self, data_path: &str) -> MindPack {
         info!("Starting fabrication from: {}", data_path);
         let mut mind = OmniMind::new();
-        let engine = LearningEngine::new();
+        let mut engine = LearningEngine::new();
 
         // Ingest data
         let path = PathBuf::from(data_path);
@@ -29,9 +29,11 @@ impl FabricationPipeline {
              engine.learn(&mut mind.cognition, chunks);
         } else {
             warn!("Data path not found or empty: {}", data_path);
-            // In production, we might want to error out if no data found.
-            // But for now, we produce an empty mind (valid).
         }
+
+        // Final consolidation
+        engine.consolidate(&mut mind.cognition);
+        engine.freeze();
 
         info!("Fabrication complete. Packaging mind.");
 
@@ -55,6 +57,7 @@ impl FabricationPipeline {
                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
                 core_hash,
                 source: data_path.to_string(),
+                state: LifecycleState::Fabricated,
             },
         }
     }
