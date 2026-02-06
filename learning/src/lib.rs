@@ -49,23 +49,26 @@ impl LearningEngine {
             *relations = unique.into_iter().collect();
         }
 
-        // 2. Soft Cap & Decay Governance
-        // In a real system, we would track access timestamps per relation.
-        // For v5.1, we enforce a strict cap.
+        // 2. Conflict Resolution & Decay Governance
+        // If a subject has contradictory relations or too many, we prioritize recent or frequent ones.
+        // For v6.0, we simulate "reinforcement beats decay":
+        // - Truncate list to soft cap (100).
+        // - In future, we would sort by weight. Here, simple truncation assumes FIFO/append order is temporal.
+
         let max_rels_per_concept = 100;
         let mut pruned_count = 0;
-        for (subject, relations) in core.relation_graph.iter_mut() {
+        for (_subject, relations) in core.relation_graph.iter_mut() {
             if relations.len() > max_rels_per_concept {
-                // Decay strategy: Keep the newest/strongest.
-                // Since we don't track strength yet, truncate.
-                // Improvement: Randomly drop excess to simulate decay of weak links?
-                // Deterministic truncation is safer for now.
-                relations.truncate(max_rels_per_concept);
+                // Keep the *latest* added relations (tail of the vector)
+                // relations is [oldest ... newest]
+                let start_idx = relations.len() - max_rels_per_concept;
+                *relations = relations.split_off(start_idx);
                 pruned_count += 1;
             }
         }
+
         if pruned_count > 0 {
-            warn!("Pruned {} overgrown concepts during consolidation.", pruned_count);
+            warn!("Pruned {} overgrown concepts (retaining recent memories).", pruned_count);
         }
     }
 
@@ -75,7 +78,6 @@ impl LearningEngine {
     }
 
     pub fn unfreeze(&mut self) {
-         // Explicit override if needed, though typically one-way.
          info!("Unfreezing Learning Engine. Updates allowed.");
          self.frozen = false;
     }

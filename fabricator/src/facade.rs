@@ -2,6 +2,8 @@ use crate::FabricationPipeline;
 use engine::OmniMind;
 use memory::save_mind;
 use std::sync::{Arc, Mutex};
+use std::fs::File;
+use std::io::Write;
 
 pub struct OmniForge {
     pub mind: Arc<Mutex<OmniMind>>,
@@ -30,10 +32,21 @@ impl OmniForge {
         mind.ask(query)
     }
 
+    pub fn explain_concept(&self, concept: &str) -> Result<String, std::io::Error> {
+        let mind = self.mind.lock().unwrap();
+        Ok(mind.explain(concept))
+    }
+
+    pub fn export_mind(&self, output_path: &str) -> Result<(), std::io::Error> {
+        let mind = self.mind.lock().unwrap();
+        // Export relation graph to JSON
+        let json = serde_json::to_string_pretty(&mind.cognition.relation_graph)?;
+        let mut file = File::create(output_path)?;
+        file.write_all(json.as_bytes())?;
+        Ok(())
+    }
+
     pub fn inspect_mind(&self, path: &str) -> Result<String, std::io::Error> {
-        // Load without initializing engine, just read headers/metadata
-        // memory::load_mind reads the whole zip. Ideally we'd just read metadata.
-        // For now, loading full mind is acceptable for inspection.
         let pack = memory::load_mind(path)?;
         Ok(format!("{:#?}", pack.metadata))
     }

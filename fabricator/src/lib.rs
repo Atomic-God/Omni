@@ -6,6 +6,7 @@ use learning::LearningEngine;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod facade;
+pub mod live;
 
 pub struct FabricationPipeline;
 

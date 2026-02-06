@@ -48,6 +48,7 @@ impl OmniMind {
         self.extensions.push(extension);
     }
 
+    #[cfg(feature = "fabrication")]
     pub fn learn(&mut self, text: &str) {
         if self.read_only {
             error!("Security Violation: Attempted to learn in READ-ONLY mode.");
@@ -64,6 +65,12 @@ impl OmniMind {
         self.extensions = exts;
     }
 
+    #[cfg(not(feature = "fabrication"))]
+    pub fn learn(&mut self, _text: &str) {
+        error!("Security Violation: Fabrication features not compiled in.");
+        panic!("Runtime Integrity Violation: This binary is compiled for Runtime only. Learning is impossible.");
+    }
+
     pub fn ask(&self, question: &str) -> String {
         info!("Processing query: {}", question);
         let answer = self.cognition.query(question);
@@ -71,8 +78,14 @@ impl OmniMind {
         if answer == "Unknown" || answer == "No connection found." {
             "I do not have enough information to answer that based on my current experiences.".to_string()
         } else {
-            format!("{} (Confidence: High)", answer)
+            // Enhanced Output is now in cognition.query_internal
+            answer
         }
+    }
+
+    pub fn explain(&self, concept: &str) -> String {
+        info!("Processing explain request for: {}", concept);
+        self.cognition.explain_concept(concept)
     }
 
     pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {

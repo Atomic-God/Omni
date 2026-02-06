@@ -10,16 +10,11 @@ use core_vsa::index::LshIndex;
 use perception::tokenizer;
 use traits::{PerceptionModule, ReasoningModule};
 
-/// The core cognitive engine implementing BEAGLE-style learning and VSA reasoning.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CognitionCore {
-    /// Static random ID for each word (Environmental Vector).
     pub index_memory: HashMap<String, HyperVector>,
-    /// Learned meaning (Contextual Vector) derived from co-occurrence.
     pub semantic_memory: HashMap<String, HyperVector>,
-    /// Explicit relation graph for symbolic reasoning (e.g., "is-a" relationships).
     pub relation_graph: HashMap<String, Vec<String>>,
-    /// Episodic memory storing structural sentence vectors via LSH Index.
     pub sentence_memory: LshIndex,
 }
 
@@ -62,17 +57,13 @@ impl CognitionCore {
     fn learn_text_internal(&mut self, text: &str) {
         let words = tokenizer::tokenize(text);
 
-        // 1. Index Learning (Deterministic)
         for word in &words {
             if !self.index_memory.contains_key(word) {
-                // Deterministic Seeding: Hash the word to get a seed
                 let mut hasher = DefaultHasher::new();
                 word.hash(&mut hasher);
                 let seed = hasher.finish();
 
                 let index_vec = HyperVector::deterministic(seed);
-                // Semantic vector starts random (or orthogonal? usually random).
-                // Use a derived seed for semantic vector to maintain determinism.
                 let semantic_vec = HyperVector::deterministic(seed.wrapping_add(1));
 
                 self.index_memory.insert(word.clone(), index_vec);
@@ -80,7 +71,6 @@ impl CognitionCore {
             }
         }
 
-        // 2. Graph Learning (X is Y)
         for i in 0..words.len() {
             if words[i] == "is" && i > 0 && i + 1 < words.len() {
                 let subject = words[i - 1].clone();
@@ -99,7 +89,6 @@ impl CognitionCore {
             }
         }
 
-        // 3. Semantic Context Learning
         for (i, target_word) in words.iter().enumerate() {
             let mut context_bundle: Option<HyperVector> = None;
             for (j, context_word) in words.iter().enumerate() {
@@ -118,14 +107,11 @@ impl CognitionCore {
             }
         }
 
-        // 4. Episodic Memory
         if let Some(sv) = self.sentence_vector(text) {
             self.sentence_memory.insert(sv);
         }
     }
 
-    /// Computes a deterministic integrity hash of the cognition state.
-    /// Hashes the sorted keys of index_memory.
     pub fn compute_integrity_hash(&self) -> String {
         let mut keys: Vec<&String> = self.index_memory.keys().collect();
         keys.sort();
@@ -160,10 +146,48 @@ impl CognitionCore {
         let target = words.last().unwrap();
 
         if let Some(path) = self.multi_hop_inference(subject, target, 3) {
-            format!("Yes. Reasoning: {}", path.join(" -> "))
+            // Enhanced Output: Generate a reasoned sentence
+            self.generate_explanation(&path)
         } else {
             "No connection found.".to_string()
         }
+    }
+
+    fn generate_explanation(&self, path: &[String]) -> String {
+        if path.len() < 2 { return path[0].clone(); }
+
+        let mut explanation = format!("{} is related to {}", path[0], path[1]);
+        if path.len() > 2 {
+            explanation.push_str(&format!(", which is related to {}", path[2]));
+        }
+        if path.len() > 3 {
+             explanation.push_str(", and so on");
+        }
+        format!("Yes. Logic: {} (Chain: {})", explanation, path.join(" -> "))
+    }
+
+    pub fn explain_concept(&self, concept: &str) -> String {
+        let mut report = format!("Concept: {}\n", concept);
+
+        // 1. Direct Relations
+        if let Some(neighbors) = self.relation_graph.get(concept) {
+            report.push_str("Directly related to: ");
+            report.push_str(&neighbors.join(", "));
+            report.push_str("\n");
+        } else {
+            report.push_str("No direct relations known.\n");
+        }
+
+        // 2. Semantic Neighborhood
+        let similar = self.most_similar(concept);
+        if !similar.is_empty() {
+            report.push_str("Semantically similar to: ");
+            let sim_words: Vec<String> = similar.into_iter().take(5).map(|(w, _)| w).collect();
+            report.push_str(&sim_words.join(", "));
+            report.push_str("\n");
+        }
+
+        report
     }
 
     pub fn multi_hop_inference(&self, start: &str, target: &str, max_depth: usize) -> Option<Vec<String>> {
@@ -177,7 +201,6 @@ impl CognitionCore {
             if current == target { return Some(path); }
             if path.len() > max_depth { continue; }
 
-            // Explicit Relations
             if let Some(neighbors) = self.relation_graph.get(&current) {
                 for neighbor in neighbors {
                     if !visited.contains(neighbor) {
@@ -189,7 +212,6 @@ impl CognitionCore {
                 }
             }
 
-            // Implicit Semantic Similarity
             let similar = self.most_similar(&current).into_iter().take(3);
             for (word, score) in similar {
                 if score > 0.1 && !visited.contains(&word) {
