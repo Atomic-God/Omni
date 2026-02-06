@@ -79,11 +79,26 @@ fn main() {
                 println!("Mind: {}", answer);
             }
         },
+        "query" => {
+             if args.len() < 4 {
+                println!("Usage: omni-forge query <mind.omf> <question>");
+                return;
+             }
+             let mind_path = &args[2];
+             let question = &args[3..].join(" ");
+
+             if let Err(e) = forge.load_mind(mind_path) {
+                error!("Failed to load mind: {}", e);
+                return;
+             }
+             let answer = forge.run_query(question);
+             println!("{}", answer);
+        },
         "inspect" => {
             let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
             println!("Inspecting mind artifact: {}", mind_path);
             match forge.inspect_mind(mind_path) {
-                Ok(info) => println!("{}", info), // facade inspect returns formatted string
+                Ok(info) => println!("{}", info),
                 Err(e) => error!("Failed to inspect mind: {}", e),
             }
         },
@@ -109,9 +124,10 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("Omni Forge v5.1 (Production) Usage:");
-    println!("  omni-forge fabricate <data_path>  # Ingest data and build a mind");
-    println!("  omni-forge run <mind.omf>         # Run the mind in read-only mode");
-    println!("  omni-forge inspect <mind.omf>     # View mind metadata");
-    println!("  omni-forge status                 # Check system status and HTE");
+    println!("Omni Forge v5.1 (Industrial Compiler) Usage:");
+    println!("  omni-forge fabricate <data_path>        # Build a sovereign mind from raw data");
+    println!("  omni-forge run <mind.omf>               # Interactive read-only runtime shell");
+    println!("  omni-forge query <mind.omf> <question>  # Single-shot query execution");
+    println!("  omni-forge inspect <mind.omf>           # Audit mind artifact metadata");
+    println!("  omni-forge status                       # System health and HTE report");
 }

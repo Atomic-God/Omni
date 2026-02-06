@@ -1,48 +1,66 @@
-# Omni Forge v5.1
+# Omni Forge v5.1 Industrial Mind-Factory
 
-Omni Forge is a standalone, decentralized AI fabrication system based on Neuro-Symbolic Vector Symbolic Architectures (VSA).
+Omni Forge is a compiler that builds Sovereign AI Minds. It is not a chatbot, a model wrapper, or a demo. It is a production-grade fabrication system for Neuro-Symbolic Artificial Intelligence using Vector Symbolic Architectures (VSA).
+
+## Core Identity
+
+*   **Sovereign:** Minds run offline, on-device, without cloud dependencies.
+*   **Deterministic:** Fabrication is reproducible; Runtime is predictable.
+*   **Neuro-Symbolic:** Combines statistical learning (BEAGLE) with symbolic reasoning (VSA/HDC).
+*   **Industrial:** Built for large-scale ingestion, continuous learning, and immutable deployment.
 
 ## Architecture
 
-*   `core-vsa`: Mathematical engine for Hypervectors (bipolar, 10k dimensions) and Indexing.
-*   `cognition`: Reasoning Core (BEAGLE-style learning, Graph reasoning, Inference).
-*   `perception`: Encoding (Text -> HV) and Decoding (HV -> Text).
-*   `memory`: Persistence layer (Zip-compressed MindPack).
-*   `engine`: OmniMind Fabricator (Facade for all components).
-*   `cli`: Interactive Runtime Shell.
-*   `ingest`: Knowledge ingestion system.
-*   `api`: REST API service.
+Omni Forge enforces a strict **Fabrication-Runtime Duality**:
 
-## Fabrication-Runtime Duality
+1.  **Fabricator (Compiler):**
+    *   Ingests raw data (Text, Code, Logs, PDF, CSV, etc.).
+    *   Learns structure and semantics.
+    *   Consolidates memory (deduplication, pruning).
+    *   Produces an immutable `.omf` artifact.
+2.  **Runtime (Engine):**
+    *   Loads `.omf` artifacts.
+    *   Enforces READ-ONLY state (panics on mutation attempts).
+    *   Executes reasoning queries (Multi-hop inference, Analogy).
+    *   Runs on 400k AnTuTu class hardware.
 
-Omni Forge operates in two modes:
-1.  **Fabrication**: Learning from text/files (`train`, `ingest`).
-2.  **Runtime**: Reasoning and answering (`ask`, `infer`).
+## Quick Start
 
-## Usage
-
-### CLI
-
+### 1. Fabricate a Mind
+Ingest a dataset to build a new mind.
 ```bash
-cargo run -p cli
+omni-forge fabricate ./my_dataset
 ```
 
-Commands:
-- `train <text>`: Learn from text.
-- `ask <query>`: Ask a question (e.g., "What does dog eat?").
-- `save-mind`: Save state to `mind.omf`.
-- `load-mind`: Load state from `mind.omf`.
-
-### API
-
+### 2. Inspect the Artifact
+Audit the metadata, OS/Arch compatibility, and hashes.
 ```bash
-# Build Docker image
-docker build -t omni-forge .
-# Run
-docker run -p 3000:3000 omni-forge
+omni-forge inspect mind.omf
 ```
 
-## Development
+### 3. Run the Runtime
+Enter the interactive read-only shell.
+```bash
+omni-forge run mind.omf
+```
 
-*   **Test**: `cargo test`
-*   **Benchmark**: `cargo bench`
+### 4. Single Query
+Execute a single reasoning task.
+```bash
+omni-forge query mind.omf "What does system build?"
+```
+
+## Supported Inputs
+*   **Text:** .txt, .md
+*   **Code:** .rs, .py, .c, .cpp, .h, .json, .toml, .yaml
+*   **Data:** .csv
+*   **Streams:** stdin support via library API.
+
+## Safety & Governance
+*   **Lifecycle States:** `Fabricated` -> `Frozen` -> `Runtime`.
+*   **Memory Safety:** Soft caps on relation graphs; 10MB chunking limits.
+*   **Integrity:** SHA256 content deduplication; Core state hashing.
+*   **OS Agnostic:** Path normalization and hardware detection (HTE) for Linux, macOS, Windows.
+
+## License
+Proprietary / Internal.

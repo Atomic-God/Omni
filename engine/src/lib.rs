@@ -4,8 +4,6 @@ use log::{error, info};
 use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata, LifecycleState};
 use perception::decoder::TextDecoder;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 
 /// Trait for extending OmniMind capabilities.
 pub trait ExtensionModule: Send + Sync {
@@ -36,6 +34,10 @@ impl OmniMind {
     }
 
     pub fn set_read_only(&mut self, read_only: bool) {
+        if self.read_only && !read_only {
+             error!("Security Violation: Attempted to revert READ-ONLY mode.");
+             panic!("Runtime Integrity Violation: Cannot revert from frozen state.");
+        }
         self.read_only = read_only;
         if read_only {
             info!("OmniMind switched to READ-ONLY mode. Learning is permanently disabled.");
@@ -66,12 +68,9 @@ impl OmniMind {
         info!("Processing query: {}", question);
         let answer = self.cognition.query(question);
 
-        // Output Polish: Clean up template phrases if any, add confidence hints
         if answer == "Unknown" || answer == "No connection found." {
             "I do not have enough information to answer that based on my current experiences.".to_string()
         } else {
-            // Confidence Scoring Logic (Mocked based on graph depth for now)
-            // In real system, query() returns (String, f32)
             format!("{} (Confidence: High)", answer)
         }
     }
@@ -84,10 +83,8 @@ impl OmniMind {
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
         info!("Saving mind to {}", path);
 
-        let mut hasher = DefaultHasher::new();
-        hasher.write_usize(self.cognition.index_memory.len());
-        hasher.write_usize(self.cognition.semantic_memory.len());
-        let core_hash = format!("{:x}", hasher.finish());
+        // Use proper integrity hash from CognitionCore
+        let core_hash = self.cognition.compute_integrity_hash();
 
         let pack = MindPack {
             version: "5.1".to_string(),

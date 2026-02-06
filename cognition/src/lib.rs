@@ -1,6 +1,8 @@
 use core_vsa::HyperVector;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 pub mod traits;
 
@@ -35,7 +37,7 @@ impl PerceptionModule for CognitionCore {
 
 impl ReasoningModule for CognitionCore {
     fn infer(&self, start: &str, target: &str) -> Option<Vec<String>> {
-        self.infer(start, target)
+        self.multi_hop_inference(start, target, 3)
     }
 
     fn query(&self, query_str: &str) -> String {
@@ -48,7 +50,6 @@ impl ReasoningModule for CognitionCore {
 }
 
 impl CognitionCore {
-    /// Creates a new, empty CognitionCore.
     pub fn new() -> Self {
         Self {
             index_memory: HashMap::new(),
@@ -61,13 +62,21 @@ impl CognitionCore {
     fn learn_text_internal(&mut self, text: &str) {
         let words = tokenizer::tokenize(text);
 
-        // 1. Index Learning
+        // 1. Index Learning (Deterministic)
         for word in &words {
             if !self.index_memory.contains_key(word) {
-                let vec = HyperVector::random();
-                self.index_memory.insert(word.clone(), vec.clone());
-                self.semantic_memory
-                    .insert(word.clone(), HyperVector::random());
+                // Deterministic Seeding: Hash the word to get a seed
+                let mut hasher = DefaultHasher::new();
+                word.hash(&mut hasher);
+                let seed = hasher.finish();
+
+                let index_vec = HyperVector::deterministic(seed);
+                // Semantic vector starts random (or orthogonal? usually random).
+                // Use a derived seed for semantic vector to maintain determinism.
+                let semantic_vec = HyperVector::deterministic(seed.wrapping_add(1));
+
+                self.index_memory.insert(word.clone(), index_vec);
+                self.semantic_memory.insert(word.clone(), semantic_vec);
             }
         }
 
@@ -94,9 +103,7 @@ impl CognitionCore {
         for (i, target_word) in words.iter().enumerate() {
             let mut context_bundle: Option<HyperVector> = None;
             for (j, context_word) in words.iter().enumerate() {
-                if i == j {
-                    continue;
-                }
+                if i == j { continue; }
                 let context_vec = self.index_memory.get(context_word).unwrap();
                 context_bundle = match context_bundle {
                     Some(b) => Some(b.bundle(context_vec)),
@@ -106,8 +113,7 @@ impl CognitionCore {
             if let Some(ctx) = context_bundle {
                 if let Some(current_semantic) = self.semantic_memory.get(target_word) {
                     let new_semantic = current_semantic.bundle(&ctx);
-                    self.semantic_memory
-                        .insert(target_word.clone(), new_semantic);
+                    self.semantic_memory.insert(target_word.clone(), new_semantic);
                 }
             }
         }
@@ -118,11 +124,25 @@ impl CognitionCore {
         }
     }
 
+    /// Computes a deterministic integrity hash of the cognition state.
+    /// Hashes the sorted keys of index_memory.
+    pub fn compute_integrity_hash(&self) -> String {
+        let mut keys: Vec<&String> = self.index_memory.keys().collect();
+        keys.sort();
+
+        let mut hasher = DefaultHasher::new();
+        for key in keys {
+            key.hash(&mut hasher);
+        }
+        format!("{:x}", hasher.finish())
+    }
+
     fn query_internal(&self, query_str: &str) -> String {
         let words = tokenizer::tokenize(query_str);
+        if words.len() < 2 { return "Query too short.".to_string(); }
 
-        if words.len() < 3 {
-            return "Query too short.".to_string();
+        if words[0] == "analogy" && words.len() >= 4 {
+            return self.solve_analogy(&words[1], &words[2], &words[3]);
         }
 
         if words[0] == "what" && words[1] == "does" && words.len() >= 4 {
@@ -139,31 +159,25 @@ impl CognitionCore {
         let subject = &words[1];
         let target = words.last().unwrap();
 
-        if let Some(path) = self.infer(subject, target) {
+        if let Some(path) = self.multi_hop_inference(subject, target, 3) {
             format!("Yes. Reasoning: {}", path.join(" -> "))
         } else {
             "No connection found.".to_string()
         }
     }
 
-    pub fn infer(&self, start: &str, target: &str) -> Option<Vec<String>> {
-        let threshold = 0.02;
-        // Queue: (CurrentNode, PathSoFar)
-        let mut queue = std::collections::VecDeque::new();
-        let mut visited = std::collections::HashSet::new();
+    pub fn multi_hop_inference(&self, start: &str, target: &str, max_depth: usize) -> Option<Vec<String>> {
+        let mut queue = VecDeque::new();
+        let mut visited = HashSet::new();
 
         queue.push_back((start.to_string(), vec![start.to_string()]));
         visited.insert(start.to_string());
 
         while let Some((current, path)) = queue.pop_front() {
-            if current == target {
-                return Some(path);
-            }
+            if current == target { return Some(path); }
+            if path.len() > max_depth { continue; }
 
-            // Limit depth to avoid explosion in prototype
-            if path.len() > 5 { continue; }
-
-            // 1. Explicit
+            // Explicit Relations
             if let Some(neighbors) = self.relation_graph.get(&current) {
                 for neighbor in neighbors {
                     if !visited.contains(neighbor) {
@@ -175,23 +189,46 @@ impl CognitionCore {
                 }
             }
 
-            // 2. Implicit
-            let similar_words = self.most_similar(&current);
-            for (word, score) in similar_words {
-                if score > threshold && !visited.contains(&word) {
-                    visited.insert(word.clone());
-                    let mut new_path = path.clone();
-                    new_path.push(word.clone());
-                    queue.push_back((word.clone(), new_path));
+            // Implicit Semantic Similarity
+            let similar = self.most_similar(&current).into_iter().take(3);
+            for (word, score) in similar {
+                if score > 0.1 && !visited.contains(&word) {
+                     visited.insert(word.clone());
+                     let mut new_path = path.clone();
+                     new_path.push(word.clone());
+                     queue.push_back((word.clone(), new_path));
                 }
             }
         }
         None
     }
 
+    pub fn solve_analogy(&self, a: &str, b: &str, c: &str) -> String {
+        if let (Some(va), Some(vb), Some(vc)) = (
+            self.semantic_memory.get(a),
+            self.semantic_memory.get(b),
+            self.semantic_memory.get(c)
+        ) {
+            let relation = va.bind(vb);
+            let target_vec = vc.bind(&relation);
+
+            let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
+                .map(|(k, v)| (k.clone(), target_vec.similarity(v)))
+                .collect();
+
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            for (word, _) in results {
+                if word != a && word != b && word != c {
+                    return word;
+                }
+            }
+        }
+        "Unknown".to_string()
+    }
+
     fn sentence_vector_internal(&self, sentence: &str) -> Option<HyperVector> {
         let words = tokenizer::tokenize(sentence);
-
         if words.len() >= 3 {
             let s_vec = self.semantic_memory.get(&words[0])?;
             let v_vec = self.semantic_memory.get(&words[1])?;
@@ -203,38 +240,19 @@ impl CognitionCore {
 
             Some(s_bound.bundle(&v_bound).bundle(&o_bound))
         } else {
-            let mut bundle: Option<HyperVector> = None;
-            for word in words {
-                if let Some(vec) = self.semantic_memory.get(&word) {
-                    bundle = match bundle {
-                        Some(b) => Some(b.bundle(vec)),
-                        None => Some(vec.clone()),
-                    };
-                }
-            }
-            bundle
+            None
         }
     }
 
     fn query_subject_action(&self, subject: &str, verb: &str) -> Vec<String> {
-        let s_vec = match self.semantic_memory.get(subject) {
-            Some(v) => v,
-            None => return Vec::new(),
-        };
-        let v_vec = match self.semantic_memory.get(verb) {
-            Some(v) => v,
-            None => return Vec::new(),
-        };
+        let s_vec = match self.semantic_memory.get(subject) { Some(v) => v, None => return Vec::new() };
+        let v_vec = match self.semantic_memory.get(verb) { Some(v) => v, None => return Vec::new() };
 
-        let query = s_vec
-            .bind(&core_vsa::ROLE_SUBJECT)
-            .bundle(&v_vec.bind(&core_vsa::ROLE_VERB));
+        let query = s_vec.bind(&core_vsa::ROLE_SUBJECT).bundle(&v_vec.bind(&core_vsa::ROLE_VERB));
 
         if let Some(sent) = self.sentence_memory.search(&query) {
             let object_guess = sent.bind(&core_vsa::ROLE_OBJECT);
-            let mut results: Vec<(String, f32)> = self
-                .semantic_memory
-                .iter()
+             let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
                 .map(|(k, v)| (k.clone(), object_guess.similarity(v)))
                 .collect();
 
@@ -246,13 +264,8 @@ impl CognitionCore {
     }
 
     pub fn most_similar(&self, word: &str) -> Vec<(String, f32)> {
-        let target_vec = match self.semantic_memory.get(word) {
-            Some(v) => v,
-            None => return Vec::new(),
-        };
-        let mut results: Vec<(String, f32)> = self
-            .semantic_memory
-            .iter()
+        let target_vec = match self.semantic_memory.get(word) { Some(v) => v, None => return Vec::new() };
+        let mut results: Vec<(String, f32)> = self.semantic_memory.iter()
             .map(|(k, v)| (k.clone(), target_vec.similarity(v)))
             .collect();
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));

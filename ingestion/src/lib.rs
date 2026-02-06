@@ -27,14 +27,46 @@ pub struct SemanticChunk {
 pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     let mut chunks = Vec::new();
     let mut seen_hashes = HashSet::new();
-    info!("Ingesting path: {:?}", path);
+    info!("Ingestion Pipeline: Scanning {:?}", path);
 
-    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-        if entry.path().is_file() {
-            process_file(entry.path(), &mut chunks, &mut seen_hashes);
+    if path.is_file() {
+        process_file(&path, &mut chunks, &mut seen_hashes);
+    } else {
+        for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+            if entry.path().is_file() {
+                process_file(entry.path(), &mut chunks, &mut seen_hashes);
+            }
         }
     }
-    info!("Ingested {} unique chunks.", chunks.len());
+    info!("Ingestion Pipeline: Ingested {} unique structural chunks.", chunks.len());
+    chunks
+}
+
+pub fn ingest_stream(source_name: &str, reader: &mut dyn BufRead) -> Vec<SemanticChunk> {
+    let mut chunks = Vec::new();
+    let mut content = String::new();
+    if let Err(e) = reader.read_to_string(&mut content) {
+        error!("Stream ingestion failed: {}", e);
+        return chunks;
+    }
+
+    let hash = compute_hash(&content);
+    let lang = detect(&content).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
+
+    // Chunking for stream
+    let file_chunks = chunk_text(&content);
+    for chunk_text in file_chunks {
+         chunks.push(SemanticChunk {
+             source: source_name.to_string(),
+             content: chunk_text,
+             metadata: ChunkMetadata {
+                 hash: hash.clone(), // Use whole stream hash or chunk hash? Chunk hash better for dedupe.
+                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                 file_type: "stream".to_string(),
+                 language: lang.clone(),
+             },
+         });
+    }
     chunks
 }
 
@@ -43,7 +75,7 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
         let ext_str = ext.to_string_lossy().to_lowercase();
 
         match ext_str.as_str() {
-            "txt" | "md" | "rs" | "csv" | "json" => {
+            "txt" | "md" | "rs" | "csv" | "json" | "py" | "c" | "cpp" | "h" | "toml" | "yaml" | "xml" => {
                  match read_file_stream(path) {
                     Ok(content) => {
                          // Heuristic Language Detection
@@ -80,7 +112,6 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
             },
             "pdf" => {
                 warn!("PDF support requires external dependencies. Skipping: {:?}", path);
-                // Robust Fallback: Log and skip.
             },
             _ => {
                 // Skip unknown extensions quietly
@@ -111,7 +142,10 @@ fn is_likely_binary(text: &str) -> bool {
 }
 
 fn chunk_text(text: &str) -> Vec<String> {
-    let max_chunk_size = 1000;
+    // Structural chunking can be improved here.
+    // For code, splitting by function/block would be better.
+    // For now, sticking to robust paragraph/newline splitting.
+    let max_chunk_size = 2000; // Increased for code blocks
     let paragraphs: Vec<&str> = text.split("\n\n").collect();
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
