@@ -2,6 +2,7 @@ use engine::OmniMind;
 use memory::{MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies};
 use log::info;
 use std::path::PathBuf;
+use learning::LearningEngine;
 
 pub mod facade;
 
@@ -15,14 +16,14 @@ impl FabricationPipeline {
     pub fn fabricate(&self, data_path: &str) -> MindPack {
         info!("Starting fabrication from: {}", data_path);
         let mut mind = OmniMind::new();
+        let engine = LearningEngine::new();
 
         // Ingest data
         let path = PathBuf::from(data_path);
         if path.exists() {
              let chunks = ingestion::ingest_path(path);
-             for chunk in chunks {
-                 mind.learn(&chunk.content);
-             }
+             // Use Learning Engine
+             engine.learn(&mut mind.cognition, chunks);
         } else if data_path == "default" {
             mind.learn("the dog is an animal");
             mind.learn("the animal is living");

@@ -44,11 +44,34 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
 }
 
 fn chunk_text(text: &str) -> Vec<String> {
-    // Naive paragraph splitter
-    text.split("\n\n")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    // Semantic + Size-bounded chunking
+    let max_chunk_size = 1000;
+    let paragraphs: Vec<&str> = text.split("\n\n").collect();
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    for para in paragraphs {
+        let trimmed = para.trim();
+        if trimmed.is_empty() { continue; }
+
+        if current_chunk.len() + trimmed.len() > max_chunk_size {
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.clone());
+                current_chunk.clear();
+            }
+        }
+
+        if !current_chunk.is_empty() {
+            current_chunk.push_str("\n\n");
+        }
+        current_chunk.push_str(trimmed);
+    }
+
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk);
+    }
+
+    chunks
 }
 
 pub struct DirectoryWatcher {
