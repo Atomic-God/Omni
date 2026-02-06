@@ -8,6 +8,8 @@ use sha2::{Sha256, Digest};
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use whatlang::{detect, Lang};
+use regex::Regex;
+use once_cell::sync::Lazy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkMetadata {
@@ -15,6 +17,7 @@ pub struct ChunkMetadata {
     pub timestamp: u64,
     pub file_type: String,
     pub language: String,
+    pub structure_type: String, // e.g., "function", "class", "text_block"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,16 +57,17 @@ pub fn ingest_stream(source_name: &str, reader: &mut dyn BufRead) -> Vec<Semanti
     let lang = detect(&content).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
 
     // Chunking for stream
-    let file_chunks = chunk_text(&content);
-    for chunk_text in file_chunks {
+    let file_chunks = chunk_content(&content, "stream");
+    for (chunk_text, struct_type) in file_chunks {
          chunks.push(SemanticChunk {
              source: source_name.to_string(),
              content: chunk_text,
              metadata: ChunkMetadata {
-                 hash: hash.clone(), // Use whole stream hash or chunk hash? Chunk hash better for dedupe.
+                 hash: hash.clone(),
                  timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
                  file_type: "stream".to_string(),
                  language: lang.clone(),
+                 structure_type: struct_type,
              },
          });
     }
@@ -78,17 +82,15 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
             "txt" | "md" | "rs" | "csv" | "json" | "py" | "c" | "cpp" | "h" | "toml" | "yaml" | "xml" => {
                  match read_file_stream(path) {
                     Ok(content) => {
-                         // Heuristic Language Detection
                          let lang = detect(&content).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
 
-                         // Check for binary/garbage
                          if lang == "unknown" && is_likely_binary(&content) {
                              warn!("Skipping likely binary file: {:?}", path);
                              return;
                          }
 
-                         let file_chunks = chunk_text(&content);
-                         for chunk_text in file_chunks {
+                         let file_chunks = chunk_content(&content, &ext_str);
+                         for (chunk_text, struct_type) in file_chunks {
                              let hash = compute_hash(&chunk_text);
                              if seen_hashes.contains(&hash) {
                                  continue; // Deduplicate
@@ -103,6 +105,7 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
                                      timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
                                      file_type: ext_str.clone(),
                                      language: lang.clone(),
+                                     structure_type: struct_type,
                                  },
                              });
                          }
@@ -114,7 +117,7 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
                 warn!("PDF support requires external dependencies. Skipping: {:?}", path);
             },
             _ => {
-                // Skip unknown extensions quietly
+                // Skip unknown
             }
         }
     }
@@ -124,11 +127,9 @@ fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut content = String::new();
-
-    // Check file size first to avoid OOM
     let metadata = fs::metadata(path)?;
-    if metadata.len() > 10 * 1024 * 1024 { // 10MB limit per file for now
-        warn!("File {:?} is too large ({:?} bytes). Truncating ingestion.", path, metadata.len());
+    if metadata.len() > 10 * 1024 * 1024 {
+        warn!("File {:?} is too large ({:?} bytes). Truncating.", path, metadata.len());
         reader.take(10 * 1024 * 1024).read_to_string(&mut content)?;
     } else {
         reader.read_to_string(&mut content)?;
@@ -137,15 +138,45 @@ fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
 }
 
 fn is_likely_binary(text: &str) -> bool {
-    // Simple check: too many null bytes or non-printable chars
     text.chars().take(100).filter(|c| c.is_control() && !c.is_whitespace()).count() > 5
 }
 
-fn chunk_text(text: &str) -> Vec<String> {
-    // Structural chunking can be improved here.
-    // For code, splitting by function/block would be better.
-    // For now, sticking to robust paragraph/newline splitting.
-    let max_chunk_size = 2000; // Increased for code blocks
+static RUST_FN_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"fn\s+(\w+)").unwrap());
+static PY_DEF_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"def\s+(\w+)").unwrap());
+static C_FN_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\w+\s+(\w+)\s*\(").unwrap());
+
+fn chunk_content(text: &str, file_type: &str) -> Vec<(String, String)> {
+    // Structural extraction
+    match file_type {
+        "rs" => chunk_code(text, &RUST_FN_REGEX),
+        "py" => chunk_code(text, &PY_DEF_REGEX),
+        "c" | "cpp" | "h" => chunk_code(text, &C_FN_REGEX),
+        _ => chunk_text_default(text),
+    }
+}
+
+fn chunk_code(text: &str, regex: &Regex) -> Vec<(String, String)> {
+    // Naive code chunking: Split by double newlines, then identify if chunk defines a function.
+    let paragraphs: Vec<&str> = text.split("\n\n").collect();
+    let mut chunks = Vec::new();
+
+    for para in paragraphs {
+        let trimmed = para.trim();
+        if trimmed.is_empty() { continue; }
+
+        let struct_type = if let Some(caps) = regex.captures(trimmed) {
+            format!("function:{}", &caps[1])
+        } else {
+            "code_block".to_string()
+        };
+
+        chunks.push((trimmed.to_string(), struct_type));
+    }
+    chunks
+}
+
+fn chunk_text_default(text: &str) -> Vec<(String, String)> {
+    let max_chunk_size = 2000;
     let paragraphs: Vec<&str> = text.split("\n\n").collect();
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
@@ -156,7 +187,7 @@ fn chunk_text(text: &str) -> Vec<String> {
 
         if current_chunk.len() + trimmed.len() > max_chunk_size {
             if !current_chunk.is_empty() {
-                chunks.push(current_chunk.clone());
+                chunks.push((current_chunk.clone(), "text_block".to_string()));
                 current_chunk.clear();
             }
         }
@@ -168,7 +199,7 @@ fn chunk_text(text: &str) -> Vec<String> {
     }
 
     if !current_chunk.is_empty() {
-        chunks.push(current_chunk);
+        chunks.push((current_chunk, "text_block".to_string()));
     }
 
     chunks

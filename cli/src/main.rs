@@ -6,7 +6,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 
 fn main() {
-    // Only init logger if RUST_LOG is set, otherwise default to quiet for CLI cleanliness
     if env::var("RUST_LOG").is_ok() {
         env_logger::init();
     }
@@ -27,8 +26,8 @@ fn main() {
                 return;
             }
             let data_path = &args[2];
-            println!(" Omni Forge v5.1 Fabricator");
-            println!("===============================");
+            println!(" Omni Forge v5.2 Industrial Fabricator");
+            println!("=======================================");
             println!("Ingesting reality from: {}", data_path);
 
             let pb = ProgressBar::new_spinner();
@@ -36,14 +35,14 @@ fn main() {
                 .template("{spinner:.green} {msg}")
                 .unwrap()
                 .tick_chars("-/|\\"));
-            pb.set_message("Ingesting & Learning...");
+            pb.set_message("Ingesting & Learning (Structural Analysis)...");
             pb.enable_steady_tick(Duration::from_millis(100));
 
             // Fabrication happens here (blocking)
             match forge.fabricate_mind(data_path, "mind.omf") {
                 Ok(_) => {
                     pb.finish_with_message("Fabrication Complete!");
-                    println!("Success: Sovereign Mind fabricated to 'mind.omf'");
+                    println!("Success: Sovereign Mind fabricated to 'mind.omf' (Binary Pack).");
                 },
                 Err(e) => {
                     pb.finish_with_message("Fabrication Failed");
@@ -53,17 +52,17 @@ fn main() {
         },
         "run" => {
             let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
-            println!(" Omni Forge v5.1 Runtime");
-            println!("===========================");
+            println!(" Omni Forge v5.2 Runtime");
+            println!("=========================");
             println!("Loading sovereign mind from {}...", mind_path);
 
             if let Err(e) = forge.load_mind(mind_path) {
                 error!("Failed to load mind: {}", e);
-                println!("Error: Could not load mind artifact. Ensure path is correct and file is valid.");
+                println!("Error: Could not load mind artifact. Ensure integrity hash matches.");
                 return;
             }
 
-            println!("Mind Loaded. Entering Read-Only Mode.");
+            println!("Mind Loaded. Entering Read-Only Mode (Sovereign).");
             println!("Type 'exit' to quit.");
 
             loop {
@@ -103,7 +102,7 @@ fn main() {
             }
         },
         "status" => {
-            println!(" Omni Forge v5.1 Status");
+            println!(" Omni Forge v5.2 Status");
             println!("========================");
             println!("System: Operational");
             println!("Host Arch: {}", std::env::consts::ARCH);
@@ -119,15 +118,22 @@ fn main() {
                 println!("\n[WARNING] No SIMD acceleration detected. Performance may be degraded.");
             }
         },
+        "freeze" => {
+             // In v5.2, fabrication produces an already frozen artifact by default or via config.
+             // This command could be used to toggle a mutable mind to immutable if we supported mutable artifacts.
+             // For now, it's a placeholder for the "Fabrication -> Runtime" explicit transition if we had a intermediate state.
+             println!("Freeze command: Artifacts are frozen by default upon fabrication in v5.2.");
+        },
         _ => print_usage(),
     }
 }
 
 fn print_usage() {
-    println!("Omni Forge v5.1 (Industrial Compiler) Usage:");
+    println!("Omni Forge v5.2 (Industrial Compiler) Usage:");
     println!("  omni-forge fabricate <data_path>        # Build a sovereign mind from raw data");
     println!("  omni-forge run <mind.omf>               # Interactive read-only runtime shell");
     println!("  omni-forge query <mind.omf> <question>  # Single-shot query execution");
     println!("  omni-forge inspect <mind.omf>           # Audit mind artifact metadata");
+    println!("  omni-forge freeze                       # (No-op) Mark artifact as production ready");
     println!("  omni-forge status                       # System health and HTE report");
 }
