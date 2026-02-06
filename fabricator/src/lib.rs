@@ -1,8 +1,11 @@
 use engine::OmniMind;
-use memory::{MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies};
-use log::info;
+use memory::{MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies, MindMetadata};
+use log::{info, warn};
 use std::path::PathBuf;
 use learning::LearningEngine;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 
 pub mod facade;
 
@@ -24,15 +27,18 @@ impl FabricationPipeline {
              let chunks = ingestion::ingest_path(path);
              // Use Learning Engine
              engine.learn(&mut mind.cognition, chunks);
-        } else if data_path == "default" {
-            mind.learn("the dog is an animal");
-            mind.learn("the animal is living");
-            mind.learn("dog eats food");
         } else {
-            log::warn!("Data path not found: {}", data_path);
+            warn!("Data path not found or empty: {}", data_path);
+            // In production, we might want to error out if no data found.
+            // But for now, we produce an empty mind (valid).
         }
 
         info!("Fabrication complete. Packaging mind.");
+
+        let mut hasher = DefaultHasher::new();
+        hasher.write_usize(mind.cognition.index_memory.len());
+        hasher.write_usize(mind.cognition.semantic_memory.len());
+        let core_hash = format!("{:x}", hasher.finish());
 
         MindPack {
             version: "5.1".to_string(),
@@ -42,6 +48,13 @@ impl FabricationPipeline {
             learning_policies: LearningPolicies {
                 reinforcement_rate: 0.1,
                 decay_rate: 0.01,
+            },
+            metadata: MindMetadata {
+                os: std::env::consts::OS.to_string(),
+                arch: std::env::consts::ARCH.to_string(),
+                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                core_hash,
+                source: data_path.to_string(),
             },
         }
     }

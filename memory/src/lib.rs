@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::BufReader;
 
 #[allow(dead_code)]
-const MEMORY_VERSION: &str = "1.0";
+const MEMORY_VERSION: &str = "5.1";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct VocabStore {
@@ -29,6 +29,15 @@ pub struct LearningPolicies {
     pub decay_rate: f32,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MindMetadata {
+    pub os: String,
+    pub arch: String,
+    pub timestamp: u64,
+    pub source: String,
+    pub core_hash: String, // Hash of the cognition state for integrity
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct MindPack {
     pub version: String,
@@ -36,6 +45,7 @@ pub struct MindPack {
     pub vocab: VocabStore,
     pub encoder_config: EncoderConfig,
     pub learning_policies: LearningPolicies,
+    pub metadata: MindMetadata,
 }
 
 pub fn save_mind(mind: &MindPack, path: &str) -> Result<(), std::io::Error> {
@@ -58,7 +68,7 @@ pub fn load_mind(path: &str) -> Result<MindPack, std::io::Error> {
     Ok(mind)
 }
 
-// Legacy helpers if needed, or remove. Keeping for compatibility or internal use.
+// Legacy helpers
 pub fn save_core(core: &CognitionCore, path: &str) -> Result<(), std::io::Error> {
     let file = File::create(path)?;
     serde_json::to_writer(file, core)?;

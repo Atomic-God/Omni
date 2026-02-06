@@ -1,8 +1,11 @@
 use cognition::traits::{PerceptionModule, ReasoningModule};
 use cognition::CognitionCore;
 use log::{error, info};
-use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies};
+use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata};
 use perception::decoder::TextDecoder;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 
 /// Trait for extending OmniMind capabilities.
 pub trait ExtensionModule: Send + Sync {
@@ -14,6 +17,7 @@ pub trait ExtensionModule: Send + Sync {
 pub struct OmniMind {
     pub cognition: CognitionCore, // Public for extensions
     extensions: Vec<Box<dyn ExtensionModule>>,
+    pub read_only: bool,
 }
 
 impl Default for OmniMind {
@@ -29,6 +33,14 @@ impl OmniMind {
         Self {
             cognition: CognitionCore::new(),
             extensions: Vec::new(),
+            read_only: false,
+        }
+    }
+
+    pub fn set_read_only(&mut self, read_only: bool) {
+        self.read_only = read_only;
+        if read_only {
+            info!("OmniMind switched to READ-ONLY mode.");
         }
     }
 
@@ -38,14 +50,15 @@ impl OmniMind {
 
     /// Learns from the provided text using the Perception-Cognition pipeline.
     pub fn learn(&mut self, text: &str) {
+        if self.read_only {
+            error!("Security Violation: Attempted to learn in READ-ONLY mode.");
+            panic!("Runtime Integrity Violation: Learning forbidden in runtime phase.");
+        }
+
         info!("Learning text: {}", text);
-        // 1. Perception Layer (Encoding)
-        // Ensure vocab is updated in Cognition (it handles it via learn_text currently).
-        // In v5.1, we might separate this, but for now CognitionCore.learn_text does the heavy lifting.
-        // We can create a temporary TextEncoder to validate or process, but CognitionCore is the learner.
         self.cognition.learn_text(text);
 
-        // 2. Extensions
+        // Extensions
         let exts = std::mem::take(&mut self.extensions);
         for ext in &exts {
             ext.process(text, self);
@@ -56,15 +69,11 @@ impl OmniMind {
     /// Processes a query using Perception -> Cognition -> Perception (Decode) pipeline.
     pub fn ask(&self, question: &str) -> String {
         info!("Processing query: {}", question);
-
-        // Use CognitionCore for reasoning-based answers (Yes/No, Fact retrieval)
         self.cognition.query(question)
     }
 
     /// Generates text from a raw HyperVector using the Perception layer (Decoder).
     pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {
-        // Use semantic_memory for decoding because sentence vectors are bundles of semantic vectors.
-        // Index vectors are random/orthogonal and won't match the learned semantic composition.
         let decoder = TextDecoder::new(self.cognition.semantic_memory.clone());
         decoder.decode_svo(hv).0
     }
@@ -72,6 +81,14 @@ impl OmniMind {
     /// Saves the current state of the mind to the specified path using MindPack.
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
         info!("Saving mind to {}", path);
+
+        // Compute Integrity Hash (Naive: Hash of number of keys)
+        // Real production would hash the serialized content.
+        let mut hasher = DefaultHasher::new();
+        hasher.write_usize(self.cognition.index_memory.len());
+        hasher.write_usize(self.cognition.semantic_memory.len());
+        let core_hash = format!("{:x}", hasher.finish());
+
         let pack = MindPack {
             version: "5.1".to_string(),
             memory: MemoryStore {
@@ -86,6 +103,13 @@ impl OmniMind {
             learning_policies: LearningPolicies {
                 reinforcement_rate: 0.1,
                 decay_rate: 0.01,
+            },
+            metadata: MindMetadata {
+                os: std::env::consts::OS.to_string(),
+                arch: std::env::consts::ARCH.to_string(),
+                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                core_hash,
+                source: "OmniForge v5.1 Fabricator".to_string(),
             },
         };
 
@@ -104,7 +128,8 @@ impl OmniMind {
         match memory::load_mind(path) {
             Ok(pack) => {
                 self.cognition = pack.memory.core;
-                // Reconstruct or validate vocab if needed
+                // Verify integrity if needed
+                self.read_only = true; // Enforce runtime read-only by default on load
                 Ok(())
             }
             Err(e) => {

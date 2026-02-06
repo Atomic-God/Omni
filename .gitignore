@@ -1,2 +1,7 @@
 target/
-memory.json
+**/*.rs.bk
+Cargo.lock
+*.omf
+test_data/
+prod_data/
+test_memory.json

@@ -5,7 +5,6 @@ use std::io::{self, Write};
 
 fn main() {
     env_logger::init();
-    info!("Omni Forge CLI v5.1 Production Starting...");
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -23,7 +22,7 @@ fn main() {
                 return;
             }
             let data_path = &args[2];
-            println!("Fabricating mind from: {}", data_path);
+            info!("Omni Forge v5.1 Fabricator: Ingesting reality from {}", data_path);
             match forge.fabricate_mind(data_path, "mind.omf") {
                 Ok(_) => println!("Success: Mind fabricated to mind.omf"),
                 Err(e) => error!("Fabrication failed: {}", e),
@@ -31,11 +30,13 @@ fn main() {
         },
         "run" => {
             let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
-            println!("Loading sovereign mind from {}...", mind_path);
+            info!("Omni Forge v5.1 Runtime: Loading sovereign mind from {}...", mind_path);
+
             if let Err(e) = forge.load_mind(mind_path) {
                 error!("Failed to load mind: {}", e);
                 return;
             }
+
             println!("Mind Loaded. Entering Runtime Mode (Read-Only).");
             println!("Type 'exit' to quit.");
 
@@ -53,19 +54,33 @@ fn main() {
             }
         },
         "inspect" => {
-            println!("Inspect feature coming soon.");
+            let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
+            println!("Inspecting mind artifact: {}", mind_path);
+            match forge.inspect_mind(mind_path) {
+                Ok(info) => println!("Metadata:\n{}", info),
+                Err(e) => error!("Failed to inspect mind: {}", e),
+            }
         },
         "status" => {
-            println!("Omni Forge Status: Operational");
+            println!("Omni Forge v5.1 Status: Operational");
+            println!("Host Architecture: {}", std::env::consts::ARCH);
+            println!("Host OS: {}", std::env::consts::OS);
+
+            let profile = hte::detect();
+            println!("Hardware Truth Engine Profile:");
+            println!("  Physical Cores: {}", profile.physical_cores);
+            println!("  Logical Cores: {}", profile.logical_cores);
+            println!("  AVX2: {}", profile.avx2);
+            println!("  NEON: {}", profile.neon);
         },
         _ => print_usage(),
     }
 }
 
 fn print_usage() {
-    println!("Omni Forge CLI Usage:");
-    println!("  omni-forge fabricate <data_path>");
-    println!("  omni-forge run <mind.omf>");
-    println!("  omni-forge inspect <mind.omf>");
-    println!("  omni-forge status");
+    println!("Omni Forge v5.1 (Production) Usage:");
+    println!("  omni-forge fabricate <data_path>  # Ingest data and build a mind");
+    println!("  omni-forge run <mind.omf>         # Run the mind in read-only mode");
+    println!("  omni-forge inspect <mind.omf>     # View mind metadata");
+    println!("  omni-forge status                 # Check system status and HTE");
 }

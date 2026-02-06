@@ -29,4 +29,12 @@ impl OmniForge {
         let mind = self.mind.lock().unwrap();
         mind.ask(query)
     }
+
+    pub fn inspect_mind(&self, path: &str) -> Result<String, std::io::Error> {
+        // Load without initializing engine, just read headers/metadata
+        // memory::load_mind reads the whole zip. Ideally we'd just read metadata.
+        // For now, loading full mind is acceptable for inspection.
+        let pack = memory::load_mind(path)?;
+        Ok(format!("{:#?}", pack.metadata))
+    }
 }

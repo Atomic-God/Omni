@@ -57,3 +57,26 @@ fn test_persistence() {
     }
     std::fs::remove_file(path).unwrap_or(());
 }
+
+#[test]
+#[should_panic(expected = "Runtime Integrity Violation")]
+fn test_runtime_panic() {
+    let path = "panic_test_mind.omf";
+
+    // Create and save
+    {
+        let mut mind = OmniMind::new();
+        mind.learn("foo is bar");
+        mind.save(path).unwrap();
+    }
+
+    // Load and try to learn
+    let mut mind = OmniMind::new();
+    mind.load(path).unwrap();
+
+    // Cleanup happens after panic or if test fails?
+    // Rust test harness doesn't guarantee cleanup on panic.
+    // But we use a unique name.
+
+    mind.learn("should panic");
+}

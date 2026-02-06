@@ -1,6 +1,8 @@
 use once_cell::sync::Lazy;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::hash::Hasher;
+use std::collections::hash_map::DefaultHasher;
 
 pub mod index;
 
@@ -9,11 +11,12 @@ const DIMENSION: usize = 10_000;
 const NUM_WORDS: usize = (DIMENSION + 63) / 64;
 
 /// Static hypervector representing the Subject role in an SVO structure.
-pub static ROLE_SUBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
+/// Deterministically initialized.
+pub static ROLE_SUBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5001));
 /// Static hypervector representing the Verb role in an SVO structure.
-pub static ROLE_VERB: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
+pub static ROLE_VERB: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5002));
 /// Static hypervector representing the Object role in an SVO structure.
-pub static ROLE_OBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::random());
+pub static ROLE_OBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5003));
 
 /// A high-dimensional vector supporting VSA operations.
 /// Implements a packed bit model (BSC) with dimension 10,000.
@@ -23,9 +26,16 @@ pub struct HyperVector {
 }
 
 impl HyperVector {
-    /// Generates a random hypervector.
+    /// Generates a random hypervector (non-deterministic).
     pub fn random() -> Self {
         let mut rng = rand::thread_rng();
+        let words: Vec<u64> = (0..NUM_WORDS).map(|_| rng.gen()).collect();
+        Self { words }
+    }
+
+    /// Generates a deterministic hypervector from a seed.
+    pub fn deterministic(seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed);
         let words: Vec<u64> = (0..NUM_WORDS).map(|_| rng.gen()).collect();
         Self { words }
     }
@@ -41,20 +51,20 @@ impl HyperVector {
         Self { words }
     }
 
-    /// Bundling operation (Majority Rule).
-    /// For 2 vectors A, B:
-    /// If bits agree (00 or 11), result is that bit.
-    /// If bits disagree (01 or 10), result is random.
-    /// Logic: (A & B) | (A & R) | (B & R) ??
-    /// Simpler: majority(A, B, Random)
+    /// Bundling operation (Majority Rule) with Deterministic Tie-Breaking.
     pub fn bundle(&self, other: &Self) -> Self {
-        let mut rng = rand::thread_rng();
+        // Hash the inputs to seed the tie-breaker
+        let mut hasher = DefaultHasher::new();
+        for w in &self.words { hasher.write_u64(*w); }
+        for w in &other.words { hasher.write_u64(*w); }
+        let seed = hasher.finish();
+        let mut rng = StdRng::seed_from_u64(seed);
+
         let words = self
             .words
             .iter()
             .zip(other.words.iter())
             .map(|(&a, &b)| {
-                // If bits equal, keep them. If different, random.
                 // Equal mask: !(a ^ b)
                 // Result = (a & equal_mask) | (random & !equal_mask)
                 let random_bits: u64 = rng.gen();
@@ -76,11 +86,6 @@ impl HyperVector {
             .map(|(a, b)| (a ^ b).count_ones())
             .sum();
 
-        // Adjust for potential padding bits in last word if DIMENSION % 64 != 0
-        // But for random vectors, padding shouldn't skew much if consistent.
-        // We treat it as full 157*64 = 10048 dim effectively, or mask last word.
-        // Let's assume standard behavior for now.
-
         let total_bits = (NUM_WORDS * 64) as f32;
         1.0 - 2.0 * (hamming as f32 / total_bits)
     }
@@ -94,6 +99,25 @@ mod tests {
     fn test_random_properties() {
         let hv = HyperVector::random();
         assert_eq!(hv.words.len(), NUM_WORDS);
+    }
+
+    #[test]
+    fn test_deterministic_roles() {
+        let r1 = HyperVector::deterministic(123);
+        let r2 = HyperVector::deterministic(123);
+        assert_eq!(r1, r2);
+
+        let r3 = HyperVector::deterministic(124);
+        assert_ne!(r1, r3);
+    }
+
+    #[test]
+    fn test_deterministic_bundle() {
+        let a = HyperVector::deterministic(1);
+        let b = HyperVector::deterministic(2);
+        let c1 = a.bundle(&b);
+        let c2 = a.bundle(&b);
+        assert_eq!(c1, c2);
     }
 
     #[test]
@@ -119,7 +143,6 @@ mod tests {
         let b = HyperVector::random();
         let bundle = a.bundle(&b);
 
-        // Expected similarity ~ 0.5 for A+B (random tie break)
         let sim_a = bundle.similarity(&a);
         let sim_b = bundle.similarity(&b);
 
