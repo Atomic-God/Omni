@@ -166,7 +166,7 @@ fn process_zip(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_has
 }
 
 fn strip_xml_tags(xml: &str) -> String {
-    let re = Regex::new(r"[.?!]s+").unwrap();
+    let re = Regex::new(r"[.?!]\s+").unwrap();
     re.replace_all(xml, " ").to_string()
 }
 
@@ -273,7 +273,7 @@ fn chunk_code(text: &str, regex: &Regex) -> Vec<(String, String)> {
 }
 
 fn chunk_text_smart(text: &str) -> Vec<(String, String)> {
-    let re = Regex::new(r"[.?!]s+").unwrap();
+    let re = Regex::new(r"[.?!]\s+").unwrap();
     let sentences: Vec<&str> = re.split(text).collect();
 
     let mut chunks = Vec::new();
