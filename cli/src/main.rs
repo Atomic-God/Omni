@@ -1,6 +1,6 @@
 use fabricator::facade::OmniForge;
 use fabricator::live::LiveFabricator;
-use log::{info, error};
+use log::error;
 use std::env;
 use std::io::{self, Write};
 use indicatif::{ProgressBar, ProgressStyle};

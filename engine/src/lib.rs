@@ -166,6 +166,7 @@ impl OmniMind {
                 core_hash,
                 source: "OmniForge v8.0 Fabricator".to_string(),
                 state: if self.read_only { LifecycleState::Frozen } else { LifecycleState::Fabricated },
+                compiler_version: env!("CARGO_PKG_VERSION").to_string(),
             },
         };
 

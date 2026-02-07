@@ -163,6 +163,37 @@ impl CognitionCore {
         format!("{:x}", hasher.finish())
     }
 
+    /// Computes the average Shannon Entropy of the relation graph.
+    /// Higher entropy means more diverse/dispersed connections (possibly noise).
+    /// Lower entropy means concentrated/focused connections (strong beliefs).
+    pub fn compute_global_entropy(&self) -> f32 {
+        let mut total_entropy = 0.0;
+        let mut count = 0;
+
+        for relations in self.relation_graph.values() {
+            if relations.is_empty() { continue; }
+
+            let total_weight: f32 = relations.iter().map(|r| r.weight as f32).sum();
+            if total_weight == 0.0 { continue; }
+
+            let mut node_entropy = 0.0;
+            for r in relations {
+                let p = r.weight as f32 / total_weight;
+                if p > 0.0 {
+                    node_entropy -= p * p.log2();
+                }
+            }
+            total_entropy += node_entropy;
+            count += 1;
+        }
+
+        if count > 0 {
+            total_entropy / count as f32
+        } else {
+            0.0
+        }
+    }
+
     fn query_internal(&self, query_str: &str) -> String {
         let words = tokenizer::tokenize(query_str);
         if words.len() < 2 { return "Query too short.".to_string(); }

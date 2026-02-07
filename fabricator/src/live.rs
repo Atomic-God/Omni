@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use notify::{Watcher, RecursiveMode, Result as NotifyResult, Event};
 use engine::OmniMind;
 use learning::LearningEngine;

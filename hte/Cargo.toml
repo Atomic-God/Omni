@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 raw-cpuid = "11.0"
+sysinfo = "0.29"
+log = "0.4"

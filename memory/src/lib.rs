@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 
 #[allow(dead_code)]
-const MEMORY_VERSION: &str = "5.2";
+const MEMORY_VERSION: &str = "8.1";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum LifecycleState {
@@ -44,6 +44,7 @@ pub struct MindMetadata {
     pub source: String,
     pub core_hash: String,
     pub state: LifecycleState,
+    pub compiler_version: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -142,7 +143,7 @@ pub fn load_mind(path: &str) -> Result<MindPack, std::io::Error> {
     }
 
     Ok(MindPack {
-        version: "5.2".to_string(),
+        version: "8.1".to_string(),
         memory: MemoryStore { core: core.clone() },
         vocab: VocabStore { words: core.index_memory.clone() },
         encoder_config,

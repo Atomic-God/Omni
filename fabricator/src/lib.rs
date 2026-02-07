@@ -40,7 +40,7 @@ impl FabricationPipeline {
         let core_hash = mind.cognition.compute_integrity_hash();
 
         MindPack {
-            version: "5.1".to_string(),
+            version: "8.1".to_string(),
             memory: MemoryStore { core: mind.cognition.clone() },
             vocab: VocabStore { words: mind.cognition.index_memory.clone() },
             encoder_config: EncoderConfig { model_name: "beagle-v5".to_string() },
@@ -55,6 +55,7 @@ impl FabricationPipeline {
                 core_hash,
                 source: data_path.to_string(),
                 state: LifecycleState::Fabricated,
+                compiler_version: env!("CARGO_PKG_VERSION").to_string(),
             },
         }
     }
