@@ -1,5 +1,4 @@
 use fabricator::facade::OmniForge;
-use engine::OmniMind;
 use memory::LifecycleState;
 use std::fs::File;
 use std::io::Write;
@@ -18,12 +17,25 @@ fn test_fabrication_to_runtime_freeze() {
     // Fabricate
     forge.fabricate_mind(data_dir, mind_path).expect("Fabrication failed");
 
-    // Load and Verify State
+    // Load Runtime
     let runtime_forge = OmniForge::new();
-    runtime_forge.load_mind(mind_path).expect("Load failed");
+    runtime_forge.load_runtime(mind_path, None).expect("Load failed");
 
-    let mind = runtime_forge.mind.lock().unwrap();
-    assert!(mind.read_only, "Mind should be read-only after loading");
+    // Verify State
+    let mind_slot = runtime_forge.runtime_mind.lock().unwrap();
+    if let Some(mind) = mind_slot.as_ref() {
+        assert_eq!(mind.base.metadata.state, LifecycleState::Fabricated, "Mind state should be Fabricated (or Frozen if snapshot logic used)");
+        // Wait, fabricate_mind sets state to Fabricated.
+        // snapshot sets it to Frozen.
+        // But Runtime loads it.
+        // The test expects "read_only" equivalent.
+        // RuntimeMind treats `base` as read-only regardless of state enum, but state enum is good metadata.
+
+        // Check overlay is empty/fresh
+        assert_eq!(mind.overlay.core.index_memory.len(), 0);
+    } else {
+        panic!("Runtime mind not loaded");
+    }
 
     // Cleanup
     std::fs::remove_dir_all(data_dir).unwrap();

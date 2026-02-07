@@ -1306,6 +1306,7 @@ dependencies = [
  "bincode",
  "cognition",
  "core-vsa",
+ "log",
  "serde",
  "serde_json",
  "zip 0.6.6",

@@ -1,67 +1,48 @@
-use cognition::traits::{PerceptionModule, ReasoningModule};
 use cognition::CognitionCore;
 use cognition::planning::Goal;
-use log::{error, info};
-use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata, LifecycleState};
-use perception::decoder::TextDecoder;
-use std::time::{SystemTime, UNIX_EPOCH};
+use cognition::traits::{PerceptionModule, ReasoningModule};
+use log::{info, warn};
+use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata, LifecycleState, PersonalMemory};
 use std::collections::VecDeque;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
 
-/// Trait for extending OmniMind capabilities.
+/// Trait for extending capabilities.
 pub trait ExtensionModule: Send + Sync {
-    fn process(&self, input: &str, mind: &mut OmniMind);
+    fn process(&self, input: &str, mind: &mut ForgeMind);
 }
 
-/// OmniMind is the high-level interface for the Omni Forge system.
-pub struct OmniMind {
+// ==================================================================================
+// FORGE MIND (The Creator / Factory)
+// Unlimited memory, Mutable, used for Fabrication.
+// ==================================================================================
+
+pub struct ForgeMind {
     pub cognition: CognitionCore,
     extensions: Vec<Box<dyn ExtensionModule>>,
-    pub read_only: bool,
     pub goals: VecDeque<Goal>,
 }
 
-impl Default for OmniMind {
+impl Default for ForgeMind {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl OmniMind {
+impl ForgeMind {
     pub fn new() -> Self {
-        info!("Initializing OmniMind instance.");
+        info!("Initializing ForgeMind (Creator Instance).");
         Self {
             cognition: CognitionCore::new(),
             extensions: Vec::new(),
-            read_only: false,
             goals: VecDeque::new(),
         }
     }
 
-    pub fn set_read_only(&mut self, read_only: bool) {
-        if self.read_only && !read_only {
-             error!("Security Violation: Attempted to revert READ-ONLY mode.");
-             panic!("Runtime Integrity Violation: Cannot revert from frozen state.");
-        }
-        self.read_only = read_only;
-        if read_only {
-            info!("OmniMind switched to READ-ONLY mode. Learning is permanently disabled.");
-        }
-    }
-
-    pub fn register_extension(&mut self, extension: Box<dyn ExtensionModule>) {
-        self.extensions.push(extension);
-    }
-
-    #[cfg(feature = "fabrication")]
     pub fn learn(&mut self, text: &str) {
-        if self.read_only {
-            error!("Security Violation: Attempted to learn in READ-ONLY mode.");
-            panic!("Runtime Integrity Violation: Learning forbidden in runtime phase.");
-        }
-
-        info!("Learning text: {}", text);
+        info!("Forge Learning: {}", text);
         self.cognition.learn_text(text);
-
+        // Extensions
         let exts = std::mem::take(&mut self.extensions);
         for ext in &exts {
             ext.process(text, self);
@@ -69,134 +50,172 @@ impl OmniMind {
         self.extensions = exts;
     }
 
-    #[cfg(not(feature = "fabrication"))]
-    pub fn learn(&mut self, _text: &str) {
-        error!("Security Violation: Fabrication features not compiled in.");
-        panic!("Runtime Integrity Violation: This binary is compiled for Runtime only. Learning is impossible.");
+    pub fn load_master(&mut self, path: &str) -> Result<(), std::io::Error> {
+        info!("Loading Master Mind from {}", path);
+        // Load as a snapshot but treat as mutable base
+        let pack = memory::load_snapshot(path)?;
+        self.cognition = pack.memory.core;
+        Ok(())
     }
 
-    pub fn ask(&self, question: &str) -> String {
-        info!("Processing query: {}", question);
-        let answer = self.cognition.query(question);
-
-        if answer == "Unknown" || answer == "No connection found." {
-            "I do not have enough information to answer that based on my current experiences.".to_string()
-        } else {
-            // Enhanced Output is now in cognition.query_internal
-            answer
-        }
+    // Alias for compatibility
+    pub fn load(&mut self, path: &str) -> Result<(), std::io::Error> {
+        self.load_master(path)
     }
 
-    pub fn explain(&self, concept: &str) -> String {
-        info!("Processing explain request for: {}", concept);
-        self.cognition.explain_concept(concept)
+    pub fn save_master(&self, path: &str) -> Result<(), std::io::Error> {
+        info!("Saving Master Mind to {}", path);
+        let pack = self.to_pack("master", LifecycleState::Fabricated);
+        memory::save_snapshot(&pack, path)
     }
 
-    pub fn plan(&self, start: &str, end: &str) -> String {
-        info!("Planning path from {} to {}", start, end);
-        if let Some(path) = self.cognition.find_path(start, end) {
-            format!("Plan found: {}", path.join(" -> "))
-        } else {
-            "No plan found.".to_string()
-        }
-    }
-
-    pub fn add_goal(&mut self, description: &str, target: &str, priority: u8) {
-        if self.read_only {
-             // Goals might be allowed in runtime? Or are they "mutations"?
-             // Goals are internal state, not "learning". Let's allow it for now as "Runtime State".
-             // But OmniMind structs are usually reloaded.
-             // If we want persistent goals, we need to save them.
-             // For now, allow in memory.
-        }
-        self.goals.push_back(Goal {
-            description: description.to_string(),
-            target_state: target.to_string(),
-            priority,
-            completed: false,
-        });
-        // Sort by priority (descending)
-        let mut vec: Vec<Goal> = self.goals.drain(..).collect();
-        vec.sort_by(|a, b| b.priority.cmp(&a.priority));
-        self.goals = VecDeque::from(vec);
-    }
-
-    pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {
-        let decoder = TextDecoder::new(self.cognition.semantic_memory.clone());
-        decoder.decode_svo(hv).0
-    }
-
-    pub fn introspect(&self) -> String {
-        let memory_size = self.cognition.index_memory.len();
-        let relations = self.cognition.relation_graph.values().map(|v| v.len()).sum::<usize>();
-        let active_goals = self.goals.len();
-
-        format!(
-            "Mind Status:\n- Concepts: {}\n- Relations: {}\n- Active Goals: {}\n- Mode: {}",
-            memory_size, relations, active_goals,
-            if self.read_only { "READ-ONLY" } else { "LEARNING" }
-        )
-    }
-
+    // Alias for compatibility
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        info!("Saving mind to {}", path);
+        self.save_master(path)
+    }
 
-        // Use proper integrity hash from CognitionCore
+    // Snapshot creation (Immutable Export)
+    pub fn snapshot(&self, version: &str, source: &str, path: &str) -> Result<(), std::io::Error> {
+        info!("Creating Immutable Snapshot v{} at {}", version, path);
+        let pack = self.to_pack(source, LifecycleState::Frozen);
+        memory::save_snapshot(&pack, path)
+    }
+
+    fn to_pack(&self, source: &str, state: LifecycleState) -> MindPack {
         let core_hash = self.cognition.compute_integrity_hash();
-
-        let pack = MindPack {
-            version: "8.0".to_string(),
-            memory: MemoryStore {
-                core: self.cognition.clone(),
-            },
-            vocab: VocabStore {
-                words: self.cognition.index_memory.clone(),
-            },
-            encoder_config: EncoderConfig {
-                model_name: "beagle-v5".to_string(),
-            },
+        MindPack {
+            version: "8.2".to_string(), // Schema version
+            memory: MemoryStore { core: self.cognition.clone() },
+            vocab: VocabStore { words: self.cognition.index_memory.clone() },
+            encoder_config: EncoderConfig { model_name: "beagle-v5".to_string() },
             learning_policies: LearningPolicies {
                 reinforcement_rate: 0.1,
                 decay_rate: 0.01,
+                max_concepts: None, // Unlimited for Forge
             },
             metadata: MindMetadata {
                 os: std::env::consts::OS.to_string(),
                 arch: std::env::consts::ARCH.to_string(),
                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
                 core_hash,
-                source: "OmniForge v8.0 Fabricator".to_string(),
-                state: if self.read_only { LifecycleState::Frozen } else { LifecycleState::Fabricated },
+                source: source.to_string(),
+                state,
                 compiler_version: env!("CARGO_PKG_VERSION").to_string(),
+                semantic_version: "1.0.0".to_string(), // Default, should be arg
             },
-        };
-
-        match memory::save_mind(&pack, path) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                error!("Failed to save mind: {}", e);
-                Err(e)
-            }
         }
     }
 
-    pub fn load(&mut self, path: &str) -> Result<(), std::io::Error> {
-        info!("Loading mind from {}", path);
-        match memory::load_mind(path) {
-            Ok(pack) => {
-                // Check Lifecycle
-                match pack.metadata.state {
-                    LifecycleState::Fabricated | LifecycleState::Frozen | LifecycleState::Runtime => {
-                        self.cognition = pack.memory.core;
-                        self.read_only = true; // Enforce runtime read-only
-                        info!("Mind loaded successfully in READ-ONLY mode. State: {:?}", pack.metadata.state);
-                        Ok(())
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to load mind: {}", e);
-                Err(e)
-            }
-        }
+    pub fn ask(&self, question: &str) -> String {
+        self.cognition.query(question)
+    }
+
+    pub fn explain(&self, concept: &str) -> String {
+        self.cognition.explain_concept(concept)
+    }
+
+    pub fn introspect(&self) -> String {
+         format!("Forge Status: {} concepts, {} relations (Unlimited)",
+             self.cognition.index_memory.len(),
+             self.cognition.relation_graph.len())
     }
 }
+
+// ==================================================================================
+// RUNTIME MIND (The Consumer / Sovereign)
+// Base (Frozen) + Overlay (Mutable/Bounded).
+// ==================================================================================
+
+pub struct RuntimeMind {
+    pub base: Arc<MindPack>,      // Read-Only Global Knowledge
+    pub overlay: PersonalMemory,  // Read-Write Local Context
+    pub goals: VecDeque<Goal>,
+}
+
+impl RuntimeMind {
+    pub fn load(base_path: &str, overlay_path: Option<&str>) -> Result<Self, std::io::Error> {
+        info!("Loading RuntimeMind Base from {}", base_path);
+        let base = memory::load_snapshot(base_path)?;
+
+        let overlay = if let Some(ov_path) = overlay_path {
+            if std::path::Path::new(ov_path).exists() {
+                info!("Loading Personal Overlay from {}", ov_path);
+                let ov = memory::load_personal(ov_path)?;
+                if ov.parent_hash != base.metadata.core_hash {
+                    warn!("Overlay hash mismatch! This overlay belongs to a different Mind version. Creating new overlay.");
+                    Self::create_overlay(&base)
+                } else {
+                    ov
+                }
+            } else {
+                info!("Creating new Personal Overlay at {}", ov_path);
+                Self::create_overlay(&base)
+            }
+        } else {
+            Self::create_overlay(&base)
+        };
+
+        Ok(Self {
+            base: Arc::new(base),
+            overlay,
+            goals: VecDeque::new(),
+        })
+    }
+
+    fn create_overlay(base: &MindPack) -> PersonalMemory {
+        PersonalMemory {
+            core: CognitionCore::new(),
+            parent_hash: base.metadata.core_hash.clone(),
+            created_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+            last_accessed: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+        }
+    }
+
+    pub fn save_overlay(&self, path: &str) -> Result<(), std::io::Error> {
+        memory::save_personal(&self.overlay, path)
+    }
+
+    pub fn learn_personal(&mut self, text: &str) {
+        info!("Runtime Personal Learning: {}", text);
+        // Check budget before learning
+        let concept_count = self.overlay.core.index_memory.len();
+        if concept_count > 5000 { // Hardcoded runtime limit for now, or use policy
+             warn!("Personal Memory Full ({} concepts). Triggering consolidation/pruning.", concept_count);
+             warn!("Learning rejected due to memory budget.");
+             return;
+        }
+
+        self.overlay.core.learn_text(text);
+        self.overlay.last_accessed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    }
+
+    pub fn ask(&self, question: &str) -> String {
+        // 1. Try Overlay First
+        let overlay_answer = self.overlay.core.query(question);
+        if self.is_valid_answer(&overlay_answer) {
+            return format!("(Personal) {}", overlay_answer);
+        }
+
+        // 2. Fallback to Base
+        let base_answer = self.base.memory.core.query(question);
+        if self.is_valid_answer(&base_answer) {
+             return base_answer;
+        }
+
+        "I do not know.".to_string()
+    }
+
+    fn is_valid_answer(&self, ans: &str) -> bool {
+        ans != "Unknown" && ans != "No connection found." && ans != "Query too short." && !ans.is_empty()
+    }
+
+    pub fn introspect(&self) -> String {
+        format!("Runtime Status:\n- Base Concepts: {}\n- Personal Concepts: {}\n- Overlay Hash: {}",
+            self.base.memory.core.index_memory.len(),
+            self.overlay.core.index_memory.len(),
+            self.overlay.parent_hash)
+    }
+}
+
+// Legacy Alias for compatibility during refactor
+pub type OmniMind = ForgeMind;

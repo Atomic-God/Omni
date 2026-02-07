@@ -1,3 +1,10 @@
+pub mod traits;
+pub mod generation;
+pub mod world_model;
+pub mod temporal;
+pub mod planning;
+pub mod intent;
+
 use core_vsa::HyperVector;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -5,16 +12,11 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub mod traits;
-pub mod generation;
-pub mod world_model;
-pub mod temporal;
-pub mod planning;
-
 use core_vsa::index::LshIndex;
 use perception::tokenizer;
 use traits::{PerceptionModule, ReasoningModule};
 use generation::LanguageGenerator;
+use intent::{IntentParser, Intent};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum RelationType {
@@ -24,6 +26,7 @@ pub enum RelationType {
     Attribute, // A has property B
     Taxonomic, // A is a B
     Generic,   // A related to B
+    Salient,   // A is important to B (Overlay specific)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
@@ -38,7 +41,6 @@ pub struct Relation {
 pub struct CognitionCore {
     pub index_memory: HashMap<String, HyperVector>,
     pub semantic_memory: HashMap<String, HyperVector>,
-    // Upgraded Graph: String -> List of Rich Relations
     pub relation_graph: HashMap<String, Vec<Relation>>,
     pub sentence_memory: LshIndex,
 }
@@ -122,11 +124,12 @@ impl CognitionCore {
             let mut context_bundle: Option<HyperVector> = None;
             for (j, context_word) in words.iter().enumerate() {
                 if i == j { continue; }
-                let context_vec = self.index_memory.get(context_word).unwrap();
-                context_bundle = match context_bundle {
-                    Some(b) => Some(b.bundle(context_vec)),
-                    None => Some(context_vec.clone()),
-                };
+                if let Some(context_vec) = self.index_memory.get(context_word) {
+                    context_bundle = match context_bundle {
+                        Some(b) => Some(b.bundle(context_vec)),
+                        None => Some(context_vec.clone()),
+                    };
+                }
             }
             if let Some(ctx) = context_bundle {
                 if let Some(current_semantic) = self.semantic_memory.get(target_word) {
@@ -163,9 +166,6 @@ impl CognitionCore {
         format!("{:x}", hasher.finish())
     }
 
-    /// Computes the average Shannon Entropy of the relation graph.
-    /// Higher entropy means more diverse/dispersed connections (possibly noise).
-    /// Lower entropy means concentrated/focused connections (strong beliefs).
     pub fn compute_global_entropy(&self) -> f32 {
         let mut total_entropy = 0.0;
         let mut count = 0;
@@ -195,6 +195,29 @@ impl CognitionCore {
     }
 
     fn query_internal(&self, query_str: &str) -> String {
+        // Use Intent Parser
+        let intent = IntentParser::parse(query_str);
+
+        match intent {
+             Intent::Explain(concept) => self.explain_concept(&concept),
+             Intent::Plan { start, end } => {
+                 if let Some(path) = self.find_path(&start, &end) {
+                     LanguageGenerator::explain_plan(&path)
+                 } else {
+                     format!("I cannot formulate a plan from {} to {}.", start, end)
+                 }
+             },
+             Intent::Learn(content) => {
+                 // For query context, this might be a directive?
+                 // Usually learning is separate.
+                 format!("Please use the 'learn' command to ingest '{}'.", content)
+             },
+             Intent::Query(_) => self.perform_graph_query(query_str), // Original query logic
+             Intent::Unknown => self.perform_graph_query(query_str),
+        }
+    }
+
+    fn perform_graph_query(&self, query_str: &str) -> String {
         let words = tokenizer::tokenize(query_str);
         if words.len() < 2 { return "Query too short.".to_string(); }
 

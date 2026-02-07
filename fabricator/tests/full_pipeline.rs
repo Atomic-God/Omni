@@ -19,7 +19,7 @@ fn test_full_pipeline() {
 
     // 3. Run
     let runtime = OmniForge::new();
-    runtime.load_mind(mind_path).expect("Load failed");
+    runtime.load_runtime(mind_path, None).expect("Load failed");
 
     // 4. Query
     // sky -> blue -> reflects -> light?

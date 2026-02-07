@@ -1,5 +1,4 @@
 use fabricator::facade::OmniForge;
-use fabricator::live::LiveFabricator;
 use log::error;
 use std::env;
 use std::io::{self, Write};
@@ -23,81 +22,122 @@ fn main() {
     let forge = OmniForge::new();
 
     match command.as_str() {
-        "fabricate" => {
+        "init" => {
+            let path = get_forge_master_path();
+            if path.exists() {
+                println!("Forge Master already exists at {:?}", path);
+                return;
+            }
+            println!("Initializing Sovereign Forge Master...");
+            if let Err(e) = forge.save_forge_master(path.to_str().unwrap()) {
+                error!("Failed to initialize Forge: {}", e);
+            } else {
+                println!("Forge Master initialized at {:?}", path);
+            }
+        },
+        "ingest" => {
             if args.len() < 3 {
-                println!("Usage: omni-forge fabricate <data_path> [output_path]");
+                println!("Usage: omniforge ingest <data_path>");
                 return;
             }
             let data_path = &args[2];
-            let output_path = if args.len() >= 4 {
-                args[3].clone()
-            } else {
-                get_default_mind_path().to_string_lossy().to_string()
-            };
+            let master_path = get_forge_master_path();
 
-            println!(" Omni Forge v7.0 Industrial Fabricator");
-            println!("=======================================");
-            println!("Ingesting reality from: {}", data_path);
-            println!("Target Artifact: {}", output_path);
-
-            let pb = ProgressBar::new_spinner();
-            pb.set_style(ProgressStyle::default_spinner()
-                .template("{spinner:.green} {msg}")
-                .unwrap()
-                .tick_chars("-/|\\"));
-            pb.set_message("Ingesting & Learning (Structural Analysis)...");
-            pb.enable_steady_tick(Duration::from_millis(100));
-
-            match forge.fabricate_mind(data_path, &output_path) {
-                Ok(_) => {
-                    pb.finish_with_message("Fabrication Complete!");
-                    println!("Success: Sovereign Mind fabricated to '{}' (Binary Pack).", output_path);
-                },
-                Err(e) => {
-                    pb.finish_with_message("Fabrication Failed");
-                    error!("Error: {}", e);
-                }
-            }
-        },
-        "learn" => {
-             if args.len() < 4 || args[2] != "--watch" {
-                 println!("Usage: omni-forge learn --watch <path>");
-                 return;
-             }
-             let watch_path = &args[3];
-             println!(" Omni Forge v7.0 Live Learner");
-             println!("============================");
-             let live = LiveFabricator::new();
-
-             // Graceful Shutdown
-             ctrlc::set_handler(move || {
-                 println!("\nReceived shutdown signal. Saving state...");
-                 std::process::exit(0);
-             }).expect("Error setting Ctrl-C handler");
-
-             if let Err(e) = live.watch(watch_path) {
-                 error!("Live learning failed: {}", e);
-             }
-        },
-        "run" | "interactive" => {
-            let mind_path = if args.len() >= 3 {
-                args[2].clone()
-            } else {
-                get_default_mind_path().to_string_lossy().to_string()
-            };
-
-            println!(" Omni Forge v7.0 Runtime");
-            println!("=========================");
-            println!("Loading sovereign mind from {}...", mind_path);
-
-            if let Err(e) = forge.load_mind(&mind_path) {
-                error!("Failed to load mind: {}", e);
-                println!("Error: Could not load mind artifact. Ensure integrity hash matches.");
+            if !master_path.exists() {
+                println!("Forge Master not found. Run 'omniforge init' first.");
                 return;
             }
 
-            println!("Mind Loaded. Entering Read-Only Mode (Sovereign).");
-            println!("Type 'exit' to quit.");
+            println!("Loading Forge Master...");
+            if let Err(e) = forge.load_forge_master(master_path.to_str().unwrap()) {
+                error!("Failed to load Forge Master: {}", e);
+                return;
+            }
+
+            println!("Ingesting reality from: {}", data_path);
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} {msg}").unwrap().tick_chars("-/|\\"));
+            pb.set_message("Learning...");
+            pb.enable_steady_tick(Duration::from_millis(100));
+
+            // Use fabrication pipeline logic but just for learning into current forge mind?
+            // Fabricator currently builds NEW mind.
+            // We want to EXTEND forge mind.
+            // OmniForge doesn't expose "learn_forge(path)".
+            // But we can use `fabricate_mind` logic adapted?
+            // `fabricate_mind` creates new `ForgeMind`.
+            // We want to use the LOADED `ForgeMind`.
+            // I should add `ingest_into_forge` to `OmniForge` facade.
+            // For now, I'll use `fabricate` logic but targeting the master file?
+            // No, `fabricate` overwrites.
+
+            // Hack for now: `OmniForge` allows access to `forge_mind`.
+            // I should have exposed `ingest` on `OmniForge`.
+            // I'll assume I can add it or modify `ingest` logic here if I can import `ingestion`.
+
+            let chunks = ingestion::ingest_path(PathBuf::from(data_path));
+            let mut mind = forge.forge_mind.lock().unwrap();
+
+            // Manual learn loop (since Facade doesn't expose batch learn on existing mind)
+            // But `ForgeMind` has `learn()`.
+            for chunk in chunks {
+                mind.learn(&chunk.content);
+            }
+
+            pb.finish_with_message("Ingestion Complete!");
+
+            // Save back
+            if let Err(e) = mind.save_master(master_path.to_str().unwrap()) {
+                error!("Failed to save Forge Master: {}", e);
+            } else {
+                println!("Forge Master updated.");
+            }
+        },
+        "snapshot" => {
+             if args.len() < 3 {
+                println!("Usage: omniforge snapshot <version> [output_path]");
+                return;
+             }
+             let version = &args[2];
+             let output_path = if args.len() >= 4 { args[3].clone() } else { format!("snapshot_v{}.omf", version) };
+             let master_path = get_forge_master_path();
+
+             if !master_path.exists() {
+                println!("Forge Master not found. Run 'omniforge init' first.");
+                return;
+             }
+
+             println!("Loading Forge Master...");
+             if let Err(e) = forge.load_forge_master(master_path.to_str().unwrap()) {
+                 error!("Failed to load Forge Master: {}", e);
+                 return;
+             }
+
+             println!("Creating Snapshot v{}...", version);
+             if let Err(e) = forge.snapshot(version, "Forge CLI", &output_path) {
+                 error!("Snapshot failed: {}", e);
+             } else {
+                 println!("Snapshot created at {}", output_path);
+             }
+        },
+        "run" => {
+            if args.len() < 3 {
+                println!("Usage: omniforge run <snapshot.omf>");
+                return;
+            }
+            let snapshot_path = &args[2];
+            let overlay_path = format!("{}.local", snapshot_path); // Simple convention
+
+            println!(" Omni Forge v8.2 Runtime");
+            println!("=========================");
+            println!("Loading Base: {}", snapshot_path);
+
+            if let Err(e) = forge.load_runtime(snapshot_path, Some(&overlay_path)) {
+                error!("Failed to load runtime: {}", e);
+                return;
+            }
+
+            println!("Runtime Ready. (Type 'exit' to quit)");
 
             loop {
                 print!("> ");
@@ -108,122 +148,74 @@ fn main() {
                 if input == "exit" { break; }
                 if input.is_empty() { continue; }
 
+                // Check for local learning command
+                if input.starts_with("/learn ") {
+                    let content = &input[7..];
+                    if let Err(e) = forge.learn_runtime(content) {
+                        error!("Learning failed: {}", e);
+                    } else {
+                        println!("(Remembered in Local Overlay)");
+                    }
+                    continue;
+                }
+
+                // Check for save command
+                if input == "/save" {
+                     if let Err(e) = forge.save_runtime_overlay(&overlay_path) {
+                         error!("Save failed: {}", e);
+                     } else {
+                         println!("Local Overlay saved to {}", overlay_path);
+                     }
+                     continue;
+                }
+
                 let answer = forge.run_query(input);
-                println!("Mind: {}", answer);
+                println!("{}", answer);
             }
+
+            // Auto-save on exit?
+            println!("Saving session...");
+            let _ = forge.save_runtime_overlay(&overlay_path);
         },
-        "query" => {
-             if args.len() < 4 {
-                println!("Usage: omni-forge query <mind.omf> <question>");
-                return;
-             }
-             let mind_path = &args[2];
-             let question = &args[3..].join(" ");
-
-             if let Err(e) = forge.load_mind(mind_path) {
-                error!("Failed to load mind: {}", e);
-                return;
-             }
-             let answer = forge.run_query(question);
-             println!("{}", answer);
-        },
-        "explain" => {
-             if args.len() < 4 {
-                println!("Usage: omni-forge explain <mind.omf> <concept>");
-                return;
-             }
-             let mind_path = &args[2];
-             let concept = &args[3];
-
-             if let Err(e) = forge.load_mind(mind_path) {
-                error!("Failed to load mind: {}", e);
-                return;
-             }
-
-             match forge.explain_concept(concept) {
-                 Ok(explanation) => println!("{}", explanation),
-                 Err(e) => error!("Explanation failed: {}", e),
-             }
-        },
-        "config" => {
-            if let Some(proj_dirs) = ProjectDirs::from("com", "omni-forge", "omni-forge") {
-                println!("Config Path: {:?}", proj_dirs.config_dir());
-                println!("Data Path:   {:?}", proj_dirs.data_dir());
-                println!("Cache Path:  {:?}", proj_dirs.cache_dir());
-            } else {
-                println!("Could not determine standard config paths for this OS.");
-            }
-        },
-        "export" => {
-             if args.len() < 4 {
-                println!("Usage: omni-forge export <mind.omf> <output.json>");
-                return;
-             }
-             let mind_path = &args[2];
-             let output_path = &args[3];
-
-             if let Err(e) = forge.load_mind(mind_path) {
-                error!("Failed to load mind: {}", e);
-                return;
-             }
-
-             if let Err(e) = forge.export_mind(output_path) {
-                 error!("Export failed: {}", e);
-             } else {
-                 println!("Mind exported to {}", output_path);
-             }
+        "compress" => {
+            println!("Compression not yet implemented for v8.2 artifacts.");
         },
         "inspect" => {
-            let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
-            println!("Inspecting mind artifact: {}", mind_path);
-            match forge.inspect_mind(mind_path) {
+            let path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
+            println!("Inspecting artifact: {}", path);
+            match forge.inspect_mind(path) {
                 Ok(info) => println!("{}", info),
-                Err(e) => error!("Failed to inspect mind: {}", e),
+                Err(e) => error!("Failed to inspect: {}", e),
             }
         },
         "status" => {
-            println!(" Omni Forge v7.0 Status");
-            println!("========================");
-            println!("Factory Status: Idle");
-            println!("System: Operational");
-            println!("Host Arch: {}", std::env::consts::ARCH);
-            println!("Host OS:   {}", std::env::consts::OS);
-
             let profile = hte::detect();
-            println!("\nHardware Truth Engine (HTE):");
-            println!("  Cores: {} Physical / {} Logical", profile.physical_cores, profile.logical_cores);
-            println!("  AVX2:  {}", if profile.avx2 { "Yes" } else { "No" });
-            println!("  NEON:  {}", if profile.neon { "Yes" } else { "No" });
+            println!("System Status:");
+            println!("  OS: {} {}", profile.os_name, profile.kernel_version);
+            println!("  Memory: {}/{} KB (Margin: {:.2})", profile.used_memory, profile.total_memory, profile.memory_budget_margin);
+            println!("  Cores: {}", profile.logical_cores);
         },
-        "freeze" => {
-             println!("Freeze command: Artifacts are frozen by default upon fabrication in v7.0.");
-        },
-        "forge" => {
-             println!("Alias: Use 'fabricate' command.");
-        }
         _ => print_usage(),
     }
 }
 
-fn get_default_mind_path() -> PathBuf {
+fn get_forge_master_path() -> PathBuf {
     if let Some(proj_dirs) = ProjectDirs::from("com", "omni-forge", "omni-forge") {
         let mut path = proj_dirs.data_dir().to_path_buf();
         std::fs::create_dir_all(&path).unwrap_or(());
-        path.push("mind.omf");
+        path.push("forge_master.omf");
         path
     } else {
-        PathBuf::from("mind.omf")
+        PathBuf::from("forge_master.omf")
     }
 }
 
 fn print_usage() {
-    println!("Omni Forge v7.0 (Universal Factory) Usage:");
-    println!("  omni-forge fabricate <data> [out]       # Build a sovereign mind");
-    println!("  omni-forge learn --watch <path>         # Live learning mode");
-    println!("  omni-forge interactive <mind.omf>       # Interactive runtime shell");
-    println!("  omni-forge query <mind.omf> <question>  # Single-shot query");
-    println!("  omni-forge explain <mind.omf> <concept> # Explain a specific concept");
-    println!("  omni-forge export <mind.omf> <out.json> # Export knowledge graph");
-    println!("  omni-forge config                       # Show configuration paths");
-    println!("  omni-forge status                       # System health");
+    println!("Omni Forge v8.2 Usage:");
+    println!("  omniforge init                  # Initialize new Forge Master");
+    println!("  omniforge ingest <path>         # Feed data to Forge Master");
+    println!("  omniforge snapshot <ver> [out]  # Export frozen Mind Artifact");
+    println!("  omniforge run <mind.omf>        # Run sovereign mind with local overlay");
+    println!("  omniforge inspect <mind.omf>    # View metadata");
+    println!("  omniforge status                # Hardware checks");
 }

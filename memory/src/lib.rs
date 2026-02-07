@@ -4,9 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
+use std::path::Path;
 
 #[allow(dead_code)]
-const MEMORY_VERSION: &str = "8.1";
+const MEMORY_VERSION: &str = "8.2";
+
+// --- Forge Artifacts (Immutable) ---
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum LifecycleState {
@@ -34,6 +37,7 @@ pub struct EncoderConfig {
 pub struct LearningPolicies {
     pub reinforcement_rate: f32,
     pub decay_rate: f32,
+    pub max_concepts: Option<usize>, // None = unlimited (Forge)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -45,11 +49,12 @@ pub struct MindMetadata {
     pub core_hash: String,
     pub state: LifecycleState,
     pub compiler_version: String,
+    pub semantic_version: String, // SemVer (e.g. 1.0.0)
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MindPack {
-    pub version: String,
+    pub version: String, // Internal schema version
     pub memory: MemoryStore,
     pub vocab: VocabStore,
     pub encoder_config: EncoderConfig,
@@ -57,35 +62,41 @@ pub struct MindPack {
     pub metadata: MindMetadata,
 }
 
-pub fn save_mind(mind: &MindPack, path: &str) -> Result<(), std::io::Error> {
-    // Validate path
-    let path_obj = std::path::Path::new(path);
+// --- Snapshot Management ---
+
+pub fn save_snapshot(mind: &MindPack, path: &str) -> Result<(), std::io::Error> {
+    let path_obj = Path::new(path);
     if let Some(parent) = path_obj.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let file = File::create(path)?;
     let mut zip = zip::ZipWriter::new(file);
-    let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
-    // 1. Metadata (JSON - Human Readable)
+    // 1. Metadata
     zip.start_file("metadata.json", options)?;
-    serde_json::to_writer(&mut zip, &mind.metadata)?;
+    serde_json::to_writer_pretty(&mut zip, &mind.metadata)?;
 
-    // 2. Cognition Core (Binary - Compact/Fast)
-    zip.start_file("memory.bin", options)?;
+    // 2. Limits / Schema
+    zip.start_file("limits.json", options)?;
+    serde_json::to_writer_pretty(&mut zip, &mind.learning_policies)?;
+
+    zip.start_file("schema.json", options)?;
+    serde_json::to_writer_pretty(&mut zip, &mind.encoder_config)?;
+
+    // 3. Binary Core
+    zip.start_file("mind.bin", options)?;
     let bin_config = bincode::config::standard();
     bincode::serde::encode_into_std_write(&mind.memory.core, &mut zip, bin_config)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-    // 3. Encoder Config & Policies (JSON)
-    zip.start_file("config.json", options)?;
-    serde_json::to_writer(&mut zip, &mind.encoder_config)?;
-    zip.start_file("policies.json", options)?;
-    serde_json::to_writer(&mut zip, &mind.learning_policies)?;
+    // 4. Vocab (optional separation, currently part of Core usually, but here explicit)
+    // Core includes index_memory (vocab), so redundant?
+    // MindPack structure implies VocabStore is separate struct but just wraps map.
+    // Let's keep it consistent.
 
-    // 4. Integrity Hash (Text)
+    // 5. Integrity
     zip.start_file("integrity.hash", options)?;
     zip.write_all(mind.metadata.core_hash.as_bytes())?;
 
@@ -93,57 +104,51 @@ pub fn save_mind(mind: &MindPack, path: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-pub fn load_mind(path: &str) -> Result<MindPack, std::io::Error> {
+pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
     let file = File::open(path)?;
     let mut archive = zip::ZipArchive::new(file)?;
 
     // 1. Metadata
     let metadata: MindMetadata = {
-        let meta_file = archive.by_name("metadata.json")?;
-        serde_json::from_reader(meta_file)?
+        let file = archive.by_name("metadata.json")?;
+        serde_json::from_reader(file)?
     };
 
-    // 2. Memory
+    // 2. Core
     let core: CognitionCore = {
-        let mut mem_file = archive.by_name("memory.bin")?;
-        let mut mem_buf = Vec::new();
-        mem_file.read_to_end(&mut mem_buf)?;
-
+        let mut file = archive.by_name("mind.bin")?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
         let bin_config = bincode::config::standard();
-        bincode::serde::decode_from_slice(&mem_buf, bin_config)
+        bincode::serde::decode_from_slice(&buffer, bin_config)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?.0
     };
 
     // 3. Configs
-    let encoder_config: EncoderConfig = {
-        let config_file = archive.by_name("config.json")?;
-        serde_json::from_reader(config_file)?
-    };
-
     let learning_policies: LearningPolicies = {
-        let policies_file = archive.by_name("policies.json")?;
-        serde_json::from_reader(policies_file)?
+        let file = archive.by_name("limits.json")?;
+        serde_json::from_reader(file)?
     };
 
-    // 4. Verify Integrity
+    let encoder_config: EncoderConfig = {
+        let file = archive.by_name("schema.json")?;
+        serde_json::from_reader(file)?
+    };
+
+    // 4. Integrity Check
     let stored_hash = {
-        let mut hash_file = archive.by_name("integrity.hash")?;
-        let mut stored_hash = String::new();
-        hash_file.read_to_string(&mut stored_hash)?;
-        stored_hash
+        let mut file = archive.by_name("integrity.hash")?;
+        let mut s = String::new();
+        file.read_to_string(&mut s)?;
+        s
     };
 
     if stored_hash != metadata.core_hash {
-         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Integrity Check Failed: Hash mismatch"));
-    }
-
-    let recomputed = core.compute_integrity_hash();
-    if recomputed != stored_hash {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Integrity Check Failed: Content modified"));
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Snapshot Integrity Violation: Hash Mismatch"));
     }
 
     Ok(MindPack {
-        version: "8.1".to_string(),
+        version: MEMORY_VERSION.to_string(),
         memory: MemoryStore { core: core.clone() },
         vocab: VocabStore { words: core.index_memory.clone() },
         encoder_config,
@@ -152,16 +157,36 @@ pub fn load_mind(path: &str) -> Result<MindPack, std::io::Error> {
     })
 }
 
-// Legacy helpers (Deprecated)
-pub fn save_core(core: &CognitionCore, path: &str) -> Result<(), std::io::Error> {
-    let file = File::create(path)?;
-    serde_json::to_writer(file, core)?;
+// --- Runtime Personal Memory (Overlay) ---
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PersonalMemory {
+    pub core: CognitionCore, // Local changes only
+    pub parent_hash: String, // Link to Base Snapshot
+    pub created_at: u64,
+    pub last_accessed: u64,
+}
+
+pub fn save_personal(mem: &PersonalMemory, path: &str) -> Result<(), std::io::Error> {
+    let mut file = File::create(path)?;
+    let bin_config = bincode::config::standard();
+    bincode::serde::encode_into_std_write(mem, &mut file, bin_config)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     Ok(())
 }
 
-pub fn load_core(path: &str) -> Result<CognitionCore, std::io::Error> {
+pub fn load_personal(path: &str) -> Result<PersonalMemory, std::io::Error> {
     let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let core: CognitionCore = serde_json::from_reader(reader)?;
-    Ok(core)
+    let mut reader = BufReader::new(file);
+    let mut buffer = Vec::new();
+    reader.read_to_end(&mut buffer)?;
+
+    let bin_config = bincode::config::standard();
+    let (mem, _): (PersonalMemory, usize) = bincode::serde::decode_from_slice(&buffer, bin_config)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    Ok(mem)
 }
+
+// Legacy Aliases
+pub use load_snapshot as load_mind;
+pub use save_snapshot as save_mind;

@@ -23,4 +23,13 @@ impl LanguageGenerator {
         explanation.push('.');
         explanation
     }
+
+    pub fn explain_plan(path: &[String]) -> String {
+        if path.is_empty() { return "No plan steps.".to_string(); }
+        let mut text = format!("Plan to reach {}:\n", path.last().unwrap());
+        for (i, step) in path.iter().enumerate() {
+            text.push_str(&format!("{}. {}\n", i + 1, step));
+        }
+        text
+    }
 }
