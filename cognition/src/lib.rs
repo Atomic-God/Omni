@@ -3,20 +3,43 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod traits;
 pub mod generation;
+pub mod world_model;
+pub mod temporal;
+pub mod planning;
 
 use core_vsa::index::LshIndex;
 use perception::tokenizer;
 use traits::{PerceptionModule, ReasoningModule};
 use generation::LanguageGenerator;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RelationType {
+    Causal,    // A causes B
+    Temporal,  // A happens before B
+    Spatial,   // A is inside B
+    Attribute, // A has property B
+    Taxonomic, // A is a B
+    Generic,   // A related to B
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Relation {
+    pub target: String,
+    pub relation_type: RelationType,
+    pub weight: u8, // 0-100 scale for Eq/Hash safety
+    pub timestamp: u64,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CognitionCore {
     pub index_memory: HashMap<String, HyperVector>,
     pub semantic_memory: HashMap<String, HyperVector>,
-    pub relation_graph: HashMap<String, Vec<String>>,
+    // Upgraded Graph: String -> List of Rich Relations
+    pub relation_graph: HashMap<String, Vec<Relation>>,
     pub sentence_memory: LshIndex,
 }
 
@@ -58,7 +81,9 @@ impl CognitionCore {
 
     fn learn_text_internal(&mut self, text: &str) {
         let words = tokenizer::tokenize(text);
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
+        // 1. Index Learning
         for word in &words {
             if !self.index_memory.contains_key(word) {
                 let mut hasher = DefaultHasher::new();
@@ -73,11 +98,12 @@ impl CognitionCore {
             }
         }
 
+        // 2. Graph Learning (Upgraded)
         for i in 0..words.len() {
             if words[i] == "is" && i > 0 && i + 1 < words.len() {
                 let subject = words[i - 1].clone();
                 let object = words[i + 1].clone();
-                self.relation_graph.entry(subject).or_default().push(object);
+                self.add_relation(subject, object, RelationType::Taxonomic, 100, timestamp);
             }
             if i + 1 < words.len()
                 && words[i] != "is"
@@ -87,10 +113,11 @@ impl CognitionCore {
             {
                 let a = words[i].clone();
                 let b = words[i + 1].clone();
-                self.relation_graph.entry(a).or_default().push(b);
+                self.add_relation(a, b, RelationType::Generic, 50, timestamp);
             }
         }
 
+        // 3. Semantic Context Learning (unchanged)
         for (i, target_word) in words.iter().enumerate() {
             let mut context_bundle: Option<HyperVector> = None;
             for (j, context_word) in words.iter().enumerate() {
@@ -109,9 +136,20 @@ impl CognitionCore {
             }
         }
 
+        // 4. Episodic Memory (unchanged)
         if let Some(sv) = self.sentence_vector(text) {
             self.sentence_memory.insert(sv);
         }
+    }
+
+    pub fn add_relation(&mut self, source: String, target: String, rel_type: RelationType, weight: u8, timestamp: u64) {
+        let entry = self.relation_graph.entry(source).or_default();
+        entry.push(Relation {
+            target,
+            relation_type: rel_type,
+            weight,
+            timestamp,
+        });
     }
 
     pub fn compute_integrity_hash(&self) -> String {
@@ -148,7 +186,6 @@ impl CognitionCore {
         let target = words.last().unwrap();
 
         if let Some(path) = self.multi_hop_inference(subject, target, 3) {
-            // Enhanced Output: Generate a reasoned sentence
             self.generate_explanation(&path)
         } else {
             "No connection found.".to_string()
@@ -156,25 +193,17 @@ impl CognitionCore {
     }
 
     fn generate_explanation(&self, path: &[String]) -> String {
-        if path.len() < 2 { return path[0].clone(); }
-
-        let mut explanation = format!("{} is related to {}", path[0], path[1]);
-        if path.len() > 2 {
-            explanation.push_str(&format!(", which is related to {}", path[2]));
-        }
-        if path.len() > 3 {
-             explanation.push_str(", and so on");
-        }
-        format!("Yes. Logic: {} (Chain: {})", explanation, path.join(" -> "))
+        LanguageGenerator::compose_explanation(path)
     }
 
     pub fn explain_concept(&self, concept: &str) -> String {
         let mut report = format!("Concept: {}\n", concept);
 
-        if let Some(neighbors) = self.relation_graph.get(concept) {
-            report.push_str("Directly related to: ");
-            report.push_str(&neighbors.join(", "));
-            report.push_str("\n");
+        if let Some(relations) = self.relation_graph.get(concept) {
+            report.push_str("Known Relations:\n");
+            for rel in relations.iter().take(5) {
+                report.push_str(&format!("- [{:?}] -> {} (conf: {})\n", rel.relation_type, rel.target, rel.weight));
+            }
         } else {
             report.push_str("No direct relations known.\n");
         }
@@ -201,13 +230,13 @@ impl CognitionCore {
             if current == target { return Some(path); }
             if path.len() > max_depth { continue; }
 
-            if let Some(neighbors) = self.relation_graph.get(&current) {
-                for neighbor in neighbors {
-                    if !visited.contains(neighbor) {
-                        visited.insert(neighbor.clone());
+            if let Some(relations) = self.relation_graph.get(&current) {
+                for rel in relations {
+                    if !visited.contains(&rel.target) {
+                        visited.insert(rel.target.clone());
                         let mut new_path = path.clone();
-                        new_path.push(neighbor.clone());
-                        queue.push_back((neighbor.clone(), new_path));
+                        new_path.push(rel.target.clone());
+                        queue.push_back((rel.target.clone(), new_path));
                     }
                 }
             }

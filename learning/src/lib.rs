@@ -1,4 +1,4 @@
-use cognition::CognitionCore;
+use cognition::{CognitionCore, Relation};
 use cognition::traits::PerceptionModule;
 use ingestion::SemanticChunk;
 use log::{info, warn};

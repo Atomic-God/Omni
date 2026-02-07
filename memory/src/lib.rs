@@ -46,7 +46,7 @@ pub struct MindMetadata {
     pub state: LifecycleState,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MindPack {
     pub version: String,
     pub memory: MemoryStore,
