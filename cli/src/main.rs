@@ -5,6 +5,8 @@ use std::env;
 use std::io::{self, Write};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
+use directories::ProjectDirs;
+use std::path::PathBuf;
 
 fn main() {
     if env::var("RUST_LOG").is_ok() {
@@ -23,13 +25,20 @@ fn main() {
     match command.as_str() {
         "fabricate" => {
             if args.len() < 3 {
-                println!("Usage: omni-forge fabricate <data_path>");
+                println!("Usage: omni-forge fabricate <data_path> [output_path]");
                 return;
             }
             let data_path = &args[2];
-            println!(" Omni Forge v6.0 Industrial Fabricator");
+            let output_path = if args.len() >= 4 {
+                args[3].clone()
+            } else {
+                get_default_mind_path().to_string_lossy().to_string()
+            };
+
+            println!(" Omni Forge v7.0 Industrial Fabricator");
             println!("=======================================");
             println!("Ingesting reality from: {}", data_path);
+            println!("Target Artifact: {}", output_path);
 
             let pb = ProgressBar::new_spinner();
             pb.set_style(ProgressStyle::default_spinner()
@@ -39,10 +48,10 @@ fn main() {
             pb.set_message("Ingesting & Learning (Structural Analysis)...");
             pb.enable_steady_tick(Duration::from_millis(100));
 
-            match forge.fabricate_mind(data_path, "mind.omf") {
+            match forge.fabricate_mind(data_path, &output_path) {
                 Ok(_) => {
                     pb.finish_with_message("Fabrication Complete!");
-                    println!("Success: Sovereign Mind fabricated to 'mind.omf' (Binary Pack).");
+                    println!("Success: Sovereign Mind fabricated to '{}' (Binary Pack).", output_path);
                 },
                 Err(e) => {
                     pb.finish_with_message("Fabrication Failed");
@@ -56,20 +65,32 @@ fn main() {
                  return;
              }
              let watch_path = &args[3];
-             println!(" Omni Forge v6.0 Live Learner");
+             println!(" Omni Forge v7.0 Live Learner");
              println!("============================");
              let live = LiveFabricator::new();
+
+             // Graceful Shutdown
+             ctrlc::set_handler(move || {
+                 println!("\nReceived shutdown signal. Saving state...");
+                 std::process::exit(0);
+             }).expect("Error setting Ctrl-C handler");
+
              if let Err(e) = live.watch(watch_path) {
                  error!("Live learning failed: {}", e);
              }
         },
-        "run" => {
-            let mind_path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
-            println!(" Omni Forge v6.0 Runtime");
+        "run" | "interactive" => {
+            let mind_path = if args.len() >= 3 {
+                args[2].clone()
+            } else {
+                get_default_mind_path().to_string_lossy().to_string()
+            };
+
+            println!(" Omni Forge v7.0 Runtime");
             println!("=========================");
             println!("Loading sovereign mind from {}...", mind_path);
 
-            if let Err(e) = forge.load_mind(mind_path) {
+            if let Err(e) = forge.load_mind(&mind_path) {
                 error!("Failed to load mind: {}", e);
                 println!("Error: Could not load mind artifact. Ensure integrity hash matches.");
                 return;
@@ -124,6 +145,15 @@ fn main() {
                  Err(e) => error!("Explanation failed: {}", e),
              }
         },
+        "config" => {
+            if let Some(proj_dirs) = ProjectDirs::from("com", "omni-forge", "omni-forge") {
+                println!("Config Path: {:?}", proj_dirs.config_dir());
+                println!("Data Path:   {:?}", proj_dirs.data_dir());
+                println!("Cache Path:  {:?}", proj_dirs.cache_dir());
+            } else {
+                println!("Could not determine standard config paths for this OS.");
+            }
+        },
         "export" => {
              if args.len() < 4 {
                 println!("Usage: omni-forge export <mind.omf> <output.json>");
@@ -152,8 +182,9 @@ fn main() {
             }
         },
         "status" => {
-            println!(" Omni Forge v6.0 Status");
+            println!(" Omni Forge v7.0 Status");
             println!("========================");
+            println!("Factory Status: Idle");
             println!("System: Operational");
             println!("Host Arch: {}", std::env::consts::ARCH);
             println!("Host OS:   {}", std::env::consts::OS);
@@ -163,27 +194,36 @@ fn main() {
             println!("  Cores: {} Physical / {} Logical", profile.physical_cores, profile.logical_cores);
             println!("  AVX2:  {}", if profile.avx2 { "Yes" } else { "No" });
             println!("  NEON:  {}", if profile.neon { "Yes" } else { "No" });
-
-            if !profile.avx2 && !profile.neon {
-                println!("\n[WARNING] No SIMD acceleration detected. Performance may be degraded.");
-            }
         },
         "freeze" => {
-             println!("Freeze command: Artifacts are frozen by default upon fabrication in v6.0.");
+             println!("Freeze command: Artifacts are frozen by default upon fabrication in v7.0.");
         },
+        "forge" => {
+             println!("Alias: Use 'fabricate' command.");
+        }
         _ => print_usage(),
     }
 }
 
+fn get_default_mind_path() -> PathBuf {
+    if let Some(proj_dirs) = ProjectDirs::from("com", "omni-forge", "omni-forge") {
+        let mut path = proj_dirs.data_dir().to_path_buf();
+        std::fs::create_dir_all(&path).unwrap_or(());
+        path.push("mind.omf");
+        path
+    } else {
+        PathBuf::from("mind.omf")
+    }
+}
+
 fn print_usage() {
-    println!("Omni Forge v6.0 (Industrial Compiler) Usage:");
-    println!("  omni-forge fabricate <data_path>        # Build a sovereign mind from raw data");
-    println!("  omni-forge learn --watch <path>         # Live learning mode (watches for changes)");
-    println!("  omni-forge run <mind.omf>               # Interactive read-only runtime shell");
-    println!("  omni-forge query <mind.omf> <question>  # Single-shot query execution");
+    println!("Omni Forge v7.0 (Universal Factory) Usage:");
+    println!("  omni-forge fabricate <data> [out]       # Build a sovereign mind");
+    println!("  omni-forge learn --watch <path>         # Live learning mode");
+    println!("  omni-forge interactive <mind.omf>       # Interactive runtime shell");
+    println!("  omni-forge query <mind.omf> <question>  # Single-shot query");
     println!("  omni-forge explain <mind.omf> <concept> # Explain a specific concept");
     println!("  omni-forge export <mind.omf> <out.json> # Export knowledge graph");
-    println!("  omni-forge inspect <mind.omf>           # Audit mind artifact metadata");
-    println!("  omni-forge freeze                       # (No-op) Mark artifact as production ready");
-    println!("  omni-forge status                       # System health and HTE report");
+    println!("  omni-forge config                       # Show configuration paths");
+    println!("  omni-forge status                       # System health");
 }

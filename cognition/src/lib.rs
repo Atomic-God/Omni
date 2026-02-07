@@ -5,10 +5,12 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 pub mod traits;
+pub mod generation;
 
 use core_vsa::index::LshIndex;
 use perception::tokenizer;
 use traits::{PerceptionModule, ReasoningModule};
+use generation::LanguageGenerator;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CognitionCore {
@@ -136,7 +138,7 @@ impl CognitionCore {
             let verb = &words[3];
             let objects = self.query_subject_action(subject, verb);
             if !objects.is_empty() {
-                return objects[0].clone();
+                return LanguageGenerator::synthesize_sentence(subject, verb, &objects[0]);
             } else {
                 return "Unknown".to_string();
             }
@@ -169,7 +171,6 @@ impl CognitionCore {
     pub fn explain_concept(&self, concept: &str) -> String {
         let mut report = format!("Concept: {}\n", concept);
 
-        // 1. Direct Relations
         if let Some(neighbors) = self.relation_graph.get(concept) {
             report.push_str("Directly related to: ");
             report.push_str(&neighbors.join(", "));
@@ -178,7 +179,6 @@ impl CognitionCore {
             report.push_str("No direct relations known.\n");
         }
 
-        // 2. Semantic Neighborhood
         let similar = self.most_similar(concept);
         if !similar.is_empty() {
             report.push_str("Semantically similar to: ");

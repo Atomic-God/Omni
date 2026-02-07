@@ -77,57 +77,58 @@ pub fn ingest_stream(source_name: &str, reader: &mut dyn BufRead) -> Vec<Semanti
 }
 
 fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>) {
-    let ext_str = path.extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_else(|| "bin".to_string());
+    if let Some(ext) = path.extension() {
+        let ext_str = ext.to_string_lossy().to_lowercase();
 
-    match ext_str.as_str() {
-        "zip" | "docx" | "pptx" | "xlsx" => process_zip(path, chunks, seen_hashes, &ext_str), // Office files are zips
-        "tar" => process_tar(path, chunks, seen_hashes),
-        "gz" => process_tar_gz(path, chunks, seen_hashes),
-        "pdf" => process_pdf(path, chunks, seen_hashes),
-        _ => process_generic(path, chunks, seen_hashes, &ext_str),
-    }
-}
+        match ext_str.as_str() {
+            "zip" => process_zip(path, chunks, seen_hashes),
+            "tar" => process_tar(path, chunks, seen_hashes),
+            "gz" => process_tar_gz(path, chunks, seen_hashes),
+            "txt" | "md" | "rs" | "csv" | "json" | "py" | "c" | "cpp" | "h" | "toml" | "yaml" | "xml" => {
+                 match read_file_stream(path) {
+                    Ok(content) => {
+                         let lang = detect(&content).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
 
-fn process_generic(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>, ext: &str) {
-    // Try to read as text first
-    match read_file_stream(path) {
-        Ok(content) => {
-             // Heuristic: Is it binary?
-             if is_likely_binary(&content) {
-                 warn!("Ingesting binary file as blob metadata: {:?}", path);
-                 let fact = format!("File {} exists with type {}.", path.file_name().unwrap().to_string_lossy(), ext);
-                 push_chunk(chunks, seen_hashes, path.to_string_lossy().to_string(), fact, ext.to_string(), "file_metadata");
-                 return;
-             }
+                         if lang == "unknown" && is_likely_binary(&content) {
+                             warn!("Skipping likely binary file: {:?}", path);
+                             return;
+                         }
 
-             let file_chunks = chunk_content(&content, ext);
-             for (chunk_text, struct_type) in file_chunks {
-                 push_chunk(chunks, seen_hashes, path.to_string_lossy().to_string(), chunk_text, ext.to_string(), &struct_type);
-             }
-        },
-        Err(e) => warn!("Failed to read file {:?}: {}", path, e),
-    }
-}
+                         let file_chunks = chunk_content(&content, &ext_str);
+                         for (chunk_text, struct_type) in file_chunks {
+                             let hash = compute_hash(&chunk_text);
+                             if seen_hashes.contains(&hash) {
+                                 continue;
+                             }
+                             seen_hashes.insert(hash.clone());
 
-fn process_pdf(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>) {
-    match pdf_extract::extract_text(path) {
-        Ok(text) => {
-             let file_chunks = chunk_content(&text, "pdf");
-             for (chunk_text, struct_type) in file_chunks {
-                 push_chunk(chunks, seen_hashes, path.to_string_lossy().to_string(), chunk_text, "pdf".to_string(), &struct_type);
-             }
-        },
-        Err(e) => {
-            warn!("PDF extraction failed for {:?}: {}. Fallback to metadata.", path, e);
-            let fact = format!("PDF Document {} exists.", path.file_name().unwrap().to_string_lossy());
-            push_chunk(chunks, seen_hashes, path.to_string_lossy().to_string(), fact, "pdf".to_string(), "metadata_fallback");
+                             chunks.push(SemanticChunk {
+                                 source: path.to_string_lossy().to_string(),
+                                 content: chunk_text,
+                                 metadata: ChunkMetadata {
+                                     hash,
+                                     timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                     file_type: ext_str.clone(),
+                                     language: lang.clone(),
+                                     structure_type: struct_type,
+                                 },
+                             });
+                         }
+                    },
+                    Err(e) => warn!("Failed to read file {:?}: {}", path, e),
+                 }
+            },
+            "pdf" => {
+                warn!("PDF support requires external dependencies (lopdf/poppler). Skipping: {:?}", path);
+            },
+            _ => {
+                // Skip unknown
+            }
         }
     }
 }
 
-fn process_zip(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>, original_ext: &str) {
+fn process_zip(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>) {
     let file = match File::open(path) { Ok(f) => f, Err(e) => { error!("Failed to open zip: {}", e); return; } };
     let mut archive = match ZipArchive::new(file) { Ok(a) => a, Err(e) => { error!("Failed to parse zip: {}", e); return; } };
 
@@ -135,39 +136,34 @@ fn process_zip(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_has
         let mut file = match archive.by_index(i) { Ok(f) => f, Err(_) => continue };
         if file.is_dir() { continue; }
 
+        // Simple heuristic: process only text-like extensions inside zip
         let name = file.name().to_string();
-        // Skip junk
-        if name.starts_with("__MACOSX") || name.ends_with(".DS_Store") { continue; }
-
-        // Recursive Office XML extraction could go here (document.xml)
-        if (original_ext == "docx" && name == "word/document.xml") ||
-           (original_ext == "pptx" && name.starts_with("ppt/slides/slide")) {
-               // Extract text from XML (naive strip tags)
-               let mut xml = String::new();
-               if file.read_to_string(&mut xml).is_ok() {
-                   let text = strip_xml_tags(&xml);
-                   let file_chunks = chunk_content(&text, "office_xml");
-                   for (chunk_text, struct_type) in file_chunks {
-                       push_chunk(chunks, seen_hashes, format!("{}::{}", path.to_string_lossy(), name), chunk_text, "office_text".to_string(), &struct_type);
-                   }
-               }
-               continue;
+        if !name.ends_with(".txt") && !name.ends_with(".md") && !name.ends_with(".rs") && !name.ends_with(".json") {
+            continue;
         }
 
         let mut content = String::new();
-        // Try read as text
         if file.read_to_string(&mut content).is_ok() {
              let file_chunks = chunk_content(&content, "zip_entry");
              for (chunk_text, struct_type) in file_chunks {
-                 push_chunk(chunks, seen_hashes, format!("{}::{}", path.to_string_lossy(), name), chunk_text, "zip_entry".to_string(), &struct_type);
+                 let hash = compute_hash(&chunk_text);
+                 if seen_hashes.contains(&hash) { continue; }
+                 seen_hashes.insert(hash.clone());
+
+                 chunks.push(SemanticChunk {
+                     source: format!("{}::{}", path.to_string_lossy(), name),
+                     content: chunk_text,
+                     metadata: ChunkMetadata {
+                         hash,
+                         timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                         file_type: "zip_entry".to_string(),
+                         language: "unknown".to_string(),
+                         structure_type: struct_type,
+                     },
+                 });
              }
         }
     }
-}
-
-fn strip_xml_tags(xml: &str) -> String {
-    let re = Regex::new(r"[.?!]\s+").unwrap();
-    re.replace_all(xml, " ").to_string()
 }
 
 fn process_tar(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>) {
@@ -190,36 +186,34 @@ fn process_tar_entries<R: Read>(archive: &mut Archive<R>, source_path: &std::pat
                 let path_buf = match file.path() { Ok(p) => p.to_path_buf(), Err(_) => continue };
                 let name = path_buf.to_string_lossy();
 
+                if !name.ends_with(".txt") && !name.ends_with(".md") && !name.ends_with(".rs") && !name.ends_with(".json") {
+                    continue;
+                }
+
                 let mut content = String::new();
                 if file.read_to_string(&mut content).is_ok() {
                      let file_chunks = chunk_content(&content, "tar_entry");
                      for (chunk_text, struct_type) in file_chunks {
-                         push_chunk(chunks, seen_hashes, format!("{}::{}", source_path.to_string_lossy(), name), chunk_text, "tar_entry".to_string(), &struct_type);
+                         let hash = compute_hash(&chunk_text);
+                         if seen_hashes.contains(&hash) { continue; }
+                         seen_hashes.insert(hash.clone());
+
+                         chunks.push(SemanticChunk {
+                             source: format!("{}::{}", source_path.to_string_lossy(), name),
+                             content: chunk_text,
+                             metadata: ChunkMetadata {
+                                 hash,
+                                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                 file_type: "tar_entry".to_string(),
+                                 language: "unknown".to_string(),
+                                 structure_type: struct_type,
+                             },
+                         });
                      }
                 }
             }
         }
     }
-}
-
-fn push_chunk(chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>, source: String, content: String, file_type: String, structure_type: &str) {
-    let hash = compute_hash(&content);
-    if seen_hashes.contains(&hash) { return; }
-    seen_hashes.insert(hash.clone());
-
-    let lang = detect(&content).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
-
-    chunks.push(SemanticChunk {
-        source,
-        content,
-        metadata: ChunkMetadata {
-            hash,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
-            file_type,
-            language: lang,
-            structure_type: structure_type.to_string(),
-        },
-    });
 }
 
 fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
@@ -228,7 +222,7 @@ fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
     let mut content = String::new();
     let metadata = fs::metadata(path)?;
     if metadata.len() > 10 * 1024 * 1024 {
-        warn!("File {:?} is large ({:?} bytes). Truncating for safety.", path, metadata.len());
+        warn!("File {:?} is too large ({:?} bytes). Truncating.", path, metadata.len());
         reader.take(10 * 1024 * 1024).read_to_string(&mut content)?;
     } else {
         reader.read_to_string(&mut content)?;
@@ -273,7 +267,10 @@ fn chunk_code(text: &str, regex: &Regex) -> Vec<(String, String)> {
 }
 
 fn chunk_text_smart(text: &str) -> Vec<(String, String)> {
-    let re = Regex::new(r"[.?!]\s+").unwrap();
+    // Better splitting: Sentences.
+    // Heuristic: Split by ". " but avoid "Mr.", "e.g." etc.
+    // For robust sentence splitting we'd use a crate, but simple regex works for prototype.
+    let re = Regex::new(r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s").unwrap();
     let sentences: Vec<&str> = re.split(text).collect();
 
     let mut chunks = Vec::new();

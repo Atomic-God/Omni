@@ -60,7 +60,6 @@ impl LearningEngine {
         for (_subject, relations) in core.relation_graph.iter_mut() {
             if relations.len() > max_rels_per_concept {
                 // Keep the *latest* added relations (tail of the vector)
-                // relations is [oldest ... newest]
                 let start_idx = relations.len() - max_rels_per_concept;
                 *relations = relations.split_off(start_idx);
                 pruned_count += 1;
@@ -80,5 +79,11 @@ impl LearningEngine {
     pub fn unfreeze(&mut self) {
          info!("Unfreezing Learning Engine. Updates allowed.");
          self.frozen = false;
+    }
+
+    // Explicit reinforcement API for future use
+    pub fn strengthen_memory(&self, _concept: &str) {
+        // Placeholder: Logic to increase weight of a concept vector
+        info!("Reinforcing memory (stub)");
     }
 }
