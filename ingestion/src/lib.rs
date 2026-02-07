@@ -270,7 +270,7 @@ fn chunk_text_smart(text: &str) -> Vec<(String, String)> {
     // Better splitting: Sentences.
     // Heuristic: Split by ". " but avoid "Mr.", "e.g." etc.
     // For robust sentence splitting we'd use a crate, but simple regex works for prototype.
-    let re = Regex::new(r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s").unwrap();
+    let re = Regex::new(r"[.?!]\s+").unwrap();
     let sentences: Vec<&str> = re.split(text).collect();
 
     let mut chunks = Vec::new();
