@@ -1,9 +1,11 @@
 use cognition::traits::{PerceptionModule, ReasoningModule};
 use cognition::CognitionCore;
+use cognition::planning::Goal;
 use log::{error, info};
 use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata, LifecycleState};
 use perception::decoder::TextDecoder;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::VecDeque;
 
 /// Trait for extending OmniMind capabilities.
 pub trait ExtensionModule: Send + Sync {
@@ -15,6 +17,7 @@ pub struct OmniMind {
     pub cognition: CognitionCore,
     extensions: Vec<Box<dyn ExtensionModule>>,
     pub read_only: bool,
+    pub goals: VecDeque<Goal>,
 }
 
 impl Default for OmniMind {
@@ -30,6 +33,7 @@ impl OmniMind {
             cognition: CognitionCore::new(),
             extensions: Vec::new(),
             read_only: false,
+            goals: VecDeque::new(),
         }
     }
 
@@ -88,9 +92,50 @@ impl OmniMind {
         self.cognition.explain_concept(concept)
     }
 
+    pub fn plan(&self, start: &str, end: &str) -> String {
+        info!("Planning path from {} to {}", start, end);
+        if let Some(path) = self.cognition.find_path(start, end) {
+            format!("Plan found: {}", path.join(" -> "))
+        } else {
+            "No plan found.".to_string()
+        }
+    }
+
+    pub fn add_goal(&mut self, description: &str, target: &str, priority: u8) {
+        if self.read_only {
+             // Goals might be allowed in runtime? Or are they "mutations"?
+             // Goals are internal state, not "learning". Let's allow it for now as "Runtime State".
+             // But OmniMind structs are usually reloaded.
+             // If we want persistent goals, we need to save them.
+             // For now, allow in memory.
+        }
+        self.goals.push_back(Goal {
+            description: description.to_string(),
+            target_state: target.to_string(),
+            priority,
+            completed: false,
+        });
+        // Sort by priority (descending)
+        let mut vec: Vec<Goal> = self.goals.drain(..).collect();
+        vec.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.goals = VecDeque::from(vec);
+    }
+
     pub fn generate(&self, hv: &core_vsa::HyperVector) -> String {
         let decoder = TextDecoder::new(self.cognition.semantic_memory.clone());
         decoder.decode_svo(hv).0
+    }
+
+    pub fn introspect(&self) -> String {
+        let memory_size = self.cognition.index_memory.len();
+        let relations = self.cognition.relation_graph.values().map(|v| v.len()).sum::<usize>();
+        let active_goals = self.goals.len();
+
+        format!(
+            "Mind Status:\n- Concepts: {}\n- Relations: {}\n- Active Goals: {}\n- Mode: {}",
+            memory_size, relations, active_goals,
+            if self.read_only { "READ-ONLY" } else { "LEARNING" }
+        )
     }
 
     pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
@@ -100,7 +145,7 @@ impl OmniMind {
         let core_hash = self.cognition.compute_integrity_hash();
 
         let pack = MindPack {
-            version: "5.1".to_string(),
+            version: "8.0".to_string(),
             memory: MemoryStore {
                 core: self.cognition.clone(),
             },
@@ -119,7 +164,7 @@ impl OmniMind {
                 arch: std::env::consts::ARCH.to_string(),
                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
                 core_hash,
-                source: "OmniForge v5.1 Fabricator".to_string(),
+                source: "OmniForge v8.0 Fabricator".to_string(),
                 state: if self.read_only { LifecycleState::Frozen } else { LifecycleState::Fabricated },
             },
         };

@@ -1,5 +1,5 @@
 use crate::{CognitionCore, RelationType};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
 // World Model Layer
 // Implements Ontology and Causal Reasoning

@@ -226,7 +226,16 @@ impl CognitionCore {
         queue.push_back((start.to_string(), vec![start.to_string()]));
         visited.insert(start.to_string());
 
+        let mut visited_count = 0;
+        const MAX_NODES: usize = 500; // Security limit to prevent DoS
+
         while let Some((current, path)) = queue.pop_front() {
+            visited_count += 1;
+            if visited_count > MAX_NODES {
+                // Log warning in real implementation, for now just abort
+                return None;
+            }
+
             if current == target { return Some(path); }
             if path.len() > max_depth { continue; }
 

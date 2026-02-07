@@ -1,8 +1,16 @@
 use crate::CognitionCore;
 use std::collections::{HashSet, VecDeque};
+use serde::{Deserialize, Serialize};
 
-// Planning Engine
-// Symbolic Planning using Graph Search
+// Planning Engine & Goals
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Goal {
+    pub description: String,
+    pub target_state: String,
+    pub priority: u8,
+    pub completed: bool,
+}
 
 impl CognitionCore {
     /// Finds a path of actions/relations to get from start_state to end_state.
@@ -14,7 +22,13 @@ impl CognitionCore {
         queue.push_back((start.to_string(), vec![start.to_string()]));
         visited.insert(start.to_string());
 
+        let mut steps = 0;
+        const MAX_PLAN_STEPS: usize = 200;
+
         while let Some((current, path)) = queue.pop_front() {
+            steps += 1;
+            if steps > MAX_PLAN_STEPS { return None; }
+
             if current == end {
                 return Some(path);
             }
