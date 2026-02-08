@@ -9,8 +9,11 @@ use std::sync::Arc;
 
 pub mod context;
 pub mod explanation;
+pub mod security; // Added
+
 use context::ContextManager;
 use explanation::ExplanationEngine;
+use security::PermissionBoundary;
 
 /// Trait for extending capabilities.
 pub trait ExtensionModule: Send + Sync {
@@ -26,6 +29,7 @@ pub struct ForgeMind {
     pub cognition: CognitionCore,
     extensions: Vec<Box<dyn ExtensionModule>>,
     pub context: ContextManager,
+    pub permissions: PermissionBoundary,
 }
 
 impl Default for ForgeMind {
@@ -37,10 +41,15 @@ impl Default for ForgeMind {
 impl ForgeMind {
     pub fn new() -> Self {
         info!("Initializing ForgeMind (Creator Instance).");
+        // Forge has default unlimited permissions relative to cwd?
+        // Let's restrict it to cwd for safety.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
         Self {
             cognition: CognitionCore::new(),
             extensions: Vec::new(),
             context: ContextManager::new(),
+            permissions: PermissionBoundary::new(cwd),
         }
     }
 
@@ -58,6 +67,8 @@ impl ForgeMind {
     }
 
     pub fn load_master(&mut self, path: &str) -> Result<(), std::io::Error> {
+        self.permissions.check_path(std::path::Path::new(path)).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+
         info!("Loading Master Mind from {}", path);
         let pack = memory::load_snapshot(path)?;
         self.cognition = pack.memory.core;
@@ -70,6 +81,14 @@ impl ForgeMind {
     }
 
     pub fn save_master(&self, path: &str) -> Result<(), std::io::Error> {
+        // Saving might create new file, so strict check_path might fail if file doesn't exist yet but parent does.
+        // check_path checks canonicalize which requires existence.
+        // We should check parent dir.
+        let path_obj = std::path::Path::new(path);
+        if let Some(parent) = path_obj.parent() {
+             self.permissions.check_path(parent).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+        }
+
         info!("Saving Master Mind to {}", path);
         let pack = self.to_pack("master", LifecycleState::Fabricated);
         memory::save_snapshot(&pack, path)
@@ -82,6 +101,11 @@ impl ForgeMind {
 
     // Snapshot creation (Immutable Export)
     pub fn snapshot(&self, version: &str, source: &str, path: &str) -> Result<(), std::io::Error> {
+        let path_obj = std::path::Path::new(path);
+        if let Some(parent) = path_obj.parent() {
+             self.permissions.check_path(parent).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+        }
+
         info!("Creating Immutable Snapshot v{} at {}", version, path);
         let pack = self.to_pack(source, LifecycleState::Frozen);
         memory::save_snapshot(&pack, path)
