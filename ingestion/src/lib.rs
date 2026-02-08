@@ -13,6 +13,9 @@ use zip::read::ZipArchive;
 use tar::Archive;
 use flate2::read::GzDecoder;
 
+pub mod adapters;
+use adapters::{HtmlAdapter, DocxAdapter};
+
 // --- Trait Definitions ---
 
 pub trait IngestionAdapter: Send + Sync {
@@ -92,6 +95,8 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
         Box::new(TextAdapter),
         Box::new(CodeAdapter),
         Box::new(StructureAdapter),
+        Box::new(HtmlAdapter),
+        Box::new(DocxAdapter),
         Box::new(PdfAdapter),
     ];
 

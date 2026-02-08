@@ -1,40 +1,44 @@
 use cognition::CognitionCore;
 
+pub enum AudienceModel {
+    Child,
+    Student,
+    Expert,
+}
+
 pub struct ExplanationEngine;
 
 impl ExplanationEngine {
-    pub fn simplify(core: &CognitionCore, concept: &str, level: &str) -> String {
+    pub fn simplify(core: &CognitionCore, concept: &str, audience: AudienceModel) -> String {
         let relations = match core.relation_graph.get(concept) {
             Some(r) => r,
             None => return format!("I don't know enough about {} to explain it.", concept),
         };
 
-        // Simplification Logic:
-        // ELI5 (Child): Only use 'is_a' or 'has_property' relations. Avoid 'causal' chains unless simple.
-        // Student: Use all relations but summarize.
-        // Expert: Show raw relations and confidence weights.
-
-        let mut explanation = String::new();
-        match level {
-            "child" | "eli5" => {
-                explanation.push_str(&format!("Imagine {}. ", concept));
-                // Only take strong relations
-                for rel in relations.iter().filter(|r| r.weight > 50).take(3) {
-                    explanation.push_str(&format!("It relates to {}. ", rel.target));
+        match audience {
+            AudienceModel::Child => {
+                // ELI5: Use analogies ("like X") and simple attributes
+                let mut explanation = format!("Imagine {}. ", concept);
+                for rel in relations.iter().filter(|r| r.weight > 60).take(3) {
+                    explanation.push_str(&format!("It is like {} because it relates to {}. ", concept, rel.target));
                 }
+                explanation
             },
-            "expert" => {
-                explanation.push_str(&format!("Structural Analysis of {}:\n", concept));
+            AudienceModel::Student => {
+                // Structural definition
+                let mut explanation = format!("{} is defined by: ", concept);
+                let targets: Vec<String> = relations.iter().take(5).map(|r| r.target.clone()).collect();
+                explanation.push_str(&targets.join(", "));
+                explanation
+            },
+            AudienceModel::Expert => {
+                // Full graph dump with confidence
+                let mut explanation = format!("Structural Analysis of {}:\n", concept);
                 for rel in relations {
                     explanation.push_str(&format!("- [{:?}] -> {} (w={})\n", rel.relation_type, rel.target, rel.weight));
                 }
+                explanation
             },
-            _ => { // Student/Default
-                explanation.push_str(&format!("{} is defined by: ", concept));
-                let targets: Vec<String> = relations.iter().take(5).map(|r| r.target.clone()).collect();
-                explanation.push_str(&targets.join(", "));
-            }
         }
-        explanation
     }
 }

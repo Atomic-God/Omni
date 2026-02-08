@@ -11,7 +11,7 @@ fn test_zip_ingestion() {
 
     let file = File::create(&zip_path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
-    let options: FileOptions<()> = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     zip.start_file("hello.txt", options).unwrap();
     zip.write_all(b"Hello world inside zip.").unwrap();

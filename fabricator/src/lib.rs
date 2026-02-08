@@ -8,6 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod facade;
 pub mod live;
 pub mod merge;
+pub mod compiler; // Added
+
+use compiler::{ForgeCompiler, TargetProfile};
 
 pub struct ForgeConfig {
     pub max_concepts: Option<usize>,
@@ -55,7 +58,7 @@ impl ForgeSession {
     pub fn finalize_snapshot(&self, version: &str, blueprint: Option<MindBlueprint>) -> MindPack {
         let core_hash = self.mind.cognition.compute_integrity_hash();
         MindPack {
-            version: "8.2".to_string(),
+            version: "8.3".to_string(),
             memory: MemoryStore { core: self.mind.cognition.clone() },
             vocab: VocabStore { words: self.mind.cognition.index_memory.clone() },
             encoder_config: EncoderConfig { model_name: "beagle-v5".to_string() },
@@ -76,6 +79,15 @@ impl ForgeSession {
             },
             blueprint,
         }
+    }
+
+    pub fn compile(&self, profile_name: &str, output_path: &str) -> Result<(), std::io::Error> {
+        let profile = TargetProfile {
+            name: profile_name.to_string(),
+            max_memory_mb: 1024, // Default
+            quantization: false,
+        };
+        ForgeCompiler::compile_target(&self.mind, profile, "1.0.0-compiled", output_path)
     }
 }
 

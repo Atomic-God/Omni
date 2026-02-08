@@ -12,7 +12,7 @@ pub mod explanation;
 pub mod security; // Added
 
 use context::ContextManager;
-use explanation::ExplanationEngine;
+use explanation::{ExplanationEngine, AudienceModel};
 use security::PermissionBoundary;
 
 /// Trait for extending capabilities.
@@ -144,7 +144,7 @@ impl ForgeMind {
 
         if question.starts_with("Explain ") {
             let concept = &question[8..];
-            return ExplanationEngine::simplify(&self.cognition, concept, "student");
+            return ExplanationEngine::simplify(&self.cognition, concept, AudienceModel::Student);
         }
 
         self.cognition.query(question)
