@@ -1,5 +1,6 @@
 use cognition::planning::Goal;
 use std::collections::VecDeque;
+use crate::governance::{SalienceScoring, MemoryTier};
 
 #[derive(Clone, Debug)]
 pub struct TopicTracker {
@@ -14,8 +15,6 @@ impl TopicTracker {
     }
 
     pub fn track(&mut self, text: &str) {
-        // Naive topic extraction: first noun-like token?
-        // Or just the whole query if short.
         if text.len() < 50 {
             self.active_topics.push_back(text.to_string());
             if self.active_topics.len() > 5 {
@@ -27,20 +26,24 @@ impl TopicTracker {
 
 #[derive(Clone, Debug)]
 pub struct ContextManager {
-    pub goals: VecDeque<Goal>, // Goal Stack
-    pub semantic_memory: VecDeque<String>, // Active Semantic Concepts
-    pub episodic_buffer: VecDeque<String>, // Recent Raw Interactions
-    pub budget: usize,
-    pub topic_tracker: TopicTracker, // Added
+    pub goals: VecDeque<Goal>,
+
+    // Tiers
+    pub short_term_memory: MemoryTier,
+    pub long_term_buffer: MemoryTier,
+
+    // Governance
+    pub salience: SalienceScoring,
+    pub topic_tracker: TopicTracker,
 }
 
 impl ContextManager {
     pub fn new() -> Self {
         Self {
             goals: VecDeque::new(),
-            semantic_memory: VecDeque::new(),
-            episodic_buffer: VecDeque::new(),
-            budget: 7, // Miller's Law default
+            short_term_memory: MemoryTier::new(7), // Miller's Law
+            long_term_buffer: MemoryTier::new(100), // Recent history
+            salience: SalienceScoring::new(0.05), // 5% hourly decay
             topic_tracker: TopicTracker::new(),
         }
     }
@@ -49,7 +52,7 @@ impl ContextManager {
         if goal.priority > 50 {
              self.goals.push_front(goal);
         } else {
-             self.goals.push_front(goal); // Default LIFO
+             self.goals.push_front(goal);
         }
     }
 
@@ -58,29 +61,32 @@ impl ContextManager {
     }
 
     pub fn activate_semantic(&mut self, concept: &str) {
-        if !self.semantic_memory.contains(&concept.to_string()) {
-            self.semantic_memory.push_back(concept.to_string());
-            if self.semantic_memory.len() > self.budget {
-                self.semantic_memory.pop_front();
-            }
-        } else {
-            if let Some(pos) = self.semantic_memory.iter().position(|x| x == concept) {
-                self.semantic_memory.remove(pos);
-                self.semantic_memory.push_back(concept.to_string());
-            }
+        // Boost Salience
+        self.salience.score(concept, 1.0);
+
+        // Add to STM, if evicted, try LTM
+        if let Some(evicted) = self.short_term_memory.add(concept.to_string()) {
+            self.long_term_buffer.add(evicted);
         }
-        // Also track topic
+
         self.topic_tracker.track(concept);
     }
 
     pub fn log_episodic(&mut self, text: &str) {
-        self.episodic_buffer.push_back(text.to_string());
-        if self.episodic_buffer.len() > 10 { // Short episodic window
-            self.episodic_buffer.pop_front();
-        }
+        // Ephemeral log
+        self.long_term_buffer.add(text.to_string());
     }
 
     pub fn get_active_context(&self) -> Vec<String> {
-        self.semantic_memory.iter().cloned().collect()
+        // Return STM sorted by Salience?
+        let mut context: Vec<String> = self.short_term_memory.items.iter().cloned().collect();
+        // Maybe inject high salience LTM items?
+        let top_ltm = self.salience.get_top(3);
+        for item in top_ltm {
+            if !context.contains(&item) {
+                context.push(item);
+            }
+        }
+        context
     }
 }

@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 pub mod context;
 pub mod explanation;
-pub mod security; // Added
+pub mod security;
+pub mod governance; // Added
 
 use context::ContextManager;
 use explanation::{ExplanationEngine, AudienceModel};
@@ -41,8 +42,6 @@ impl Default for ForgeMind {
 impl ForgeMind {
     pub fn new() -> Self {
         info!("Initializing ForgeMind (Creator Instance).");
-        // Forge has default unlimited permissions relative to cwd?
-        // Let's restrict it to cwd for safety.
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
         Self {
@@ -82,9 +81,6 @@ impl ForgeMind {
     }
 
     pub fn save_master(&self, path: &str) -> Result<(), std::io::Error> {
-        // Saving might create new file, so strict check_path might fail if file doesn't exist yet but parent does.
-        // check_path checks canonicalize which requires existence.
-        // We should check parent dir.
         let path_obj = std::path::Path::new(path);
         if let Some(parent) = path_obj.parent() {
              self.permissions.check_path(parent).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;

@@ -1,6 +1,7 @@
 pub mod dispatch;
 pub mod isa;
 pub mod topology;
+pub mod os; // Added
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use raw_cpuid::CpuId;

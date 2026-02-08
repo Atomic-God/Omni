@@ -60,7 +60,6 @@ fn main() {
             pb.set_message("Learning...");
             pb.enable_steady_tick(Duration::from_millis(100));
 
-            // Use the new ingestion adapters automatically via `ingest_path`
             let chunks = ingestion::ingest_path(PathBuf::from(data_path));
             {
                 let mut mind = forge.forge_mind.lock().unwrap();
@@ -104,6 +103,42 @@ fn main() {
                  println!("Snapshot created at {}", output_path);
              }
         },
+        "pack" => {
+             if args.len() < 3 {
+                println!("Usage: omniforge pack --target=<mobile|desktop|server> [output_path]");
+                return;
+             }
+             let target_arg = &args[2];
+             let target = if target_arg.starts_with("--target=") { &target_arg[9..] } else { "desktop" };
+             let output_path = if args.len() >= 4 { args[3].clone() } else { format!("mind_{}.omf", target) };
+
+             let master_path = get_forge_master_path();
+             if !master_path.exists() {
+                println!("Forge Master not found.");
+                return;
+             }
+
+             println!("Packing Mind for Target: {}", target);
+
+             // Load master temporarily to pack it
+             if let Err(e) = forge.load_forge_master(master_path.to_str().unwrap()) {
+                 error!("Failed load master: {}", e);
+                 return;
+             }
+
+             let session = fabricator::ForgeSession {
+                 mind: std::mem::take(&mut *forge.forge_mind.lock().unwrap()),
+                 config: fabricator::ForgeConfig::default(),
+                 learning_engine: learning::LearningEngine::new(),
+             };
+
+             if let Err(e) = session.pack(target, &output_path) {
+                 error!("Packing failed: {}", e);
+             } else {
+                 println!("Mind packed successfully to {}", output_path);
+             }
+             // Restore mind? No, CLI exits.
+        },
         "clone" => {
              if args.len() < 4 {
                 println!("Usage: omniforge clone <source.omf> <dest.omf>");
@@ -118,31 +153,6 @@ fn main() {
                  println!("Cloned {} to {}. (Independent Sovereign Instance)", source, dest);
              }
         },
-        "compress" => {
-             if args.len() < 3 {
-                println!("Usage: omniforge compress <snapshot.omf> [output.zip]");
-                return;
-             }
-             // Placeholder: The snapshot is already zip-based.
-             // Future optimization: Repack with higher compression ratio.
-             println!("Artifact is already in compressed container format.");
-        },
-        "verify" => {
-             if args.len() < 3 {
-                println!("Usage: omniforge verify <snapshot.omf>");
-                return;
-             }
-             let path = &args[2];
-             println!("Verifying snapshot integrity...");
-             match memory::load_snapshot(path) {
-                 Ok(_) => println!("Integrity Check Passed: Hash Valid."),
-                 Err(e) => error!("Integrity Check FAILED: {}", e),
-             }
-        },
-        "reflect" => {
-             println!("Triggering Self-Reflection Loop...");
-             println!("(Simulation) Reflection complete. No anomalies found.");
-        },
         "run" => {
             if args.len() < 3 {
                 println!("Usage: omniforge run <snapshot.omf>");
@@ -151,7 +161,7 @@ fn main() {
             let snapshot_path = &args[2];
             let overlay_path = format!("{}.local", snapshot_path);
 
-            println!(" Omni Forge v8.5 Runtime");
+            println!(" Omni Forge v8.6 Runtime");
             println!("=========================");
             println!("Loading Base: {}", snapshot_path);
 
@@ -205,12 +215,17 @@ fn main() {
                 Err(e) => error!("Failed to inspect: {}", e),
             }
         },
-        "status" => {
+        "status" | "health" => {
             let profile = hte::detect();
-            println!("System Status:");
+            println!("System Status (Health Check):");
             println!("  OS: {} {}", profile.os_name, profile.kernel_version);
             println!("  Memory: {}/{} KB (Margin: {:.2})", profile.used_memory, profile.total_memory, profile.memory_budget_margin);
             println!("  Cores: {}", profile.logical_cores);
+            if profile.memory_budget_margin < 0.1 {
+                println!("  WARNING: Low Memory Margin!");
+            } else {
+                println!("  Status: HEALTHY");
+            }
         },
         _ => print_usage(),
     }
@@ -228,15 +243,13 @@ fn get_forge_master_path() -> PathBuf {
 }
 
 fn print_usage() {
-    println!("Omni Forge v8.5 Usage:");
+    println!("Omni Forge v8.6 Usage:");
     println!("  omniforge init                  # Initialize new Forge Master");
     println!("  omniforge ingest <path>         # Feed data to Forge Master");
     println!("  omniforge snapshot <ver> [out]  # Export frozen Mind Artifact");
+    println!("  omniforge pack --target=<t>     # Create optimized artifact");
     println!("  omniforge clone <src> <dst>     # Duplicate an artifact");
     println!("  omniforge run <mind.omf>        # Run sovereign mind with local overlay");
     println!("  omniforge inspect <mind.omf>    # View metadata");
-    println!("  omniforge verify <mind.omf>     # Check integrity hash");
-    println!("  omniforge compress <in> [out]   # Optimize artifact");
-    println!("  omniforge reflect               # Trigger self-evaluation");
-    println!("  omniforge status                # Hardware checks");
+    println!("  omniforge health                # System diagnostics");
 }

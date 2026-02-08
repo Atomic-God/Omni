@@ -8,9 +8,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod facade;
 pub mod live;
 pub mod merge;
-pub mod compiler; // Added
+pub mod compiler;
+pub mod packaging; // Added
 
 use compiler::{ForgeCompiler, TargetProfile};
+use packaging::MindPackagingPipeline;
 
 pub struct ForgeConfig {
     pub max_concepts: Option<usize>,
@@ -88,6 +90,15 @@ impl ForgeSession {
             quantization: false,
         };
         ForgeCompiler::compile_target(&self.mind, profile, "1.0.0-compiled", output_path)
+    }
+
+    pub fn pack(&self, target: &str, output_path: &str) -> Result<(), std::io::Error> {
+        let profile = match target {
+            "mobile" => packaging::TargetProfile { name: "mobile".to_string(), max_memory_mb: 512, quantization: true },
+            "server" => packaging::TargetProfile { name: "server".to_string(), max_memory_mb: 16384, quantization: false },
+            _ => packaging::TargetProfile { name: "desktop".to_string(), max_memory_mb: 4096, quantization: false },
+        };
+        MindPackagingPipeline::pack(&self.mind, profile, "1.0.0-packed", output_path)
     }
 }
 
