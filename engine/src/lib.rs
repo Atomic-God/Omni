@@ -1,4 +1,4 @@
-use cognition::CognitionCore;
+use cognition::{CognitionCore, Relation};
 use cognition::planning::Goal;
 use cognition::traits::{PerceptionModule, ReasoningModule};
 use log::{info, warn};
@@ -6,6 +6,9 @@ use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies,
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
+
+pub mod context;
+use context::ContextManager;
 
 /// Trait for extending capabilities.
 pub trait ExtensionModule: Send + Sync {
@@ -20,7 +23,7 @@ pub trait ExtensionModule: Send + Sync {
 pub struct ForgeMind {
     pub cognition: CognitionCore,
     extensions: Vec<Box<dyn ExtensionModule>>,
-    pub goals: VecDeque<Goal>,
+    pub context: ContextManager,
 }
 
 impl Default for ForgeMind {
@@ -35,7 +38,7 @@ impl ForgeMind {
         Self {
             cognition: CognitionCore::new(),
             extensions: Vec::new(),
-            goals: VecDeque::new(),
+            context: ContextManager::new(),
         }
     }
 
@@ -103,6 +106,7 @@ impl ForgeMind {
                 compiler_version: env!("CARGO_PKG_VERSION").to_string(),
                 semantic_version: "1.0.0".to_string(), // Default, should be arg
             },
+            blueprint: None,
         }
     }
 
@@ -115,9 +119,10 @@ impl ForgeMind {
     }
 
     pub fn introspect(&self) -> String {
-         format!("Forge Status: {} concepts, {} relations (Unlimited)",
+         format!("Forge Status: {} concepts, {} relations (Unlimited)\nContext: {:?}",
              self.cognition.index_memory.len(),
-             self.cognition.relation_graph.len())
+             self.cognition.relation_graph.len(),
+             self.context.get_active_context())
     }
 }
 
@@ -129,7 +134,7 @@ impl ForgeMind {
 pub struct RuntimeMind {
     pub base: Arc<MindPack>,      // Read-Only Global Knowledge
     pub overlay: PersonalMemory,  // Read-Write Local Context
-    pub goals: VecDeque<Goal>,
+    pub context: ContextManager,
 }
 
 impl RuntimeMind {
@@ -158,7 +163,7 @@ impl RuntimeMind {
         Ok(Self {
             base: Arc::new(base),
             overlay,
-            goals: VecDeque::new(),
+            context: ContextManager::new(),
         })
     }
 
@@ -186,10 +191,13 @@ impl RuntimeMind {
         }
 
         self.overlay.core.learn_text(text);
+        self.context.activate(text); // Track activation
         self.overlay.last_accessed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     }
 
-    pub fn ask(&self, question: &str) -> String {
+    pub fn ask(&mut self, question: &str) -> String {
+        self.context.activate(question);
+
         // 1. Try Overlay First
         let overlay_answer = self.overlay.core.query(question);
         if self.is_valid_answer(&overlay_answer) {
@@ -210,10 +218,11 @@ impl RuntimeMind {
     }
 
     pub fn introspect(&self) -> String {
-        format!("Runtime Status:\n- Base Concepts: {}\n- Personal Concepts: {}\n- Overlay Hash: {}",
+        format!("Runtime Status:\n- Base Concepts: {}\n- Personal Concepts: {}\n- Overlay Hash: {}\n- Context: {:?}",
             self.base.memory.core.index_memory.len(),
             self.overlay.core.index_memory.len(),
-            self.overlay.parent_hash)
+            self.overlay.parent_hash,
+            self.context.get_active_context())
     }
 }
 

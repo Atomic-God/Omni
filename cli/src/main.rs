@@ -1,5 +1,5 @@
 use fabricator::facade::OmniForge;
-use log::error;
+use log::{info, error};
 use std::env;
 use std::io::{self, Write};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -60,34 +60,17 @@ fn main() {
             pb.set_message("Learning...");
             pb.enable_steady_tick(Duration::from_millis(100));
 
-            // Use fabrication pipeline logic but just for learning into current forge mind?
-            // Fabricator currently builds NEW mind.
-            // We want to EXTEND forge mind.
-            // OmniForge doesn't expose "learn_forge(path)".
-            // But we can use `fabricate_mind` logic adapted?
-            // `fabricate_mind` creates new `ForgeMind`.
-            // We want to use the LOADED `ForgeMind`.
-            // I should add `ingest_into_forge` to `OmniForge` facade.
-            // For now, I'll use `fabricate` logic but targeting the master file?
-            // No, `fabricate` overwrites.
-
-            // Hack for now: `OmniForge` allows access to `forge_mind`.
-            // I should have exposed `ingest` on `OmniForge`.
-            // I'll assume I can add it or modify `ingest` logic here if I can import `ingestion`.
-
             let chunks = ingestion::ingest_path(PathBuf::from(data_path));
-            let mut mind = forge.forge_mind.lock().unwrap();
-
-            // Manual learn loop (since Facade doesn't expose batch learn on existing mind)
-            // But `ForgeMind` has `learn()`.
-            for chunk in chunks {
-                mind.learn(&chunk.content);
+            {
+                let mut mind = forge.forge_mind.lock().unwrap();
+                for chunk in chunks {
+                    mind.learn(&chunk.content);
+                }
             }
 
             pb.finish_with_message("Ingestion Complete!");
 
-            // Save back
-            if let Err(e) = mind.save_master(master_path.to_str().unwrap()) {
+            if let Err(e) = forge.save_forge_master(master_path.to_str().unwrap()) {
                 error!("Failed to save Forge Master: {}", e);
             } else {
                 println!("Forge Master updated.");
@@ -126,7 +109,7 @@ fn main() {
                 return;
             }
             let snapshot_path = &args[2];
-            let overlay_path = format!("{}.local", snapshot_path); // Simple convention
+            let overlay_path = format!("{}.local", snapshot_path);
 
             println!(" Omni Forge v8.2 Runtime");
             println!("=========================");
@@ -148,7 +131,6 @@ fn main() {
                 if input == "exit" { break; }
                 if input.is_empty() { continue; }
 
-                // Check for local learning command
                 if input.starts_with("/learn ") {
                     let content = &input[7..];
                     if let Err(e) = forge.learn_runtime(content) {
@@ -159,7 +141,6 @@ fn main() {
                     continue;
                 }
 
-                // Check for save command
                 if input == "/save" {
                      if let Err(e) = forge.save_runtime_overlay(&overlay_path) {
                          error!("Save failed: {}", e);
@@ -173,12 +154,8 @@ fn main() {
                 println!("{}", answer);
             }
 
-            // Auto-save on exit?
             println!("Saving session...");
             let _ = forge.save_runtime_overlay(&overlay_path);
-        },
-        "compress" => {
-            println!("Compression not yet implemented for v8.2 artifacts.");
         },
         "inspect" => {
             let path = if args.len() >= 3 { &args[2] } else { "mind.omf" };

@@ -79,8 +79,8 @@ impl OmniForge {
     }
 
     pub fn run_query(&self, query: &str) -> String {
-        let slot = self.runtime_mind.lock().unwrap();
-        if let Some(runtime) = slot.as_ref() {
+        let mut slot = self.runtime_mind.lock().unwrap();
+        if let Some(runtime) = slot.as_mut() {
             runtime.ask(query)
         } else {
             let forge = self.forge_mind.lock().unwrap();
@@ -89,8 +89,8 @@ impl OmniForge {
     }
 
     pub fn explain_concept(&self, concept: &str) -> Result<String, std::io::Error> {
-        let slot = self.runtime_mind.lock().unwrap();
-        if let Some(runtime) = slot.as_ref() {
+        let mut slot = self.runtime_mind.lock().unwrap();
+        if let Some(runtime) = slot.as_mut() {
             // Use ask("Explain X") via Runtime
              Ok(runtime.ask(&format!("Explain {}", concept)))
         } else {

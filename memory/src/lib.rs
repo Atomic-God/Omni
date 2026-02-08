@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use log::{info, warn, error};
 
 #[allow(dead_code)]
 const MEMORY_VERSION: &str = "8.2";
@@ -53,6 +54,14 @@ pub struct MindMetadata {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct MindBlueprint {
+    pub name: String,
+    pub base_version: String,
+    pub required_capabilities: Vec<String>,
+    pub overlay_policy: String, // e.g. "append_only", "ephemeral"
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MindPack {
     pub version: String, // Internal schema version
     pub memory: MemoryStore,
@@ -60,6 +69,7 @@ pub struct MindPack {
     pub encoder_config: EncoderConfig,
     pub learning_policies: LearningPolicies,
     pub metadata: MindMetadata,
+    pub blueprint: Option<MindBlueprint>, // Added
 }
 
 // --- Snapshot Management ---
@@ -85,16 +95,17 @@ pub fn save_snapshot(mind: &MindPack, path: &str) -> Result<(), std::io::Error> 
     zip.start_file("schema.json", options)?;
     serde_json::to_writer_pretty(&mut zip, &mind.encoder_config)?;
 
-    // 3. Binary Core
+    // 3. Blueprint (Optional but Good Practice for Industrial)
+    if let Some(blueprint) = &mind.blueprint {
+        zip.start_file("blueprint.json", options)?;
+        serde_json::to_writer_pretty(&mut zip, blueprint)?;
+    }
+
+    // 4. Binary Core
     zip.start_file("mind.bin", options)?;
     let bin_config = bincode::config::standard();
     bincode::serde::encode_into_std_write(&mind.memory.core, &mut zip, bin_config)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-
-    // 4. Vocab (optional separation, currently part of Core usually, but here explicit)
-    // Core includes index_memory (vocab), so redundant?
-    // MindPack structure implies VocabStore is separate struct but just wraps map.
-    // Let's keep it consistent.
 
     // 5. Integrity
     zip.start_file("integrity.hash", options)?;
@@ -135,6 +146,11 @@ pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
         serde_json::from_reader(file)?
     };
 
+    let blueprint: Option<MindBlueprint> = match archive.by_name("blueprint.json") {
+        Ok(file) => Some(serde_json::from_reader(file)?),
+        Err(_) => None,
+    };
+
     // 4. Integrity Check
     let stored_hash = {
         let mut file = archive.by_name("integrity.hash")?;
@@ -154,6 +170,7 @@ pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
         encoder_config,
         learning_policies,
         metadata,
+        blueprint,
     })
 }
 

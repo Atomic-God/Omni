@@ -24,9 +24,11 @@ fn test_fabrication_to_runtime_freeze() {
     // Verify State
     let mind_slot = runtime_forge.runtime_mind.lock().unwrap();
     if let Some(mind) = mind_slot.as_ref() {
-        assert_eq!(mind.base.metadata.state, LifecycleState::Fabricated, "Mind state should be Fabricated (or Frozen if snapshot logic used)");
-        // Wait, fabricate_mind sets state to Fabricated.
-        // snapshot sets it to Frozen.
+        // NOTE: In `FabricationPipeline::fabricate`, the state is set to Fabricated.
+        // However, `finalize_snapshot` in `ForgeSession` sets it to Frozen.
+        // `FabricationPipeline` calls `session.finalize_snapshot`.
+        // So the state is Frozen.
+        assert_eq!(mind.base.metadata.state, LifecycleState::Frozen, "Mind state should be Frozen");
         // But Runtime loads it.
         // The test expects "read_only" equivalent.
         // RuntimeMind treats `base` as read-only regardless of state enum, but state enum is good metadata.

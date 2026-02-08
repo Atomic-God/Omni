@@ -1572,8 +1572,8 @@ version = "0.1.0"
 dependencies = [
  "core-vsa",
  "log",
- "rand 0.8.5",
- "serde",
+ "once_cell",
+ "regex",
 ]
 
 [[package]]
