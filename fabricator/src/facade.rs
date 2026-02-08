@@ -83,7 +83,7 @@ impl OmniForge {
         if let Some(runtime) = slot.as_mut() {
             runtime.ask(query)
         } else {
-            let forge = self.forge_mind.lock().unwrap();
+            let mut forge = self.forge_mind.lock().unwrap();
             format!("(Forge Inspector) {}", forge.ask(query))
         }
     }

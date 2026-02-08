@@ -7,8 +7,11 @@ use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use log::{info, warn, error};
 
+pub mod io;
+use io::{MindSerializer, StandardSerializer};
+
 #[allow(dead_code)]
-const MEMORY_VERSION: &str = "8.2";
+const MEMORY_VERSION: &str = "8.3";
 
 // --- Forge Artifacts (Immutable) ---
 
@@ -95,7 +98,7 @@ pub fn save_snapshot(mind: &MindPack, path: &str) -> Result<(), std::io::Error> 
     zip.start_file("schema.json", options)?;
     serde_json::to_writer_pretty(&mut zip, &mind.encoder_config)?;
 
-    // 3. Blueprint (Optional but Good Practice for Industrial)
+    // 3. Blueprint
     if let Some(blueprint) = &mind.blueprint {
         zip.start_file("blueprint.json", options)?;
         serde_json::to_writer_pretty(&mut zip, blueprint)?;

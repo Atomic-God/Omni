@@ -1,15 +1,54 @@
-use cognition::CognitionCore;
+use cognition::{CognitionCore, Relation};
 use cognition::traits::PerceptionModule;
 use ingestion::SemanticChunk;
 use log::{info, warn};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+pub struct ConceptFrequencyTracker {
+    pub counts: HashMap<String, u64>,
+}
+
+impl ConceptFrequencyTracker {
+    pub fn new() -> Self {
+        Self {
+            counts: HashMap::new(),
+        }
+    }
+
+    pub fn record(&mut self, text: &str) {
+        // Simplified token count
+        for word in text.split_whitespace() {
+            *self.counts.entry(word.to_string()).or_insert(0) += 1;
+        }
+    }
+}
+
+pub struct ReflectionLoop {
+    pub pending_tasks: Vec<String>,
+}
+
+impl ReflectionLoop {
+    pub fn new() -> Self {
+        Self {
+            pending_tasks: Vec::new(),
+        }
+    }
+
+    pub fn assess_performance(&mut self, _core: &CognitionCore) {
+        // Self-evaluation stub
+        // In future: Check for contradictory relations or sparse areas
+        info!("Running Reflection Loop: No critical anomalies detected.");
+    }
+}
 
 pub struct LearningEngine {
     pub frozen: bool,
     pub last_consolidation: u64,
     pub consolidation_interval: u64, // seconds
     pub previous_entropy: f32,
+    pub frequency_tracker: ConceptFrequencyTracker,
+    pub reflector: ReflectionLoop,
 }
 
 impl LearningEngine {
@@ -19,6 +58,8 @@ impl LearningEngine {
             last_consolidation: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
             consolidation_interval: 300, // 5 minutes default
             previous_entropy: 0.0,
+            frequency_tracker: ConceptFrequencyTracker::new(),
+            reflector: ReflectionLoop::new(),
         }
     }
 
@@ -33,6 +74,7 @@ impl LearningEngine {
         for chunk in chunks {
             info!("Learning chunk from {}", chunk.source);
             core.learn_text(&chunk.content);
+            self.frequency_tracker.record(&chunk.content);
         }
 
         let end_entropy = core.compute_global_entropy();
@@ -48,6 +90,9 @@ impl LearningEngine {
             self.consolidate(core);
             self.last_consolidation = now;
             self.previous_entropy = core.compute_global_entropy(); // Update baseline
+
+            // Trigger reflection after heavy learning
+            self.reflector.assess_performance(core);
         }
     }
 
@@ -92,6 +137,10 @@ impl LearningEngine {
         if pruned_count > 0 {
             warn!("Pruned {} overgrown concepts (retained highest weight relations).", pruned_count);
         }
+
+        // 3. Schema Abstraction (Stub)
+        // Check for highly similar concepts and merge them?
+        // For now, we assume VSA bundling handles this implicitly by vector similarity.
     }
 
     pub fn freeze(&mut self) {

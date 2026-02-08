@@ -64,7 +64,7 @@ struct AskResponse {
 }
 
 async fn ask(State(state): State<AppState>, Json(payload): Json<TextPayload>) -> Json<AskResponse> {
-    let mind = state.mind.lock().unwrap();
+    let mut mind = state.mind.lock().unwrap();
     let answer = mind.ask(&payload.text);
     Json(AskResponse { answer })
 }

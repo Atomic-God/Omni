@@ -8,7 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
 
 pub mod context;
+pub mod explanation;
 use context::ContextManager;
+use explanation::ExplanationEngine;
 
 /// Trait for extending capabilities.
 pub trait ExtensionModule: Send + Sync {
@@ -45,6 +47,8 @@ impl ForgeMind {
     pub fn learn(&mut self, text: &str) {
         info!("Forge Learning: {}", text);
         self.cognition.learn_text(text);
+        self.context.log_interaction(text);
+
         // Extensions
         let exts = std::mem::take(&mut self.extensions);
         for ext in &exts {
@@ -55,7 +59,6 @@ impl ForgeMind {
 
     pub fn load_master(&mut self, path: &str) -> Result<(), std::io::Error> {
         info!("Loading Master Mind from {}", path);
-        // Load as a snapshot but treat as mutable base
         let pack = memory::load_snapshot(path)?;
         self.cognition = pack.memory.core;
         Ok(())
@@ -87,7 +90,7 @@ impl ForgeMind {
     fn to_pack(&self, source: &str, state: LifecycleState) -> MindPack {
         let core_hash = self.cognition.compute_integrity_hash();
         MindPack {
-            version: "8.2".to_string(), // Schema version
+            version: "8.3".to_string(), // Schema version
             memory: MemoryStore { core: self.cognition.clone() },
             vocab: VocabStore { words: self.cognition.index_memory.clone() },
             encoder_config: EncoderConfig { model_name: "beagle-v5".to_string() },
@@ -110,7 +113,15 @@ impl ForgeMind {
         }
     }
 
-    pub fn ask(&self, question: &str) -> String {
+    pub fn ask(&mut self, question: &str) -> String {
+        self.context.log_interaction(question);
+        self.context.activate(question);
+
+        if question.starts_with("Explain ") {
+            let concept = &question[8..];
+            return ExplanationEngine::simplify(&self.cognition, concept, "student");
+        }
+
         self.cognition.query(question)
     }
 
@@ -191,12 +202,14 @@ impl RuntimeMind {
         }
 
         self.overlay.core.learn_text(text);
-        self.context.activate(text); // Track activation
+        self.context.activate(text);
+        self.context.log_interaction(text);
         self.overlay.last_accessed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     }
 
     pub fn ask(&mut self, question: &str) -> String {
         self.context.activate(question);
+        self.context.log_interaction(question);
 
         // 1. Try Overlay First
         let overlay_answer = self.overlay.core.query(question);

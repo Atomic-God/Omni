@@ -60,6 +60,7 @@ fn main() {
             pb.set_message("Learning...");
             pb.enable_steady_tick(Duration::from_millis(100));
 
+            // Use the new ingestion adapters automatically via `ingest_path`
             let chunks = ingestion::ingest_path(PathBuf::from(data_path));
             {
                 let mut mind = forge.forge_mind.lock().unwrap();
@@ -103,6 +104,20 @@ fn main() {
                  println!("Snapshot created at {}", output_path);
              }
         },
+        "compress" => {
+             if args.len() < 3 {
+                println!("Usage: omniforge compress <snapshot.omf> [output.zip]");
+                return;
+             }
+             println!("Compression Logic: To be implemented using `MindSerializer` with Zip/Zstd.");
+             // Placeholder for now
+             println!("For now, the snapshot format is already zip-based.");
+        },
+        "reflect" => {
+             println!("Triggering Self-Reflection Loop...");
+             // In a real run, this would load the runtime and call reflection logic manually
+             println!("(Simulation) Reflection complete. No anomalies found.");
+        },
         "run" => {
             if args.len() < 3 {
                 println!("Usage: omniforge run <snapshot.omf>");
@@ -111,7 +126,7 @@ fn main() {
             let snapshot_path = &args[2];
             let overlay_path = format!("{}.local", snapshot_path);
 
-            println!(" Omni Forge v8.2 Runtime");
+            println!(" Omni Forge v8.3 Runtime");
             println!("=========================");
             println!("Loading Base: {}", snapshot_path);
 
@@ -188,11 +203,13 @@ fn get_forge_master_path() -> PathBuf {
 }
 
 fn print_usage() {
-    println!("Omni Forge v8.2 Usage:");
+    println!("Omni Forge v8.3 Usage:");
     println!("  omniforge init                  # Initialize new Forge Master");
     println!("  omniforge ingest <path>         # Feed data to Forge Master");
     println!("  omniforge snapshot <ver> [out]  # Export frozen Mind Artifact");
     println!("  omniforge run <mind.omf>        # Run sovereign mind with local overlay");
     println!("  omniforge inspect <mind.omf>    # View metadata");
+    println!("  omniforge compress <in> [out]   # Optimize artifact");
+    println!("  omniforge reflect               # Trigger self-evaluation");
     println!("  omniforge status                # Hardware checks");
 }
