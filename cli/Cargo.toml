@@ -8,6 +8,7 @@ engine = { path = "../engine" }
 hte = { path = "../hte" }
 ingestion = { path = "../ingestion" }
 fabricator = { path = "../fabricator" }
+memory = { path = "../memory" }
 log = "0.4"
 env_logger = "0.10"
 indicatif = "0.18.3"

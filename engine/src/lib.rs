@@ -56,7 +56,8 @@ impl ForgeMind {
     pub fn learn(&mut self, text: &str) {
         info!("Forge Learning: {}", text);
         self.cognition.learn_text(text);
-        self.context.log_interaction(text);
+        self.context.log_episodic(text);
+        self.context.activate_semantic(text);
 
         // Extensions
         let exts = std::mem::take(&mut self.extensions);
@@ -138,8 +139,8 @@ impl ForgeMind {
     }
 
     pub fn ask(&mut self, question: &str) -> String {
-        self.context.log_interaction(question);
-        self.context.activate(question);
+        self.context.log_episodic(question);
+        self.context.activate_semantic(question);
 
         if question.starts_with("Explain ") {
             let concept = &question[8..];
@@ -226,14 +227,14 @@ impl RuntimeMind {
         }
 
         self.overlay.core.learn_text(text);
-        self.context.activate(text);
-        self.context.log_interaction(text);
+        self.context.activate_semantic(text);
+        self.context.log_episodic(text);
         self.overlay.last_accessed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     }
 
     pub fn ask(&mut self, question: &str) -> String {
-        self.context.activate(question);
-        self.context.log_interaction(question);
+        self.context.activate_semantic(question);
+        self.context.log_episodic(question);
 
         // 1. Try Overlay First
         let overlay_answer = self.overlay.core.query(question);

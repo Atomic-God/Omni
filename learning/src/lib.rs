@@ -100,7 +100,17 @@ impl LearningEngine {
         if self.frozen { return; }
         info!("Consolidating memory... (Deduplication, Decay, Pruning based on Weight)");
 
-        // 1. Deduplicate relation graph values (simple HashSet is strict equality)
+        // 1. Decay logic: Reduce weights of all relations slightly to simulate forgetting
+        for relations in core.relation_graph.values_mut() {
+            for rel in relations.iter_mut() {
+                // Decay by 10% or at least 1 unit, but keep min 1 to avoid accidental deletion unless pruned
+                if rel.weight > 5 {
+                    rel.weight = rel.weight.saturating_sub(rel.weight / 10).max(1);
+                }
+            }
+        }
+
+        // 2. Deduplicate relation graph values (simple HashSet is strict equality)
         // We want to merge weights if duplicates exist?
         // For simplicity, just uniq (last write wins or first?)
         // Let's use drain and re-insert logic if needed, but existing logic was fine for exact duplicates.
@@ -121,7 +131,7 @@ impl LearningEngine {
             });
         }
 
-        // 2. Memory Pressure Pruning
+        // 3. Memory Pressure Pruning
         // Soft cap: 50 relations per concept to keep memory lean
         let max_rels_per_concept = 50;
         let mut pruned_count = 0;
@@ -138,7 +148,7 @@ impl LearningEngine {
             warn!("Pruned {} overgrown concepts (retained highest weight relations).", pruned_count);
         }
 
-        // 3. Schema Abstraction (Stub)
+        // 4. Schema Abstraction (Stub)
         // Check for highly similar concepts and merge them?
         // For now, we assume VSA bundling handles this implicitly by vector similarity.
     }

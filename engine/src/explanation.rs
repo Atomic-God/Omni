@@ -18,8 +18,9 @@ impl ExplanationEngine {
         match level {
             "child" | "eli5" => {
                 explanation.push_str(&format!("Imagine {}. ", concept));
-                for rel in relations.iter().take(3) {
-                    explanation.push_str(&format!("It is like {} because it relates to {}. ", concept, rel.target));
+                // Only take strong relations
+                for rel in relations.iter().filter(|r| r.weight > 50).take(3) {
+                    explanation.push_str(&format!("It relates to {}. ", rel.target));
                 }
             },
             "expert" => {

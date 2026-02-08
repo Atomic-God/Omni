@@ -390,6 +390,7 @@ dependencies = [
  "indicatif",
  "ingestion",
  "log",
+ "memory",
 ]
 
 [[package]]
