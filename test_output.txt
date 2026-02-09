@@ -1,0 +1,81 @@
+warning: unused import: `regex::Regex`
+ --> perception/src/tokenizer.rs:1:5
+  |
+1 | use regex::Regex;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `once_cell::sync::Lazy`
+ --> perception/src/tokenizer.rs:2:5
+  |
+2 | use once_cell::sync::Lazy;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `perception` (lib) generated 2 warnings (run `cargo fix --lib -p perception` to apply 2 suggestions)
+   Compiling memory v0.1.0 (/app/memory)
+warning: unused import: `VecDeque`
+ --> memory/src/lib.rs:4:33
+  |
+4 | use std::collections::{HashMap, VecDeque};
+  |                                 ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PathBuf`
+ --> memory/src/lib.rs:7:23
+  |
+7 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused imports: `error`, `info`, and `warn`
+ --> memory/src/lib.rs:8:11
+  |
+8 | use log::{info, warn, error};
+  |           ^^^^  ^^^^  ^^^^^
+
+warning: unused imports: `MindSerializer` and `StandardSerializer`
+  --> memory/src/lib.rs:12:10
+   |
+12 | use io::{MindSerializer, StandardSerializer};
+   |          ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+   Compiling engine v0.1.0 (/app/engine)
+warning: `memory` (lib) generated 4 warnings (run `cargo fix --lib -p memory` to apply 4 suggestions)
+warning: unused import: `Relation`
+ --> engine/src/lib.rs:1:32
+  |
+1 | use cognition::{CognitionCore, Relation};
+  |                                ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `cognition::planning::Goal`
+ --> engine/src/lib.rs:2:5
+  |
+2 | use cognition::planning::Goal;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::VecDeque`
+ --> engine/src/lib.rs:6:5
+  |
+6 | use std::collections::VecDeque;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `engine` (lib) generated 3 warnings (run `cargo fix --lib -p engine` to apply 3 suggestions)
+warning: unused import: `std::sync::Arc`
+ --> engine/tests/goal_persistence.rs:5:5
+  |
+5 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `engine` (test "goal_persistence") generated 1 warning (run `cargo fix --test "goal_persistence" -p engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.77s
+     Running tests/goal_persistence.rs (target/debug/deps/goal_persistence-7debd725d063b6cd)
+
+running 1 test
+test test_goal_persistence_in_overlay ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s

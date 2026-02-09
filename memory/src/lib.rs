@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
-use std::path::{Path, PathBuf};
-use log::{info, warn, error};
+use std::path::Path;
 
 pub mod io;
-use io::{MindSerializer, StandardSerializer};
+pub mod invariant;
+use invariant::UniversalMindInvariant;
 
 #[allow(dead_code)]
-const MEMORY_VERSION: &str = "8.3";
+const MEMORY_VERSION: &str = "8.4";
 
 // --- Forge Artifacts (Immutable) ---
 
@@ -72,7 +72,7 @@ pub struct MindPack {
     pub encoder_config: EncoderConfig,
     pub learning_policies: LearningPolicies,
     pub metadata: MindMetadata,
-    pub blueprint: Option<MindBlueprint>, // Added
+    pub blueprint: Option<MindBlueprint>,
 }
 
 // --- Snapshot Management ---
@@ -166,7 +166,7 @@ pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Snapshot Integrity Violation: Hash Mismatch"));
     }
 
-    Ok(MindPack {
+    let pack = MindPack {
         version: MEMORY_VERSION.to_string(),
         memory: MemoryStore { core: core.clone() },
         vocab: VocabStore { words: core.index_memory.clone() },
@@ -174,15 +174,21 @@ pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
         learning_policies,
         metadata,
         blueprint,
-    })
+    };
+
+    if let Err(e) = UniversalMindInvariant::check(&pack) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+    }
+
+    Ok(pack)
 }
 
 // --- Runtime Personal Memory (Overlay) ---
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PersonalMemory {
-    pub core: CognitionCore, // Local changes only
-    pub parent_hash: String, // Link to Base Snapshot
+    pub core: CognitionCore,
+    pub parent_hash: String,
     pub created_at: u64,
     pub last_accessed: u64,
 }

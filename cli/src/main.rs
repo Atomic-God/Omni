@@ -1,5 +1,5 @@
 use fabricator::facade::OmniForge;
-use log::{info, error};
+use log::error;
 use std::env;
 use std::io::{self, Write};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -31,27 +31,28 @@ fn main() {
             println!("Initializing Sovereign Forge Master...");
             if let Err(e) = forge.save_forge_master(path.to_str().unwrap()) {
                 error!("Failed to initialize Forge: {}", e);
+                std::process::exit(1);
             } else {
                 println!("Forge Master initialized at {:?}", path);
             }
         },
         "ingest" => {
             if args.len() < 3 {
-                println!("Usage: omniforge ingest <data_path>");
-                return;
+                eprintln!("Usage: omniforge ingest <data_path>");
+                std::process::exit(1);
             }
             let data_path = &args[2];
             let master_path = get_forge_master_path();
 
             if !master_path.exists() {
-                println!("Forge Master not found. Run 'omniforge init' first.");
-                return;
+                eprintln!("Forge Master not found. Run 'omniforge init' first.");
+                std::process::exit(1);
             }
 
             println!("Loading Forge Master...");
             if let Err(e) = forge.load_forge_master(master_path.to_str().unwrap()) {
                 error!("Failed to load Forge Master: {}", e);
-                return;
+                std::process::exit(1);
             }
 
             println!("Ingesting reality from: {}", data_path);
@@ -62,6 +63,10 @@ fn main() {
 
             let chunks = ingestion::ingest_path(PathBuf::from(data_path));
             {
+                // We lock directly because we are the CLI owner
+                // Note: OmniForge struct has pub fields for this purpose in facade.rs?
+                // Wait, in facade.rs: pub forge_mind: Arc<Mutex<ForgeMind>>,
+                // So yes, we can lock it.
                 let mut mind = forge.forge_mind.lock().unwrap();
                 for chunk in chunks {
                     mind.learn(&chunk.content);
@@ -72,41 +77,43 @@ fn main() {
 
             if let Err(e) = forge.save_forge_master(master_path.to_str().unwrap()) {
                 error!("Failed to save Forge Master: {}", e);
+                std::process::exit(1);
             } else {
                 println!("Forge Master updated.");
             }
         },
         "snapshot" => {
              if args.len() < 3 {
-                println!("Usage: omniforge snapshot <version> [output_path]");
-                return;
+                eprintln!("Usage: omniforge snapshot <version> [output_path]");
+                std::process::exit(1);
              }
              let version = &args[2];
              let output_path = if args.len() >= 4 { args[3].clone() } else { format!("snapshot_v{}.omf", version) };
              let master_path = get_forge_master_path();
 
              if !master_path.exists() {
-                println!("Forge Master not found. Run 'omniforge init' first.");
-                return;
+                eprintln!("Forge Master not found. Run 'omniforge init' first.");
+                std::process::exit(1);
              }
 
              println!("Loading Forge Master...");
              if let Err(e) = forge.load_forge_master(master_path.to_str().unwrap()) {
                  error!("Failed to load Forge Master: {}", e);
-                 return;
+                 std::process::exit(1);
              }
 
              println!("Creating Snapshot v{}...", version);
              if let Err(e) = forge.snapshot(version, "Forge CLI", &output_path) {
                  error!("Snapshot failed: {}", e);
+                 std::process::exit(1);
              } else {
                  println!("Snapshot created at {}", output_path);
              }
         },
         "pack" => {
              if args.len() < 3 {
-                println!("Usage: omniforge pack --target=<mobile|desktop|server> [output_path]");
-                return;
+                eprintln!("Usage: omniforge pack --target=<mobile|desktop|server> [output_path]");
+                std::process::exit(1);
              }
              let target_arg = &args[2];
              let target = if target_arg.starts_with("--target=") { &target_arg[9..] } else { "desktop" };
@@ -114,8 +121,8 @@ fn main() {
 
              let master_path = get_forge_master_path();
              if !master_path.exists() {
-                println!("Forge Master not found.");
-                return;
+                eprintln!("Forge Master not found.");
+                std::process::exit(1);
              }
 
              println!("Packing Mind for Target: {}", target);
@@ -123,9 +130,12 @@ fn main() {
              // Load master temporarily to pack it
              if let Err(e) = forge.load_forge_master(master_path.to_str().unwrap()) {
                  error!("Failed load master: {}", e);
-                 return;
+                 std::process::exit(1);
              }
 
+             // We construct a session manually for packing
+             // Note: fabricator::ForgeSession must be accessible
+             // Assuming fabricator exports ForgeSession
              let session = fabricator::ForgeSession {
                  mind: std::mem::take(&mut *forge.forge_mind.lock().unwrap()),
                  config: fabricator::ForgeConfig::default(),
@@ -134,29 +144,50 @@ fn main() {
 
              if let Err(e) = session.pack(target, &output_path) {
                  error!("Packing failed: {}", e);
+                 std::process::exit(1);
              } else {
                  println!("Mind packed successfully to {}", output_path);
              }
-             // Restore mind? No, CLI exits.
         },
         "clone" => {
              if args.len() < 4 {
-                println!("Usage: omniforge clone <source.omf> <dest.omf>");
-                return;
+                eprintln!("Usage: omniforge clone <source.omf> <dest.omf>");
+                std::process::exit(1);
              }
              let source = &args[2];
              let dest = &args[3];
              println!("Cloning mind artifact...");
              if let Err(e) = std::fs::copy(source, dest) {
                  error!("Clone failed: {}", e);
+                 std::process::exit(1);
              } else {
                  println!("Cloned {} to {}. (Independent Sovereign Instance)", source, dest);
              }
         },
+        "verify" => {
+            if args.len() < 3 {
+                eprintln!("Usage: omniforge verify <snapshot.omf>");
+                std::process::exit(1);
+            }
+            let path = &args[2];
+            println!("Verifying integrity of {}...", path);
+            match memory::load_snapshot(path) {
+                Ok(pack) => {
+                     println!(" Integrity OK: {}", pack.metadata.core_hash);
+                     println!(" Version: {}", pack.version);
+                     println!(" Source: {}", pack.metadata.source);
+                     println!(" Architecture: {}", pack.metadata.arch);
+                },
+                Err(e) => {
+                     eprintln!(" Verification FAILED: {}", e);
+                     std::process::exit(1);
+                }
+            }
+        },
         "run" => {
             if args.len() < 3 {
-                println!("Usage: omniforge run <snapshot.omf>");
-                return;
+                eprintln!("Usage: omniforge run <snapshot.omf>");
+                std::process::exit(1);
             }
             let snapshot_path = &args[2];
             let overlay_path = format!("{}.local", snapshot_path);
@@ -167,18 +198,28 @@ fn main() {
 
             if let Err(e) = forge.load_runtime(snapshot_path, Some(&overlay_path)) {
                 error!("Failed to load runtime: {}", e);
-                return;
+                std::process::exit(1);
             }
 
             println!("Runtime Ready. (Type 'exit' to quit)");
+
+            // Set up signal handler for graceful shutdown
+            // Need ctrlc crate? CLI crate imports it?
+            // "ctrlc = "3.4"" in Cargo.toml? No, "3.5.1".
+            // However, implementing proper async signal handling is complex in this sync loop.
+            // We'll rely on user typing "exit" or forcing kill for now, but save on every action.
 
             loop {
                 print!("> ");
                 io::stdout().flush().unwrap();
                 let mut input = String::new();
-                if io::stdin().read_line(&mut input).is_err() { break; }
+                match io::stdin().read_line(&mut input) {
+                    Ok(0) => break, // EOF
+                    Ok(_) => {},
+                    Err(_) => break,
+                }
                 let input = input.trim();
-                if input == "exit" { break; }
+                if input == "exit" || input == "quit" { break; }
                 if input.is_empty() { continue; }
 
                 if input.starts_with("/learn ") {
@@ -200,34 +241,66 @@ fn main() {
                      continue;
                 }
 
+                if input == "/goals" {
+                     // Introspection of goals
+                     // We need to access runtime mind
+                     let slot = forge.runtime_mind.lock().unwrap();
+                     if let Some(runtime) = slot.as_ref() {
+                         let goals = runtime.overlay.core.active_goals();
+                         if goals.is_empty() {
+                             println!("No active goals.");
+                         } else {
+                             println!("Active Goals:");
+                             for g in goals {
+                                 println!("- {} (Prio: {})", g.description, g.priority);
+                             }
+                         }
+                     }
+                     continue;
+                }
+
                 let answer = forge.run_query(input);
                 println!("{}", answer);
             }
 
             println!("Saving session...");
-            let _ = forge.save_runtime_overlay(&overlay_path);
+            if let Err(e) = forge.save_runtime_overlay(&overlay_path) {
+                error!("Failed to save final session: {}", e);
+            } else {
+                println!("Session saved.");
+            }
         },
         "inspect" => {
             let path = if args.len() >= 3 { &args[2] } else { "mind.omf" };
             println!("Inspecting artifact: {}", path);
             match forge.inspect_mind(path) {
                 Ok(info) => println!("{}", info),
-                Err(e) => error!("Failed to inspect: {}", e),
+                Err(e) => {
+                    error!("Failed to inspect: {}", e);
+                    std::process::exit(1);
+                }
             }
         },
-        "status" | "health" => {
+        "doctor" | "health" | "status" => {
             let profile = hte::detect();
             println!("System Status (Health Check):");
             println!("  OS: {} {}", profile.os_name, profile.kernel_version);
             println!("  Memory: {}/{} KB (Margin: {:.2})", profile.used_memory, profile.total_memory, profile.memory_budget_margin);
             println!("  Cores: {}", profile.logical_cores);
+            println!("  Instruction Sets: AVX2={}, NEON={}, AMX={}", profile.avx2, profile.neon, profile.amx);
             if profile.memory_budget_margin < 0.1 {
                 println!("  WARNING: Low Memory Margin!");
             } else {
                 println!("  Status: HEALTHY");
             }
         },
-        _ => print_usage(),
+        "version" => {
+            println!("Omni Forge CLI v{}", env!("CARGO_PKG_VERSION"));
+        },
+        _ => {
+            print_usage();
+            std::process::exit(1);
+        }
     }
 }
 
@@ -249,7 +322,9 @@ fn print_usage() {
     println!("  omniforge snapshot <ver> [out]  # Export frozen Mind Artifact");
     println!("  omniforge pack --target=<t>     # Create optimized artifact");
     println!("  omniforge clone <src> <dst>     # Duplicate an artifact");
+    println!("  omniforge verify <mind.omf>     # Verify artifact integrity");
     println!("  omniforge run <mind.omf>        # Run sovereign mind with local overlay");
     println!("  omniforge inspect <mind.omf>    # View metadata");
-    println!("  omniforge health                # System diagnostics");
+    println!("  omniforge doctor                # System diagnostics");
+    println!("  omniforge version               # Show version");
 }

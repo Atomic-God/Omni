@@ -1,0 +1,68 @@
+warning: unused import: `regex::Regex`
+ --> perception/src/tokenizer.rs:1:5
+  |
+1 | use regex::Regex;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `once_cell::sync::Lazy`
+ --> perception/src/tokenizer.rs:2:5
+  |
+2 | use once_cell::sync::Lazy;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `perception` (lib) generated 2 warnings (run `cargo fix --lib -p perception` to apply 2 suggestions)
+warning: unused imports: `ChunkMetadata`, `chunk_content`, `compute_hash`, and `generic_read_file`
+ --> ingestion/src/adapters.rs:1:46
+  |
+1 | use crate::{IngestionAdapter, SemanticChunk, ChunkMetadata, generic_read_file, compute_hash, chunk_content};
+  |                                              ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `error` and `warn`
+ --> ingestion/src/adapters.rs:5:11
+  |
+5 | use log::{warn, error};
+  |           ^^^^  ^^^^^
+
+warning: unused import: `BufRead`
+ --> ingestion/src/lib.rs:4:15
+  |
+4 | use std::io::{BufRead, BufReader, Read};
+  |               ^^^^^^^
+
+warning: `ingestion` (lib) generated 3 warnings (run `cargo fix --lib -p ingestion` to apply 2 suggestions)
+warning: unused import: `Relation`
+ --> learning/src/lib.rs:1:32
+  |
+1 | use cognition::{CognitionCore, Relation};
+  |                                ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `learning` (lib) generated 1 warning (run `cargo fix --lib -p learning` to apply 1 suggestion)
+warning: variable does not need to be mutable
+  --> fabricator/src/compiler.rs:22:13
+   |
+22 |         let mut core_clone = mind.cognition.clone();
+   |             ----^^^^^^^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> fabricator/src/packaging.rs:22:13
+   |
+22 |         let mut core_clone = mind.cognition.clone();
+   |             ----^^^^^^^^^^
+   |             |
+   |             help: remove this `mut`
+
+warning: `fabricator` (lib) generated 2 warnings (run `cargo fix --lib -p fabricator` to apply 2 suggestions)
+    Checking cli v0.1.0 (/app/cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.33s
+warning: the following packages contain code that will be rejected by a future version of Rust: xml5ever v0.16.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

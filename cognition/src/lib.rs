@@ -17,6 +17,7 @@ use perception::tokenizer;
 use traits::{PerceptionModule, ReasoningModule};
 use generation::LanguageGenerator;
 use intent::{IntentParser, Intent};
+use planning::Goal;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum RelationType {
@@ -43,6 +44,7 @@ pub struct CognitionCore {
     pub semantic_memory: HashMap<String, HyperVector>,
     pub relation_graph: HashMap<String, Vec<Relation>>,
     pub sentence_memory: LshIndex,
+    pub goals: Vec<Goal>,
 }
 
 impl Default for CognitionCore {
@@ -78,6 +80,7 @@ impl CognitionCore {
             semantic_memory: HashMap::new(),
             relation_graph: HashMap::new(),
             sentence_memory: LshIndex::default(),
+            goals: Vec::new(),
         }
     }
 

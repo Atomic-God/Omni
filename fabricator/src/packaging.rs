@@ -19,7 +19,7 @@ impl MindPackagingPipeline {
         // 3. Set metadata (Frozen state).
         // 4. Save to disk.
 
-        let mut core_clone = mind.cognition.clone();
+        let core_clone = mind.cognition.clone();
 
         // Pruning logic based on profile (stub)
         if profile.max_memory_mb < 512 {

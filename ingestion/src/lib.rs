@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufReader, Read};
 use log::{info, warn, error};
 use sha2::{Sha256, Digest};
 use std::collections::HashSet;
@@ -14,7 +14,9 @@ use tar::Archive;
 use flate2::read::GzDecoder;
 
 pub mod adapters;
+pub mod fallback; // Added
 use adapters::{HtmlAdapter, DocxAdapter};
+use fallback::{SymbolExtractor, SymbolOnlyFallback};
 
 // --- Trait Definitions ---
 
@@ -106,8 +108,13 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
         process_file(&path, &mut chunks, &mut seen_hashes, &adapters);
     } else {
         for entry in walkdir::WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-            if entry.path().is_file() {
-                process_file(entry.path(), &mut chunks, &mut seen_hashes, &adapters);
+            let p = entry.path();
+            // Skip .git and binary blobs (simple heuristic)
+            if p.to_string_lossy().contains("/.git/") || p.to_string_lossy().contains(".git/") {
+                continue;
+            }
+            if p.is_file() {
+                process_file(p, &mut chunks, &mut seen_hashes, &adapters);
             }
         }
     }
@@ -136,7 +143,27 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
             "zip" => process_zip(path, chunks, seen_hashes),
             "tar" => process_tar(path, chunks, seen_hashes),
             "gz" => process_tar_gz(path, chunks, seen_hashes),
-            _ => {} // Skip unknown
+            _ => {
+                // FALLBACK: Treat as opaque binary/text symbols
+                let fallback_content = generic_read_file_fallback(path);
+                if !fallback_content.is_empty() {
+                     let hash = compute_hash(&fallback_content);
+                     if !seen_hashes.contains(&hash) {
+                         seen_hashes.insert(hash.clone());
+                         chunks.push(SemanticChunk {
+                             source: path.to_string_lossy().to_string(),
+                             content: fallback_content,
+                             metadata: ChunkMetadata {
+                                 hash,
+                                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                 file_type: "unknown".to_string(),
+                                 language: "symbolic".to_string(),
+                                 structure_type: "blob".to_string(),
+                             },
+                         });
+                     }
+                }
+            }
         }
     }
 }
@@ -153,24 +180,43 @@ fn generic_read_file(path: &std::path::Path, type_hint: &str) -> Vec<SemanticChu
     }
 }
 
+fn generic_read_file_fallback(path: &std::path::Path) -> String {
+    let mut file = match File::open(path) { Ok(f) => f, Err(_) => return String::new() };
+    let mut buffer = Vec::new();
+    let metadata = match fs::metadata(path) { Ok(m) => m, Err(_) => return String::new() };
+
+    if metadata.len() > 10 * 1024 * 1024 {
+        let _ = file.take(10 * 1024 * 1024).read_to_end(&mut buffer);
+    } else {
+        let _ = file.read_to_end(&mut buffer);
+    }
+
+    SymbolExtractor.extract_symbols(&buffer)
+}
+
 fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    let mut content = String::new();
+    let mut buffer = Vec::new();
     let metadata = fs::metadata(path)?;
+
+    // Safety limit: 10MB
     if metadata.len() > 10 * 1024 * 1024 {
         warn!("File {:?} is too large. Truncating to 10MB.", path);
-        reader.take(10 * 1024 * 1024).read_to_string(&mut content)?;
+        reader.take(10 * 1024 * 1024).read_to_end(&mut buffer)?;
     } else {
-        reader.read_to_string(&mut content)?;
+        reader.read_to_end(&mut buffer)?;
     }
+
+    // Attempt UTF-8 conversion, replace invalid sequences (Lossy)
+    let content = String::from_utf8_lossy(&buffer).to_string();
     Ok(content)
 }
 
-fn chunk_content(text: &str, file_type: &str, path: &std::path::Path) -> Vec<SemanticChunk> {
+pub(crate) fn chunk_content(text: &str, file_type: &str, path: &std::path::Path) -> Vec<SemanticChunk> {
     let lang = detect(text).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
 
-    // Binary check
+    // Binary check (Heuristic: many control chars)
     if lang == "unknown" && text.chars().take(100).filter(|c| c.is_control() && !c.is_whitespace()).count() > 5 {
         return vec![];
     }
@@ -251,7 +297,7 @@ fn chunk_text_smart(text: &str) -> Vec<(String, String)> {
     chunks
 }
 
-fn compute_hash(text: &str) -> String {
+pub(crate) fn compute_hash(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text);
     hex::encode(hasher.finalize())

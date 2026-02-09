@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+warning: the following packages contain code that will be rejected by a future version of Rust: xml5ever v0.16.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/fallback_test.rs (target/debug/deps/fallback_test-2bf6bc1a9a0216b9)
+
+running 3 tests
+test test_symbol_extractor_binary ... ok
+test test_symbol_extractor_mixed ... ok
+test test_symbol_extractor_text ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

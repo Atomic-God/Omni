@@ -13,6 +13,30 @@ pub struct Goal {
 }
 
 impl CognitionCore {
+    /// Add a new goal to the system.
+    pub fn add_goal(&mut self, description: String, target_state: String, priority: u8) {
+        self.goals.push(Goal {
+            description,
+            target_state,
+            priority,
+            completed: false,
+        });
+    }
+
+    /// Mark a goal as completed.
+    pub fn complete_goal(&mut self, target_state: &str) {
+        for goal in &mut self.goals {
+            if goal.target_state == target_state {
+                goal.completed = true;
+            }
+        }
+    }
+
+    /// List active goals.
+    pub fn active_goals(&self) -> Vec<&Goal> {
+        self.goals.iter().filter(|g| !g.completed).collect()
+    }
+
     /// Finds a path of actions/relations to get from start_state to end_state.
     /// This is a simplified symbolic planner (Action abstraction via Causal/Temporal links).
     pub fn find_path(&self, start: &str, end: &str) -> Option<Vec<String>> {

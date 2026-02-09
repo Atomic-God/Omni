@@ -1,8 +1,7 @@
-use crate::{IngestionAdapter, SemanticChunk, ChunkMetadata, generic_read_file, compute_hash, chunk_content};
+use crate::{IngestionAdapter, SemanticChunk};
 use std::path::Path;
 use std::fs::File;
 use std::io::Read;
-use log::{warn, error};
 use zip::read::ZipArchive;
 use xml::reader::{EventReader, XmlEvent};
 

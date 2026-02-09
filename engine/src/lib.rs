@@ -1,9 +1,7 @@
-use cognition::{CognitionCore, Relation};
-use cognition::planning::Goal;
+use cognition::CognitionCore;
 use cognition::traits::{PerceptionModule, ReasoningModule};
 use log::{info, warn};
 use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata, LifecycleState, PersonalMemory};
-use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
 
