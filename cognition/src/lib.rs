@@ -4,12 +4,12 @@ pub mod world_model;
 pub mod temporal;
 pub mod planning;
 pub mod intent;
+pub mod grammar;
+pub mod tools;
 
 use core_vsa::HyperVector;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use core_vsa::index::LshIndex;
@@ -91,9 +91,7 @@ impl CognitionCore {
         // 1. Index Learning
         for word in &words {
             if !self.index_memory.contains_key(word) {
-                let mut hasher = DefaultHasher::new();
-                word.hash(&mut hasher);
-                let seed = hasher.finish();
+                let seed = self::deterministic_hash(word);
 
                 let index_vec = HyperVector::deterministic(seed);
                 let semantic_vec = HyperVector::deterministic(seed.wrapping_add(1));
@@ -162,11 +160,11 @@ impl CognitionCore {
         let mut keys: Vec<&String> = self.index_memory.keys().collect();
         keys.sort();
 
-        let mut hasher = DefaultHasher::new();
+        let mut hash_acc: u64 = 0;
         for key in keys {
-            key.hash(&mut hasher);
+            hash_acc = hash_acc.wrapping_add(self::deterministic_hash(key));
         }
-        format!("{:x}", hasher.finish())
+        format!("{:x}", hash_acc)
     }
 
     pub fn compute_global_entropy(&self) -> f32 {
@@ -388,4 +386,13 @@ impl CognitionCore {
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.into_iter().take(5).collect()
     }
+}
+
+fn deterministic_hash(text: &str) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in text.bytes() {
+        hash = hash ^ (byte as u64);
+        hash = hash.wrapping_mul(0x1099511628211);
+    }
+    hash
 }

@@ -1,37 +1,43 @@
 # Omni Forge Architecture
+**Version 9.0 (Industrial)**
 
-## Core Philosophy
-Omni Forge is a neuro-symbolic AI fabrication system designed to produce sovereign, portable, and continuously learning Minds without relying on pretrained neural networks or cloud dependencies. It operates on the principles of **Vector Symbolic Architectures (VSA)** and **Recursive Sparse Holography (RSSH)**.
+Omni Forge is a sovereign, neuro-symbolic AI Mind-Factory. It generates "Minds" that run on edge devices without external dependencies.
 
-## System Components
+## Core Modules
 
-### 1. Fabrication Layer (The Forge)
-- **Role:** Creator and Teacher.
-- **State:** Mutable, Unlimited Memory.
-- **Function:** Ingests raw data, builds high-dimensional semantic spaces, and produces immutable **Mind Snapshots**.
-- **Key Crates:** `fabricator`, `ingestion`, `learning`, `engine` (ForgeMind).
+### 1. Engine (`engine`)
+The runtime orchestrator.
+- **ForgeMind**: The Creator. Mutable, unlimited memory. Runs on Workstation.
+- **RuntimeMind**: The Consumer. Immutable Base + Mutable Overlay. Runs on Edge.
+- **ContextManager**: Arbitrates between Structural, Episodic, and Goal memory.
 
-### 2. Runtime Layer (The Sovereign)
-- **Role:** Consumer and Explorer.
-- **State:** Immutable Base + Mutable Overlay.
-- **Function:** Loads a snapshot, performs inference, and learns locally via a **Personal Overlay** (Delta).
-- **Key Crates:** `engine` (RuntimeMind), `cognition`, `memory`.
+### 2. Cognition (`cognition`)
+The reasoning core (Vector Symbolic Architecture).
+- **CognitionCore**: Hypervector graph.
+- **Grammar**: Clause analysis, conversation state.
+- **Tools**: Abstract Action interface.
 
-### 3. Memory Architecture
-- **HyperVector:** 10,000-dimensional bitwise vectors (Holographic representation).
-- **MindPack (Snapshot):** A frozen, versioned artifact containing the Core Knowledge Graph and Semantic Indexes.
-- **PersonalMemory (Overlay):** A local, append-only delta structure for runtime learning.
-- **Key Crates:** `core-vsa`, `memory`.
+### 3. Perception (`perception`)
+Input handling and synthesis.
+- **Polyglot**: Multilingual analysis (frequency/morphology).
+- **Encoders**: Text-to-Vector (SVO).
 
-## Data Flow
+### 4. Memory (`memory`)
+Persistence layer.
+- **MindBlueprint (MindPack)**: Immutable base artifact.
+- **MindDelta (PersonalMemory)**: User-specific learning.
+- **Streaming**: Lazy loading interfaces.
 
-1. **Ingestion:** Raw data (Text, Code, etc.) -> `ingestion` -> `SemanticChunk`.
-2. **Learning:** `SemanticChunk` -> `learning` -> `CognitionCore` (Forge).
-3. **Fabrication:** `ForgeMind` -> `snapshot()` -> `.omf` Artifact.
-4. **Runtime:** `.omf` -> `RuntimeMind` (Base) + `Overlay`.
-5. **Inference:** Query -> `IntentParser` -> `CognitionCore` -> Response.
-6. **Continuous Learning:** New Data -> `RuntimeMind` -> `Overlay` (Append).
+### 5. Ingestion (`ingestion`)
+Universal data pipeline.
+- **Registry**: Dispatches parsers (MD, JSON, HTML, Code).
+- **Structure**: Extracts hierarchy and relations.
 
-## Hardware Truth Engine (HTE)
-- Detects CPU features (AVX, NEON) and adjusts vector operations.
-- Monitors memory pressure and thermal state to ensure stability on edge devices.
+### 6. Learning (`learning`)
+Continuous improvement.
+- **LearningEngine**: Entropy-based consolidation, drift protection.
+
+## Safety & Governance
+- **Immutability**: Base Mind is never modified by Runtime.
+- **Sovereignty**: No telemetry. Local-first.
+- **Deterministic**: Rebuilds guarantee identical vector spaces.

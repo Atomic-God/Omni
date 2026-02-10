@@ -8,6 +8,7 @@ pub mod clustering;
 pub mod gpu_interfaces;
 pub mod language; // Added
 pub mod fabrication; // Added
+pub mod polyglot;
 
 // Expose core traits and modality logic
 pub use traits::{PerceptionModule, VFAInterface, ModalitySlot};

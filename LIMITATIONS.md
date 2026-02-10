@@ -1,28 +1,21 @@
-# System Limitations (Phase 1)
+# Limitations (v9.0)
 
-This document lists the explicit limitations of the current CPU-only Omni Forge implementation.
+While Omni Forge is "Production Ready" as a CPU-based system, it has explicit limits:
 
-## 1. Perception
-- **Vision:** Not implemented. Stubs exist in `perception::VisionModality`.
-- **Audio:** Not implemented. Stubs exist in `perception::AudioModality`.
-- **PDFs:** Basic text extraction is not integrated; `PdfAdapter` is a placeholder.
+1.  **Context Scaling**:
+    - Currently limited by RAM. Paged memory is architected but not fully implemented.
+    - Large minds (>4GB) may be slow on load.
 
-## 2. Scale
-- **Memory:** Entire Knowledge Graph must fit in RAM. No disk-based paging (AirLLM style) yet.
-- **Concurrency:** `ForgeMind` uses a global `Mutex`. Heavy parallel ingestion may contend.
+2.  **Perception**:
+    - Visual/Audio encoders are *stubs* or basic implementations.
+    - No real-time video processing (requires GPU).
 
-## 3. Reasoning
-- **Depth:** Multi-hop inference is limited to 3 steps to ensure low latency on CPUs.
-- **Math:** No symbolic math solver (e.g., integrals).
-- **Code Generation:** Can parse code structure but cannot write complex executable code.
+3.  **Language**:
+    - No Transformer-based fluency. Output is structured/symbolic, not poetic.
+    - Grammar induction is heuristic-based.
 
-## 4. Language
-- **Translation:** No translation capability.
-- **Script Support:** Tokenizer is Unicode-aware, but semantic understanding relies on structural similarity, not pretrained embeddings. Ancient languages require manual grounding or massive structural corpus.
+4.  **Tools**:
+    - Tool interface is architectural. Real OS commands are disabled for safety.
 
-## 5. Deferrals (Phase 2)
-The following features are explicitly deferred to the GPU/Kaggle phase:
-- Implicit Neural Representations (INR) for images.
-- Resonator Networks for high-speed factorization.
-- Massive-scale graph consolidation.
-- Self-improving reflection loops (beyond basic stub).
+5.  **Performance**:
+    - `find_path` (inference) depth is limited (3 hops) to prevent CPU stall.

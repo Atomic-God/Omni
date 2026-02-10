@@ -1,0 +1,109 @@
+warning: unused import: `regex::Regex`
+ --> perception/src/tokenizer.rs:1:5
+  |
+1 | use regex::Regex;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `once_cell::sync::Lazy`
+ --> perception/src/tokenizer.rs:2:5
+  |
+2 | use once_cell::sync::Lazy;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `perception` (lib) generated 2 warnings (run `cargo fix --lib -p perception` to apply 2 suggestions)
+warning: unused import: `std::collections::HashMap`
+ --> cognition/src/grammar.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::collections::HashMap`
+ --> cognition/src/tools.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `cognition` (lib) generated 2 warnings (run `cargo fix --lib -p cognition` to apply 2 suggestions)
+warning: unused import: `chunk_content`
+ --> ingestion/src/adapters.rs:1:46
+  |
+1 | use crate::{IngestionAdapter, SemanticChunk, chunk_content};
+  |                                              ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ingestion` (lib) generated 1 warning (run `cargo fix --lib -p ingestion` to apply 1 suggestion)
+   Compiling memory v0.1.0 (/app/memory)
+warning: unused import: `detect`
+ --> hte/tests/hardware_invariance.rs:7:32
+  |
+7 |     use hte::{HardwareProfile, detect};
+  |                                ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `hte` (test "hardware_invariance") generated 1 warning (run `cargo fix --test "hardware_invariance" -p hte` to apply 1 suggestion)
+warning: unused import: `SemanticChunk`
+ --> ingestion/tests/format_tests.rs:1:30
+  |
+1 | use ingestion::{ingest_path, SemanticChunk};
+  |                              ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ingestion` (test "format_tests") generated 1 warning (run `cargo fix --test "format_tests" -p ingestion` to apply 1 suggestion)
+warning: `ingestion` (lib test) generated 1 warning (1 duplicate)
+warning: `cognition` (lib test) generated 2 warnings (2 duplicates)
+warning: `perception` (lib test) generated 2 warnings (2 duplicates)
+warning: unused imports: `Read` and `Seek`
+ --> memory/src/streaming.rs:2:15
+  |
+2 | use std::io::{Read, Seek};
+  |               ^^^^  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memory` (lib test) generated 1 warning (run `cargo fix --lib -p memory --tests` to apply 1 suggestion)
+   Compiling engine v0.1.0 (/app/engine)
+warning: unused import: `HashMap`
+ --> engine/src/context.rs:2:34
+  |
+2 | use std::collections::{VecDeque, HashMap};
+  |                                  ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling fabricator v0.1.0 (/app/fabricator)
+error[E0560]: struct `MindPack` has no field named `blueprint`
+  --> fabricator/src/compiler.rs:52:13
+   |
+52 |             blueprint: None,
+   |             ^^^^^^^^^ `MindPack` does not have this field
+   |
+   = note: available fields are: `manifest`
+
+error[E0560]: struct `MindPack` has no field named `blueprint`
+  --> fabricator/src/packaging.rs:52:13
+   |
+52 |             blueprint: None,
+   |             ^^^^^^^^^ `MindPack` does not have this field
+   |
+   = note: available fields are: `manifest`
+
+error[E0560]: struct `MindPack` has no field named `blueprint`
+  --> fabricator/src/lib.rs:82:13
+   |
+82 |             blueprint,
+   |             ^^^^^^^^^ `MindPack` does not have this field
+   |
+   = note: available fields are: `manifest`
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `fabricator` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+warning: `engine` (lib) generated 1 warning (run `cargo fix --lib -p engine` to apply 1 suggestion)
+warning: `memory` (lib) generated 1 warning (1 duplicate)

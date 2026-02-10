@@ -176,6 +176,22 @@ fn main() {
                 std::process::exit(1);
             }
 
+            // Safe Shutdown Handler
+            let runtime_ref = forge.runtime_mind.clone();
+            let save_path = overlay_path_str.to_string();
+            ctrlc::set_handler(move || {
+                println!("\n[System] Graceful Shutdown initiated...");
+                let slot = runtime_ref.lock().unwrap();
+                if let Some(runtime) = slot.as_ref() {
+                    if let Err(e) = memory::save_personal(&runtime.overlay, &save_path) {
+                        println!("[Error] Failed to save session: {}", e);
+                    } else {
+                        println!("[System] Session saved successfully.");
+                    }
+                }
+                std::process::exit(0);
+            }).expect("Error setting signal handler");
+
             println!("Mind Online. (Type 'exit' to quit)");
 
             loop {

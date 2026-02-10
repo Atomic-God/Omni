@@ -27,7 +27,7 @@ fn create_dummy_base(path: &str) {
             compiler_version: "1.0.0".to_string(),
             semantic_version: "1.0.0".to_string(),
         },
-        blueprint: None,
+        manifest: None,
     };
     save_snapshot(&pack, path).unwrap();
 }

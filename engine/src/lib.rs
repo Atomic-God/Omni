@@ -4,11 +4,13 @@ use log::{info, warn};
 use memory::{EncoderConfig, MemoryStore, MindPack, VocabStore, LearningPolicies, MindMetadata, LifecycleState, PersonalMemory};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
+use learning::LearningEngine;
+use ingestion::{SemanticChunk, ChunkMetadata};
 
 pub mod context;
 pub mod explanation;
 pub mod security;
-pub mod governance; // Added
+pub mod governance;
 
 use context::ContextManager;
 use explanation::{ExplanationEngine, AudienceModel};
@@ -119,7 +121,7 @@ impl ForgeMind {
     fn to_pack(&self, source: &str, state: LifecycleState) -> MindPack {
         let core_hash = self.cognition.compute_integrity_hash();
         MindPack {
-            version: "8.3".to_string(), // Schema version
+            version: "8.4".to_string(), // Schema version
             memory: MemoryStore { core: self.cognition.clone() },
             vocab: VocabStore { words: self.cognition.index_memory.clone() },
             encoder_config: EncoderConfig { model_name: "beagle-v5".to_string() },
@@ -138,7 +140,7 @@ impl ForgeMind {
                 compiler_version: env!("CARGO_PKG_VERSION").to_string(),
                 semantic_version: "1.0.0".to_string(), // Default, should be arg
             },
-            blueprint: None,
+            manifest: None, // Renamed from blueprint
         }
     }
 
@@ -175,6 +177,7 @@ pub struct RuntimeMind {
     pub base: Arc<MindPack>,      // Read-Only Global Knowledge
     pub overlay: PersonalMemory,  // Read-Write Local Context
     pub context: ContextManager,
+    pub learner: LearningEngine,  // Continuous Learning Engine
 }
 
 impl RuntimeMind {
@@ -204,6 +207,7 @@ impl RuntimeMind {
             base: Arc::new(base),
             overlay,
             context: ContextManager::new(),
+            learner: LearningEngine::new(),
         })
     }
 
@@ -226,11 +230,26 @@ impl RuntimeMind {
         let concept_count = self.overlay.core.index_memory.len();
         if concept_count > 5000 { // Hardcoded runtime limit for now, or use policy
              warn!("Personal Memory Full ({} concepts). Triggering consolidation/pruning.", concept_count);
-             warn!("Learning rejected due to memory budget.");
-             return;
+             // Let LearningEngine handle consolidation
         }
 
-        self.overlay.core.learn_text(text);
+        // Create chunk
+        let chunk = SemanticChunk {
+            source: "user_input".to_string(),
+            content: text.to_string(),
+            metadata: ChunkMetadata {
+                hash: format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()),
+                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                file_type: "text".to_string(),
+                language: "en".to_string(),
+                structure_type: "conversation".to_string(),
+            }
+        };
+
+        // Use LearningEngine (handles entropy, consolidation)
+        self.learner.learn(&mut self.overlay.core, vec![chunk]);
+
+        // Update Context
         self.context.activate_semantic(text);
         self.context.log_episodic(text);
         self.overlay.last_accessed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();

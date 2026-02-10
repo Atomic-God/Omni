@@ -49,7 +49,7 @@ impl MindPackagingPipeline {
                 compiler_version: env!("CARGO_PKG_VERSION").to_string(),
                 semantic_version: version.to_string(),
             },
-            blueprint: None,
+            manifest: None,
         };
 
         save_snapshot(&pack, output_path)

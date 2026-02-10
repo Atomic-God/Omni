@@ -8,6 +8,7 @@ use std::path::Path;
 
 pub mod io;
 pub mod invariant;
+pub mod streaming;
 use invariant::UniversalMindInvariant;
 
 #[allow(dead_code)]
@@ -57,7 +58,7 @@ pub struct MindMetadata {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct MindBlueprint {
+pub struct MindManifest { // Renamed from MindBlueprint to avoid confusion with the artifact
     pub name: String,
     pub base_version: String,
     pub required_capabilities: Vec<String>,
@@ -72,8 +73,12 @@ pub struct MindPack {
     pub encoder_config: EncoderConfig,
     pub learning_policies: LearningPolicies,
     pub metadata: MindMetadata,
-    pub blueprint: Option<MindBlueprint>,
+    pub manifest: Option<MindManifest>,
 }
+
+// Aliases for "Snapshot & Cloning Standard"
+pub type MindBlueprint = MindPack; // The Immutable Base
+pub type MindDelta = PersonalMemory; // The Personal Learning
 
 // --- Snapshot Management ---
 
@@ -99,10 +104,10 @@ pub fn save_snapshot(mind: &MindPack, path: &str) -> Result<(), std::io::Error> 
     zip.start_file("schema.json", options)?;
     serde_json::to_writer_pretty(&mut zip, &mind.encoder_config)?;
 
-    // 3. Blueprint
-    if let Some(blueprint) = &mind.blueprint {
-        zip.start_file("blueprint.json", options)?;
-        serde_json::to_writer_pretty(&mut zip, blueprint)?;
+    // 3. Manifest
+    if let Some(manifest) = &mind.manifest {
+        zip.start_file("manifest.json", options)?;
+        serde_json::to_writer_pretty(&mut zip, manifest)?;
     }
 
     // 4. Binary Core
@@ -150,10 +155,17 @@ pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
         serde_json::from_reader(file)?
     };
 
-    let blueprint: Option<MindBlueprint> = match archive.by_name("blueprint.json") {
-        Ok(file) => Some(serde_json::from_reader(file)?),
-        Err(_) => None,
+    let mut manifest: Option<MindManifest> = if let Ok(file) = archive.by_name("manifest.json") {
+        Some(serde_json::from_reader(file)?)
+    } else {
+        None
     };
+
+    if manifest.is_none() {
+        if let Ok(file) = archive.by_name("blueprint.json") {
+            manifest = Some(serde_json::from_reader(file)?);
+        }
+    }
 
     // 4. Integrity Check
     let stored_hash = {
@@ -174,7 +186,7 @@ pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
         encoder_config,
         learning_policies,
         metadata,
-        blueprint,
+        manifest, // Renamed field
     };
 
     if let Err(e) = UniversalMindInvariant::check(&pack) {

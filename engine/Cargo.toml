@@ -13,6 +13,8 @@ memory = { path = "../memory" }
 hte = { path = "../hte" }
 perception = { path = "../perception" }
 core-vsa = { path = "../core-vsa" }
+learning = { path = "../learning" }
+ingestion = { path = "../ingestion" }
 log = "0.4"
 env_logger = "0.10"
 

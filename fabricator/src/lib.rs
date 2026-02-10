@@ -1,5 +1,5 @@
 use engine::ForgeMind;
-use memory::{MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies, MindMetadata, LifecycleState, MindBlueprint};
+use memory::{MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies, MindMetadata, LifecycleState, MindManifest};
 use log::{info, warn};
 use std::path::PathBuf;
 use learning::LearningEngine;
@@ -57,7 +57,7 @@ impl ForgeSession {
         }
     }
 
-    pub fn finalize_snapshot(&self, version: &str, blueprint: Option<MindBlueprint>) -> MindPack {
+    pub fn finalize_snapshot(&self, version: &str, manifest: Option<MindManifest>) -> MindPack {
         let core_hash = self.mind.cognition.compute_integrity_hash();
         MindPack {
             version: "8.3".to_string(),
@@ -79,7 +79,7 @@ impl ForgeSession {
                 compiler_version: env!("CARGO_PKG_VERSION").to_string(),
                 semantic_version: version.to_string(),
             },
-            blueprint,
+            manifest,
         }
     }
 

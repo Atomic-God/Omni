@@ -14,9 +14,12 @@ use tar::Archive;
 use flate2::read::GzDecoder;
 
 pub mod adapters;
-pub mod fallback; // Added
-use adapters::{HtmlAdapter, DocxAdapter};
+pub mod fallback;
+pub mod registry;
+
+use adapters::{HtmlAdapter, DocxAdapter, MarkdownAdapter, JsonAdapter, PdfAdapterStub};
 use fallback::{SymbolExtractor, SymbolOnlyFallback};
+use registry::DataIngestionRegistry;
 
 // --- Trait Definitions ---
 
@@ -31,7 +34,7 @@ pub struct ChunkMetadata {
     pub timestamp: u64,
     pub file_type: String,
     pub language: String,
-    pub structure_type: String,
+    pub structure_type: String, // e.g. "section:Introduction", "function:main"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,12 +44,12 @@ pub struct SemanticChunk {
     pub metadata: ChunkMetadata,
 }
 
-// --- Adapter Implementations ---
+// --- Default Adapters ---
 
 pub struct TextAdapter;
 impl IngestionAdapter for TextAdapter {
     fn can_handle(&self, path: &std::path::Path) -> bool {
-        matches!(path.extension().and_then(|s| s.to_str()), Some("txt" | "md" | "log" | "yml" | "toml"))
+        matches!(path.extension().and_then(|s| s.to_str()), Some("txt" | "log" | "yml" | "toml"))
     }
     fn ingest(&self, path: &std::path::Path) -> Vec<SemanticChunk> {
         generic_read_file(path, "text")
@@ -65,24 +68,13 @@ impl IngestionAdapter for CodeAdapter {
     }
 }
 
-pub struct StructureAdapter;
-impl IngestionAdapter for StructureAdapter {
+pub struct StructureAdapterStub; // Renamed, now using JsonAdapter for JSON
+impl IngestionAdapter for StructureAdapterStub {
     fn can_handle(&self, path: &std::path::Path) -> bool {
-        matches!(path.extension().and_then(|s| s.to_str()), Some("json" | "csv" | "xml"))
+        matches!(path.extension().and_then(|s| s.to_str()), Some("csv" | "xml"))
     }
     fn ingest(&self, path: &std::path::Path) -> Vec<SemanticChunk> {
         generic_read_file(path, "structured")
-    }
-}
-
-pub struct PdfAdapter;
-impl IngestionAdapter for PdfAdapter {
-    fn can_handle(&self, path: &std::path::Path) -> bool {
-        matches!(path.extension().and_then(|s| s.to_str()), Some("pdf"))
-    }
-    fn ingest(&self, path: &std::path::Path) -> Vec<SemanticChunk> {
-        warn!("PDF ingestion requires external libs (poppler/lopdf). Skipping content for: {:?}", path);
-        vec![]
     }
 }
 
@@ -92,29 +84,29 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     let mut chunks = Vec::new();
     let mut seen_hashes = HashSet::new();
 
-    // Registry of adapters
-    let adapters: Vec<Box<dyn IngestionAdapter>> = vec![
-        Box::new(TextAdapter),
-        Box::new(CodeAdapter),
-        Box::new(StructureAdapter),
-        Box::new(HtmlAdapter),
-        Box::new(DocxAdapter),
-        Box::new(PdfAdapter),
-    ];
+    // Initialize Registry
+    let mut registry = DataIngestionRegistry::new();
+    registry.register(MarkdownAdapter);
+    registry.register(JsonAdapter);
+    registry.register(HtmlAdapter);
+    registry.register(DocxAdapter);
+    registry.register(TextAdapter);
+    registry.register(CodeAdapter);
+    registry.register(StructureAdapterStub);
+    registry.register(PdfAdapterStub);
 
     info!("Ingestion Pipeline: Scanning {:?}", path);
 
     if path.is_file() {
-        process_file(&path, &mut chunks, &mut seen_hashes, &adapters);
+        process_file(&path, &mut chunks, &mut seen_hashes, &registry);
     } else {
         for entry in walkdir::WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
             let p = entry.path();
-            // Skip .git and binary blobs (simple heuristic)
             if p.to_string_lossy().contains("/.git/") || p.to_string_lossy().contains(".git/") {
                 continue;
             }
             if p.is_file() {
-                process_file(p, &mut chunks, &mut seen_hashes, &adapters);
+                process_file(p, &mut chunks, &mut seen_hashes, &registry);
             }
         }
     }
@@ -122,19 +114,17 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     chunks
 }
 
-fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>, adapters: &[Box<dyn IngestionAdapter>]) {
-    // Check adapters first
-    for adapter in adapters {
-        if adapter.can_handle(path) {
-            let new_chunks = adapter.ingest(path);
-            for chunk in new_chunks {
-                if !seen_hashes.contains(&chunk.metadata.hash) {
-                    seen_hashes.insert(chunk.metadata.hash.clone());
-                    chunks.push(chunk);
-                }
+fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>, registry: &DataIngestionRegistry) {
+    // Try registry first
+    let new_chunks = registry.ingest(path);
+    if !new_chunks.is_empty() {
+        for chunk in new_chunks {
+            if !seen_hashes.contains(&chunk.metadata.hash) {
+                seen_hashes.insert(chunk.metadata.hash.clone());
+                chunks.push(chunk);
             }
-            return;
         }
+        return;
     }
 
     // Fallback logic for archives (Recursive)
@@ -214,6 +204,10 @@ fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
 }
 
 pub(crate) fn chunk_content(text: &str, file_type: &str, path: &std::path::Path) -> Vec<SemanticChunk> {
+    chunk_content_with_structure(text, file_type, path, "root")
+}
+
+pub(crate) fn chunk_content_with_structure(text: &str, file_type: &str, path: &std::path::Path, structure_hint: &str) -> Vec<SemanticChunk> {
     let lang = detect(text).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
 
     // Binary check (Heuristic: many control chars)
@@ -229,6 +223,18 @@ pub(crate) fn chunk_content(text: &str, file_type: &str, path: &std::path::Path)
 
     let mut chunks = Vec::new();
     for (chunk_text, struct_type) in raw_chunks {
+        // If the chunker returns generic "code_block" or "sentence_group", we can append the hint
+        let final_struct_type = if struct_type == "sentence_group" || struct_type == "code_block" {
+             if structure_hint != "root" {
+                 format!("{}:{}", structure_hint, struct_type)
+             } else {
+                 struct_type
+             }
+        } else {
+             // chunker found something specific (e.g. function:foo)
+             struct_type
+        };
+
         chunks.push(SemanticChunk {
             source: path.to_string_lossy().to_string(),
             content: chunk_text.clone(),
@@ -237,7 +243,7 @@ pub(crate) fn chunk_content(text: &str, file_type: &str, path: &std::path::Path)
                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
                 file_type: file_type.to_string(),
                 language: lang.clone(),
-                structure_type: struct_type,
+                structure_type: final_struct_type,
             },
         });
     }

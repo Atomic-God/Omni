@@ -1,5 +1,5 @@
 use cognition::planning::Goal;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashMap};
 use crate::governance::{SalienceScoring, MemoryTier};
 
 #[derive(Clone, Debug)]
@@ -24,13 +24,56 @@ impl TopicTracker {
     }
 }
 
+// Arbitration Layers
+
+#[derive(Clone, Debug)]
+pub struct EpisodicMemory {
+    pub buffer: MemoryTier,
+    // Future: Could store full Episode objects with timestamps
+}
+
+#[derive(Clone, Debug)]
+pub struct GoalMemory {
+    pub active: VecDeque<Goal>,
+    pub completed: Vec<Goal>, // History
+}
+
+impl GoalMemory {
+    pub fn new() -> Self {
+        Self { active: VecDeque::new(), completed: Vec::new() }
+    }
+
+    pub fn push(&mut self, goal: Goal) {
+        // Priority sort? For now, just push.
+        self.active.push_front(goal);
+    }
+
+    pub fn complete(&mut self, target_state: &str) {
+        // Move to completed
+        let mut still_active = VecDeque::new();
+        while let Some(mut g) = self.active.pop_front() {
+            if g.target_state == target_state {
+                g.completed = true;
+                self.completed.push(g);
+            } else {
+                still_active.push_back(g);
+            }
+        }
+        self.active = still_active;
+    }
+
+    pub fn compact(&mut self) {
+        // Remove low priority completed goals
+        self.completed.retain(|g| g.priority > 10);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ContextManager {
-    pub goals: VecDeque<Goal>,
-
-    // Tiers
-    pub short_term_memory: MemoryTier,
-    pub long_term_buffer: MemoryTier,
+    // Arbitrated Memory Stores
+    pub episodic: EpisodicMemory,
+    pub goals: GoalMemory,
+    pub structural_focus: MemoryTier, // Pointers to knowledge graph
 
     // Governance
     pub salience: SalienceScoring,
@@ -40,53 +83,64 @@ pub struct ContextManager {
 impl ContextManager {
     pub fn new() -> Self {
         Self {
-            goals: VecDeque::new(),
-            short_term_memory: MemoryTier::new(7), // Miller's Law
-            long_term_buffer: MemoryTier::new(100), // Recent history
-            salience: SalienceScoring::new(0.05), // 5% hourly decay
+            episodic: EpisodicMemory { buffer: MemoryTier::new(100) },
+            goals: GoalMemory::new(),
+            structural_focus: MemoryTier::new(20), // Focus on 20 concepts max
+            salience: SalienceScoring::new(0.05),
             topic_tracker: TopicTracker::new(),
         }
     }
 
     pub fn push_goal(&mut self, goal: Goal) {
-        if goal.priority > 50 {
-             self.goals.push_front(goal);
-        } else {
-             self.goals.push_front(goal);
-        }
+        self.goals.push(goal);
     }
 
-    pub fn pop_goal(&mut self) -> Option<Goal> {
-        self.goals.pop_front()
+    pub fn complete_goal(&mut self, target_state: &str) {
+        self.goals.complete(target_state);
     }
 
     pub fn activate_semantic(&mut self, concept: &str) {
-        // Boost Salience
         self.salience.score(concept, 1.0);
 
-        // Add to STM, if evicted, try LTM
-        if let Some(evicted) = self.short_term_memory.add(concept.to_string()) {
-            self.long_term_buffer.add(evicted);
-        }
+        // Add to structural focus
+        self.structural_focus.add(concept.to_string());
 
         self.topic_tracker.track(concept);
     }
 
     pub fn log_episodic(&mut self, text: &str) {
-        // Ephemeral log
-        self.long_term_buffer.add(text.to_string());
+        self.episodic.buffer.add(text.to_string());
     }
 
     pub fn get_active_context(&self) -> Vec<String> {
-        // Return STM sorted by Salience?
-        let mut context: Vec<String> = self.short_term_memory.items.iter().cloned().collect();
-        // Maybe inject high salience LTM items?
-        let top_ltm = self.salience.get_top(3);
-        for item in top_ltm {
-            if !context.contains(&item) {
-                context.push(item);
+        // Combine Focus + Top Salience + Active Goals
+        let mut context = Vec::new();
+
+        // 1. High Salience (Structural)
+        let top_concepts = self.salience.get_top(5);
+        context.extend(top_concepts);
+
+        // 2. Recent Focus
+        for item in &self.structural_focus.items {
+            if !context.contains(item) {
+                context.push(item.clone());
             }
         }
+
+        // 3. Goals
+        for goal in &self.goals.active {
+            let desc = format!("Goal: {}", goal.description);
+            if !context.contains(&desc) {
+                context.push(desc);
+            }
+        }
+
         context
+    }
+
+    pub fn compact(&mut self) {
+        self.goals.compact();
+        // Decay salience
+        self.salience.update_decay();
     }
 }

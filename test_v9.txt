@@ -1,0 +1,72 @@
+   Compiling perception v0.1.0 (/app/perception)
+   Compiling ingestion v0.1.0 (/app/ingestion)
+warning: unused import: `detect`
+ --> hte/tests/hardware_invariance.rs:7:32
+  |
+7 |     use hte::{HardwareProfile, detect};
+  |                                ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `hte` (test "hardware_invariance") generated 1 warning (run `cargo fix --test "hardware_invariance" -p hte` to apply 1 suggestion)
+warning: unused import: `regex::Regex`
+ --> perception/src/tokenizer.rs:1:5
+  |
+1 | use regex::Regex;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `once_cell::sync::Lazy`
+ --> perception/src/tokenizer.rs:2:5
+  |
+2 | use once_cell::sync::Lazy;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `serde_json`
+  --> ingestion/src/adapters.rs:97:17
+   |
+97 |                 serde_json::Value::Object(map) => {
+   |                 ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+   |
+   = help: if you wanted to use a crate named `serde_json`, use `cargo add serde_json` to add it to your `Cargo.toml`
+
+warning: unused import: `chunk_content`
+ --> ingestion/src/adapters.rs:1:46
+  |
+1 | use crate::{IngestionAdapter, SemanticChunk, chunk_content};
+  |                                              ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `serde_json`
+  --> ingestion/src/adapters.rs:95:27
+   |
+95 |         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+   |                           ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+   |
+   = help: if you wanted to use a crate named `serde_json`, use `cargo add serde_json` to add it to your `Cargo.toml`
+
+error[E0282]: type annotations needed
+   --> ingestion/src/adapters.rs:100:39
+    |
+100 |                         let val_str = v.to_string();
+    |                                       ^ cannot infer type
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `serde_json`
+  --> ingestion/src/adapters.rs:95:50
+   |
+95 |         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+   |                                                  ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+   |
+   = help: if you wanted to use a crate named `serde_json`, use `cargo add serde_json` to add it to your `Cargo.toml`
+
+Some errors have detailed explanations: E0282, E0433.
+For more information about an error, try `rustc --explain E0282`.
+warning: `ingestion` (lib test) generated 1 warning
+error: could not compile `ingestion` (lib test) due to 4 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `perception` (lib test) generated 2 warnings (2 duplicates)
+warning: `ingestion` (lib) generated 1 warning (1 duplicate)
+error: could not compile `ingestion` (lib) due to 4 previous errors; 1 warning emitted
+warning: `perception` (lib) generated 2 warnings (run `cargo fix --lib -p perception` to apply 2 suggestions)
