@@ -14,10 +14,12 @@ use tar::Archive;
 use flate2::read::GzDecoder;
 
 pub mod adapters;
+pub mod adapters_extended; // Added
 pub mod fallback;
 pub mod registry;
 
 use adapters::{HtmlAdapter, DocxAdapter, MarkdownAdapter, JsonAdapter, PdfAdapterStub};
+use adapters_extended::{SpreadsheetAdapter, PresentationAdapter, ImageAdapter};
 use fallback::{SymbolExtractor, SymbolOnlyFallback};
 use registry::DataIngestionRegistry;
 
@@ -94,6 +96,10 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     registry.register(CodeAdapter);
     registry.register(StructureAdapterStub);
     registry.register(PdfAdapterStub);
+    // Extended
+    registry.register(SpreadsheetAdapter);
+    registry.register(PresentationAdapter);
+    registry.register(ImageAdapter);
 
     info!("Ingestion Pipeline: Scanning {:?}", path);
 

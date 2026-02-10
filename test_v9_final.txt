@@ -1,0 +1,156 @@
+warning: unused import: `regex::Regex`
+ --> perception/src/tokenizer.rs:1:5
+  |
+1 | use regex::Regex;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `once_cell::sync::Lazy`
+ --> perception/src/tokenizer.rs:2:5
+  |
+2 | use once_cell::sync::Lazy;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `perception` (lib) generated 2 warnings (run `cargo fix --lib -p perception` to apply 2 suggestions)
+warning: unused import: `std::collections::HashMap`
+ --> cognition/src/grammar.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::collections::HashMap`
+ --> cognition/src/tools.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `cognition` (lib) generated 2 warnings (run `cargo fix --lib -p cognition` to apply 2 suggestions)
+   Compiling ingestion v0.1.0 (/app/ingestion)
+   Compiling memory v0.1.0 (/app/memory)
+warning: unused import: `detect`
+ --> hte/tests/hardware_invariance.rs:7:32
+  |
+7 |     use hte::{HardwareProfile, detect};
+  |                                ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `hte` (test "hardware_invariance") generated 1 warning (run `cargo fix --test "hardware_invariance" -p hte` to apply 1 suggestion)
+warning: unused imports: `Read` and `Seek`
+ --> memory/src/streaming.rs:2:15
+  |
+2 | use std::io::{Read, Seek};
+  |               ^^^^  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `MindPack`
+ --> memory/src/integrity.rs:1:28
+  |
+1 | use crate::{load_snapshot, MindPack};
+  |                            ^^^^^^^^
+
+warning: unused import: `chunk_content`
+ --> ingestion/src/adapters.rs:1:46
+  |
+1 | use crate::{IngestionAdapter, SemanticChunk, chunk_content};
+  |                                              ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `path`
+  --> ingestion/src/adapters_extended.rs:35:22
+   |
+35 |     fn ingest(&self, path: &Path) -> Vec<SemanticChunk> {
+   |                      ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memory` (lib test) generated 2 warnings (run `cargo fix --lib -p memory --tests` to apply 2 suggestions)
+   Compiling learning v0.1.0 (/app/learning)
+warning: `ingestion` (lib test) generated 2 warnings (run `cargo fix --lib -p ingestion --tests` to apply 2 suggestions)
+warning: `cognition` (lib test) generated 2 warnings (2 duplicates)
+warning: `perception` (lib test) generated 2 warnings (2 duplicates)
+   Compiling engine v0.1.0 (/app/engine)
+error[E0432]: unresolved import `serde`
+ --> engine/src/context.rs:4:5
+  |
+4 | use serde::{Serialize, Deserialize};
+  |     ^^^^^ use of unresolved module or unlinked crate `serde`
+  |
+  = help: if you wanted to use a crate named `serde`, use `cargo add serde` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `serde`
+ --> engine/src/governance.rs:3:5
+  |
+3 | use serde::{Serialize, Deserialize};
+  |     ^^^^^ use of unresolved module or unlinked crate `serde`
+  |
+  = help: if you wanted to use a crate named `serde`, use `cargo add serde` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `serde`
+ --> engine/src/adapter.rs:2:5
+  |
+2 | use serde::{Serialize, Deserialize};
+  |     ^^^^^ use of unresolved module or unlinked crate `serde`
+  |
+  = help: if you wanted to use a crate named `serde`, use `cargo add serde` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `bincode`
+   --> engine/src/lib.rs:211:30
+    |
+211 |             if let Ok(ctx) = bincode::serde::decode_from_slice::<ContextManager, _>(&overlay.context_state, bincode::config::standard()) {
+    |                              ^^^^^^^ use of unresolved module or unlinked crate `bincode`
+    |
+    = help: if you wanted to use a crate named `bincode`, use `cargo add bincode` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `bincode`
+   --> engine/src/lib.rs:211:109
+    |
+211 |             if let Ok(ctx) = bincode::serde::decode_from_slice::<ContextManager, _>(&overlay.context_state, bincode::config::standard()) {
+    |                                                                                                             ^^^^^^^ use of unresolved module or unlinked crate `bincode`
+    |
+    = help: if you wanted to use a crate named `bincode`, use `cargo add bincode` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `bincode`
+   --> engine/src/lib.rs:238:28
+    |
+238 |         if let Ok(bytes) = bincode::serde::encode_to_vec(&self.context, bincode::config::standard()) {
+    |                            ^^^^^^^ use of unresolved module or unlinked crate `bincode`
+    |
+    = help: if you wanted to use a crate named `bincode`, use `cargo add bincode` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `bincode`
+   --> engine/src/lib.rs:238:73
+    |
+238 |         if let Ok(bytes) = bincode::serde::encode_to_vec(&self.context, bincode::config::standard()) {
+    |                                                                         ^^^^^^^ use of unresolved module or unlinked crate `bincode`
+    |
+    = help: if you wanted to use a crate named `bincode`, use `cargo add bincode` to add it to your `Cargo.toml`
+
+warning: unused import: `HashMap`
+ --> engine/src/context.rs:2:34
+  |
+2 | use std::collections::{VecDeque, HashMap};
+  |                                  ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `hte::HardwareProfile`
+ --> engine/src/adapter.rs:1:5
+  |
+1 | use hte::HardwareProfile;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: `ingestion` (lib) generated 2 warnings (2 duplicates)
+warning: `memory` (lib) generated 2 warnings (2 duplicates)
+Some errors have detailed explanations: E0432, E0433.
+For more information about an error, try `rustc --explain E0432`.
+warning: `engine` (lib) generated 2 warnings
+error: could not compile `engine` (lib) due to 7 previous errors; 2 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `engine` (lib test) generated 2 warnings (2 duplicates)
+error: could not compile `engine` (lib test) due to 7 previous errors; 2 warnings emitted

@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
+use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SalienceScoring {
     pub scores: HashMap<String, f32>,
     pub decay_rate: f32,
@@ -42,7 +43,7 @@ impl SalienceScoring {
 }
 
 // Memory Tiers
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryTier {
     pub capacity: usize,
     pub items: VecDeque<String>,

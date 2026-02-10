@@ -114,6 +114,21 @@ fn main() {
                  println!("To distribute, run: omniforge compress {}", output_path);
              }
         },
+        "export" => {
+            if args.len() < 4 {
+                eprintln!("Usage: omniforge export <mindpack> <output.json>");
+                std::process::exit(1);
+            }
+            let source = &args[2];
+            let dest = &args[3];
+
+            println!("Exporting Knowledge Graph from {}...", source);
+            let pack = memory::load_snapshot(source).expect("Failed to load mindpack");
+
+            let json = serde_json::to_string_pretty(&pack.memory.core.relation_graph).unwrap();
+            std::fs::write(dest, json).expect("Failed to write output");
+            println!("Exported to {}", dest);
+        },
         "compress" => {
             // omniforge compress <name>.mindpack
             if args.len() < 3 {
@@ -260,8 +275,10 @@ fn main() {
             }
             let path = &args[2];
             println!("Verifying integrity of {}...", path);
-            match memory::load_snapshot(path) {
-                Ok(pack) => {
+            match memory::verify_integrity(path) {
+                Ok(_) => {
+                     // Load again for metadata display (verify_integrity returns bool)
+                     let pack = memory::load_snapshot(path).unwrap();
                      println!(" Integrity OK: [MATCH]");
                      println!(" Core Hash: {}", pack.metadata.core_hash);
                      println!(" Version: {}", pack.version);
@@ -334,6 +351,7 @@ fn print_usage() {
     println!("  omniforge init                  # Initialize new Forge Master in ./omniforge_data");
     println!("  omniforge ingest <path>         # Feed data to Forge Master");
     println!("  omniforge snapshot --name <n>   # Freeze Forge into <n>.mindpack");
+    println!("  omniforge export <f> <out>      # Export Knowledge Graph to JSON");
     println!("  omniforge compress <f>          # Compress .mindpack -> .mindpack.zip");
     println!("  omniforge run <f>               # Run MindPack (creates local overlay)");
     println!("  omniforge verify <f>            # Verify MindPack integrity");

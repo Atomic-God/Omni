@@ -1,8 +1,9 @@
 use cognition::planning::Goal;
 use std::collections::{VecDeque, HashMap};
 use crate::governance::{SalienceScoring, MemoryTier};
+use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TopicTracker {
     pub active_topics: VecDeque<String>,
 }
@@ -26,13 +27,13 @@ impl TopicTracker {
 
 // Arbitration Layers
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EpisodicMemory {
     pub buffer: MemoryTier,
     // Future: Could store full Episode objects with timestamps
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GoalMemory {
     pub active: VecDeque<Goal>,
     pub completed: Vec<Goal>, // History
@@ -68,7 +69,7 @@ impl GoalMemory {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContextManager {
     // Arbitrated Memory Stores
     pub episodic: EpisodicMemory,

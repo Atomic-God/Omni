@@ -11,8 +11,10 @@ pub mod context;
 pub mod explanation;
 pub mod security;
 pub mod governance;
+pub mod adapter; // Added
 
 use context::ContextManager;
+use adapter::RuntimeAdapter;
 use explanation::{ExplanationEngine, AudienceModel};
 use security::PermissionBoundary;
 
@@ -178,6 +180,7 @@ pub struct RuntimeMind {
     pub overlay: PersonalMemory,  // Read-Write Local Context
     pub context: ContextManager,
     pub learner: LearningEngine,  // Continuous Learning Engine
+    pub adapter: RuntimeAdapter,  // Hardware adaptation
 }
 
 impl RuntimeMind {
@@ -185,7 +188,7 @@ impl RuntimeMind {
         info!("Loading RuntimeMind Base from {}", base_path);
         let base = memory::load_snapshot(base_path)?;
 
-        let overlay = if let Some(ov_path) = overlay_path {
+        let mut overlay = if let Some(ov_path) = overlay_path {
             if std::path::Path::new(ov_path).exists() {
                 info!("Loading Personal Overlay from {}", ov_path);
                 let ov = memory::load_personal(ov_path)?;
@@ -203,11 +206,19 @@ impl RuntimeMind {
             Self::create_overlay(&base)
         };
 
+        let mut context = ContextManager::new();
+        if !overlay.context_state.is_empty() {
+            if let Ok(ctx) = bincode::serde::decode_from_slice::<ContextManager, _>(&overlay.context_state, bincode::config::standard()) {
+                context = ctx.0;
+            }
+        }
+
         Ok(Self {
             base: Arc::new(base),
             overlay,
-            context: ContextManager::new(),
+            context,
             learner: LearningEngine::new(),
+            adapter: RuntimeAdapter::new(),
         })
     }
 
@@ -217,11 +228,17 @@ impl RuntimeMind {
             parent_hash: base.metadata.core_hash.clone(),
             created_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
             last_accessed: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+            context_state: Vec::new(),
         }
     }
 
     pub fn save_overlay(&self, path: &str) -> Result<(), std::io::Error> {
-        memory::save_personal(&self.overlay, path)
+        // Serialize Context
+        let mut overlay_copy = self.overlay.clone();
+        if let Ok(bytes) = bincode::serde::encode_to_vec(&self.context, bincode::config::standard()) {
+            overlay_copy.context_state = bytes;
+        }
+        memory::save_personal(&overlay_copy, path)
     }
 
     pub fn learn_personal(&mut self, text: &str) {

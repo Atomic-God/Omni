@@ -9,7 +9,9 @@ use std::path::Path;
 pub mod io;
 pub mod invariant;
 pub mod streaming;
+pub mod integrity; // Added
 use invariant::UniversalMindInvariant;
+pub use integrity::verify_integrity;
 
 #[allow(dead_code)]
 const MEMORY_VERSION: &str = "8.4";
@@ -204,6 +206,7 @@ pub struct PersonalMemory {
     pub parent_hash: String,
     pub created_at: u64,
     pub last_accessed: u64,
+    pub context_state: Vec<u8>, // Serialized ContextManager (bincode)
 }
 
 pub fn save_personal(mem: &PersonalMemory, path: &str) -> Result<(), std::io::Error> {
