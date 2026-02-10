@@ -81,7 +81,12 @@ impl ForgeMind {
     pub fn save_master(&self, path: &str) -> Result<(), std::io::Error> {
         let path_obj = std::path::Path::new(path);
         if let Some(parent) = path_obj.parent() {
-             self.permissions.check_path(parent).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+             let check_path = if parent.as_os_str().is_empty() {
+                 std::env::current_dir()?
+             } else {
+                 parent.to_path_buf()
+             };
+             self.permissions.check_path(&check_path).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
         }
 
         info!("Saving Master Mind to {}", path);
@@ -98,7 +103,12 @@ impl ForgeMind {
     pub fn snapshot(&self, version: &str, source: &str, path: &str) -> Result<(), std::io::Error> {
         let path_obj = std::path::Path::new(path);
         if let Some(parent) = path_obj.parent() {
-             self.permissions.check_path(parent).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+             let check_path = if parent.as_os_str().is_empty() {
+                 std::env::current_dir()?
+             } else {
+                 parent.to_path_buf()
+             };
+             self.permissions.check_path(&check_path).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
         }
 
         info!("Creating Immutable Snapshot v{} at {}", version, path);

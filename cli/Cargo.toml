@@ -1,7 +1,11 @@
 [package]
-name = "cli"
+name = "omniforge"
 version = "0.1.0"
 edition = "2021"
+
+[[bin]]
+name = "omniforge"
+path = "src/main.rs"
 
 [dependencies]
 engine = { path = "../engine" }

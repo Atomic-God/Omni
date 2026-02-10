@@ -85,7 +85,8 @@ pub fn save_snapshot(mind: &MindPack, path: &str) -> Result<(), std::io::Error> 
 
     let file = File::create(path)?;
     let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    // Use Deflated for universal lossless compression (pkzip compatible)
+    let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // 1. Metadata
     zip.start_file("metadata.json", options)?;

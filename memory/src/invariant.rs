@@ -18,9 +18,8 @@ impl UniversalMindInvariant {
 
         // 3. Check Determinism Metadata
         // Ensure no hardware-specific flags in metadata.
-        if pack.metadata.arch.contains("gpu") { // Example heuristic
-             // Just a warning in this implementation, but could be error.
-             // Actually, architecture tag just records origin, doesn't affect loading.
+        if pack.metadata.arch.contains("gpu") {
+             return Err(format!("Safety Violation: MindPack contains GPU-specific logic ({}) which is not portable.", pack.metadata.arch));
         }
 
         Ok(())

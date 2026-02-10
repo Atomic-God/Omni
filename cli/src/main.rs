@@ -4,8 +4,7 @@ use std::env;
 use std::io::{self, Write};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
-use directories::ProjectDirs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     if env::var("RUST_LOG").is_ok() {
@@ -34,6 +33,7 @@ fn main() {
                 std::process::exit(1);
             } else {
                 println!("Forge Master initialized at {:?}", path);
+                println!("Portable Data Directory: ./omniforge_data/");
             }
         },
         "ingest" => {
@@ -63,10 +63,6 @@ fn main() {
 
             let chunks = ingestion::ingest_path(PathBuf::from(data_path));
             {
-                // We lock directly because we are the CLI owner
-                // Note: OmniForge struct has pub fields for this purpose in facade.rs?
-                // Wait, in facade.rs: pub forge_mind: Arc<Mutex<ForgeMind>>,
-                // So yes, we can lock it.
                 let mut mind = forge.forge_mind.lock().unwrap();
                 for chunk in chunks {
                     mind.learn(&chunk.content);
@@ -83,14 +79,18 @@ fn main() {
             }
         },
         "snapshot" => {
-             if args.len() < 3 {
-                eprintln!("Usage: omniforge snapshot <version> [output_path]");
-                std::process::exit(1);
+             // omniforge snapshot --name <name>
+             let mut name = "snapshot".to_string();
+             if let Some(idx) = args.iter().position(|x| x == "--name") {
+                 if let Some(val) = args.get(idx + 1) {
+                     name = val.clone();
+                 }
+             } else if args.len() >= 3 && !args[2].starts_with("--") {
+                 // Fallback: omniforge snapshot <name>
+                 name = args[2].clone();
              }
-             let version = &args[2];
-             let output_path = if args.len() >= 4 { args[3].clone() } else { format!("snapshot_v{}.omf", version) };
-             let master_path = get_forge_master_path();
 
+             let master_path = get_forge_master_path();
              if !master_path.exists() {
                 eprintln!("Forge Master not found. Run 'omniforge init' first.");
                 std::process::exit(1);
@@ -102,119 +102,88 @@ fn main() {
                  std::process::exit(1);
              }
 
-             println!("Creating Snapshot v{}...", version);
-             if let Err(e) = forge.snapshot(version, "Forge CLI", &output_path) {
+             let output_path = format!("{}.mindpack", name);
+             println!("Freezing Forge into MindPack: {}", output_path);
+
+             // Version hardcoded for product release
+             if let Err(e) = forge.snapshot("1.0.0", "User Snapshot", &output_path) {
                  error!("Snapshot failed: {}", e);
                  std::process::exit(1);
              } else {
-                 println!("Snapshot created at {}", output_path);
+                 println!("Success! Artifact created: {}", output_path);
+                 println!("To distribute, run: omniforge compress {}", output_path);
              }
         },
-        "pack" => {
-             if args.len() < 3 {
-                eprintln!("Usage: omniforge pack --target=<mobile|desktop|server> [output_path]");
-                std::process::exit(1);
-             }
-             let target_arg = &args[2];
-             let target = if target_arg.starts_with("--target=") { &target_arg[9..] } else { "desktop" };
-             let output_path = if args.len() >= 4 { args[3].clone() } else { format!("mind_{}.omf", target) };
-
-             let master_path = get_forge_master_path();
-             if !master_path.exists() {
-                eprintln!("Forge Master not found.");
-                std::process::exit(1);
-             }
-
-             println!("Packing Mind for Target: {}", target);
-
-             // Load master temporarily to pack it
-             if let Err(e) = forge.load_forge_master(master_path.to_str().unwrap()) {
-                 error!("Failed load master: {}", e);
-                 std::process::exit(1);
-             }
-
-             // We construct a session manually for packing
-             // Note: fabricator::ForgeSession must be accessible
-             // Assuming fabricator exports ForgeSession
-             let session = fabricator::ForgeSession {
-                 mind: std::mem::take(&mut *forge.forge_mind.lock().unwrap()),
-                 config: fabricator::ForgeConfig::default(),
-                 learning_engine: learning::LearningEngine::new(),
-             };
-
-             if let Err(e) = session.pack(target, &output_path) {
-                 error!("Packing failed: {}", e);
-                 std::process::exit(1);
-             } else {
-                 println!("Mind packed successfully to {}", output_path);
-             }
-        },
-        "clone" => {
-             if args.len() < 4 {
-                eprintln!("Usage: omniforge clone <source.omf> <dest.omf>");
-                std::process::exit(1);
-             }
-             let source = &args[2];
-             let dest = &args[3];
-             println!("Cloning mind artifact...");
-             if let Err(e) = std::fs::copy(source, dest) {
-                 error!("Clone failed: {}", e);
-                 std::process::exit(1);
-             } else {
-                 println!("Cloned {} to {}. (Independent Sovereign Instance)", source, dest);
-             }
-        },
-        "verify" => {
+        "compress" => {
+            // omniforge compress <name>.mindpack
             if args.len() < 3 {
-                eprintln!("Usage: omniforge verify <snapshot.omf>");
+                eprintln!("Usage: omniforge compress <name>.mindpack");
                 std::process::exit(1);
             }
-            let path = &args[2];
-            println!("Verifying integrity of {}...", path);
-            match memory::load_snapshot(path) {
-                Ok(pack) => {
-                     println!(" Integrity OK: {}", pack.metadata.core_hash);
-                     println!(" Version: {}", pack.version);
-                     println!(" Source: {}", pack.metadata.source);
-                     println!(" Architecture: {}", pack.metadata.arch);
-                },
-                Err(e) => {
-                     eprintln!(" Verification FAILED: {}", e);
-                     std::process::exit(1);
-                }
+            let source = &args[2];
+            if !std::path::Path::new(source).exists() {
+                 eprintln!("File not found: {}", source);
+                 std::process::exit(1);
             }
+
+            let dest = format!("{}.zip", source);
+            println!("Compressing {} -> {} ...", source, dest);
+
+            // In our case, .mindpack IS a zip. We just copy it to .zip for "friend" usage.
+            if let Err(e) = std::fs::copy(source, &dest) {
+                error!("Compression failed: {}", e);
+                std::process::exit(1);
+            }
+            println!("Done. Send {} to your friend.", dest);
         },
         "run" => {
+            // omniforge run <name>.mindpack.zip
             if args.len() < 3 {
-                eprintln!("Usage: omniforge run <snapshot.omf>");
+                eprintln!("Usage: omniforge run <name>.mindpack[.zip]");
                 std::process::exit(1);
             }
-            let snapshot_path = &args[2];
-            let overlay_path = format!("{}.local", snapshot_path);
+            let path_str = &args[2];
+            let path = Path::new(path_str);
 
-            println!(" Omni Forge v8.6 Runtime");
-            println!("=========================");
-            println!("Loading Base: {}", snapshot_path);
+            if !path.exists() {
+                eprintln!("MindPack not found: {}", path_str);
+                std::process::exit(1);
+            }
 
-            if let Err(e) = forge.load_runtime(snapshot_path, Some(&overlay_path)) {
+            // Calculate overlay path in ./omniforge_data/overlays/
+            let file_stem = path.file_stem().unwrap().to_str().unwrap();
+            // Handle double extension .mindpack.zip -> .mindpack -> stem
+            let clean_stem = if file_stem.ends_with(".mindpack") {
+                Path::new(file_stem).file_stem().unwrap().to_str().unwrap()
+            } else {
+                file_stem
+            };
+
+            let mut overlay_dir = PathBuf::from("omniforge_data");
+            overlay_dir.push("overlays");
+            std::fs::create_dir_all(&overlay_dir).unwrap_or(());
+
+            let overlay_path = overlay_dir.join(format!("{}.local", clean_stem));
+            let overlay_path_str = overlay_path.to_str().unwrap();
+
+            println!(" Omni Forge Runtime");
+            println!("====================");
+            println!("Base Mind: {}", path_str);
+            println!("Personal Memory: {}", overlay_path_str);
+
+            if let Err(e) = forge.load_runtime(path_str, Some(overlay_path_str)) {
                 error!("Failed to load runtime: {}", e);
                 std::process::exit(1);
             }
 
-            println!("Runtime Ready. (Type 'exit' to quit)");
-
-            // Set up signal handler for graceful shutdown
-            // Need ctrlc crate? CLI crate imports it?
-            // "ctrlc = "3.4"" in Cargo.toml? No, "3.5.1".
-            // However, implementing proper async signal handling is complex in this sync loop.
-            // We'll rely on user typing "exit" or forcing kill for now, but save on every action.
+            println!("Mind Online. (Type 'exit' to quit)");
 
             loop {
                 print!("> ");
                 io::stdout().flush().unwrap();
                 let mut input = String::new();
                 match io::stdin().read_line(&mut input) {
-                    Ok(0) => break, // EOF
+                    Ok(0) => break,
                     Ok(_) => {},
                     Err(_) => break,
                 }
@@ -233,17 +202,15 @@ fn main() {
                 }
 
                 if input == "/save" {
-                     if let Err(e) = forge.save_runtime_overlay(&overlay_path) {
+                     if let Err(e) = forge.save_runtime_overlay(overlay_path_str) {
                          error!("Save failed: {}", e);
                      } else {
-                         println!("Local Overlay saved to {}", overlay_path);
+                         println!("Local Overlay saved.");
                      }
                      continue;
                 }
 
                 if input == "/goals" {
-                     // Introspection of goals
-                     // We need to access runtime mind
                      let slot = forge.runtime_mind.lock().unwrap();
                      if let Some(runtime) = slot.as_ref() {
                          let goals = runtime.overlay.core.active_goals();
@@ -264,10 +231,58 @@ fn main() {
             }
 
             println!("Saving session...");
-            if let Err(e) = forge.save_runtime_overlay(&overlay_path) {
+            if let Err(e) = forge.save_runtime_overlay(overlay_path_str) {
                 error!("Failed to save final session: {}", e);
             } else {
                 println!("Session saved.");
+            }
+        },
+        "verify" => {
+            if args.len() < 3 {
+                eprintln!("Usage: omniforge verify <mindpack>");
+                std::process::exit(1);
+            }
+            let path = &args[2];
+            println!("Verifying integrity of {}...", path);
+            match memory::load_snapshot(path) {
+                Ok(pack) => {
+                     println!(" Integrity OK: [MATCH]");
+                     println!(" Core Hash: {}", pack.metadata.core_hash);
+                     println!(" Version: {}", pack.version);
+                     println!(" Source: {}", pack.metadata.source);
+                     println!(" Arch: {}", pack.metadata.arch);
+                },
+                Err(e) => {
+                     eprintln!(" Verification FAILED: {}", e);
+                     std::process::exit(1);
+                }
+            }
+        },
+        "status" => {
+            let data_dir = PathBuf::from("omniforge_data");
+            println!("Omni Forge Status");
+            println!("=================");
+            println!("Version: {}", env!("CARGO_PKG_VERSION"));
+            println!("Mode: Portable");
+            println!("Data Directory: {:?}", std::fs::canonicalize(&data_dir).unwrap_or(data_dir));
+
+            let profile = hte::detect();
+            println!("Memory Usage: {}/{} KB", profile.used_memory, profile.total_memory);
+            println!("Safety Margin: {:.2}", profile.memory_budget_margin);
+        },
+        "doctor" => {
+            let profile = hte::detect();
+            println!("System Doctor (Health Check)");
+            println!("============================");
+            println!("Host OS: {} {}", profile.os_name, profile.kernel_version);
+            println!("CPU Cores: {} (Physical: {})", profile.logical_cores, profile.physical_cores);
+            println!("Instruction Sets: AVX2={}, NEON={}, AMX={}", profile.avx2, profile.neon, profile.amx);
+            println!("Memory Health: {:.2}% free", profile.memory_budget_margin * 100.0);
+
+            if profile.memory_budget_margin < 0.1 {
+                println!("[WARNING] Low Memory! Performance may degrade.");
+            } else {
+                println!("[OK] System healthy.");
             }
         },
         "inspect" => {
@@ -281,21 +296,8 @@ fn main() {
                 }
             }
         },
-        "doctor" | "health" | "status" => {
-            let profile = hte::detect();
-            println!("System Status (Health Check):");
-            println!("  OS: {} {}", profile.os_name, profile.kernel_version);
-            println!("  Memory: {}/{} KB (Margin: {:.2})", profile.used_memory, profile.total_memory, profile.memory_budget_margin);
-            println!("  Cores: {}", profile.logical_cores);
-            println!("  Instruction Sets: AVX2={}, NEON={}, AMX={}", profile.avx2, profile.neon, profile.amx);
-            if profile.memory_budget_margin < 0.1 {
-                println!("  WARNING: Low Memory Margin!");
-            } else {
-                println!("  Status: HEALTHY");
-            }
-        },
         "version" => {
-            println!("Omni Forge CLI v{}", env!("CARGO_PKG_VERSION"));
+            println!("Omni Forge v{}", env!("CARGO_PKG_VERSION"));
         },
         _ => {
             print_usage();
@@ -305,26 +307,21 @@ fn main() {
 }
 
 fn get_forge_master_path() -> PathBuf {
-    if let Some(proj_dirs) = ProjectDirs::from("com", "omni-forge", "omni-forge") {
-        let mut path = proj_dirs.data_dir().to_path_buf();
-        std::fs::create_dir_all(&path).unwrap_or(());
-        path.push("forge_master.omf");
-        path
-    } else {
-        PathBuf::from("forge_master.omf")
-    }
+    let mut path = PathBuf::from("omniforge_data");
+    std::fs::create_dir_all(&path).unwrap_or(());
+    path.push("forge_master.omf");
+    path
 }
 
 fn print_usage() {
-    println!("Omni Forge v8.6 Usage:");
-    println!("  omniforge init                  # Initialize new Forge Master");
+    println!("Omni Forge v8.9 Usage:");
+    println!("  omniforge init                  # Initialize new Forge Master in ./omniforge_data");
     println!("  omniforge ingest <path>         # Feed data to Forge Master");
-    println!("  omniforge snapshot <ver> [out]  # Export frozen Mind Artifact");
-    println!("  omniforge pack --target=<t>     # Create optimized artifact");
-    println!("  omniforge clone <src> <dst>     # Duplicate an artifact");
-    println!("  omniforge verify <mind.omf>     # Verify artifact integrity");
-    println!("  omniforge run <mind.omf>        # Run sovereign mind with local overlay");
-    println!("  omniforge inspect <mind.omf>    # View metadata");
-    println!("  omniforge doctor                # System diagnostics");
-    println!("  omniforge version               # Show version");
+    println!("  omniforge snapshot --name <n>   # Freeze Forge into <n>.mindpack");
+    println!("  omniforge compress <f>          # Compress .mindpack -> .mindpack.zip");
+    println!("  omniforge run <f>               # Run MindPack (creates local overlay)");
+    println!("  omniforge verify <f>            # Verify MindPack integrity");
+    println!("  omniforge status                # Show directory and memory info");
+    println!("  omniforge doctor                # Deep system health check");
+    println!("  omniforge inspect <f>           # View metadata");
 }
