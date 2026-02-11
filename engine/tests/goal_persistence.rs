@@ -9,7 +9,10 @@ fn create_dummy_base(path: &str) {
     let core = CognitionCore::new();
     let pack = MindPack {
         version: "8.4".to_string(),
-        memory: MemoryStore { core: core.clone() },
+        memory: MemoryStore {
+            core: core.clone(),
+            relational_index: memory::index::RelationalIndex::new(),
+        },
         vocab: VocabStore { words: HashMap::new() },
         encoder_config: EncoderConfig { model_name: "test".to_string() },
         learning_policies: LearningPolicies {

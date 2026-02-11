@@ -1,0 +1,131 @@
+    Updating crates.io index
+     Locking 21 packages to latest compatible versions
+      Adding bit_field v0.10.3
+      Adding bytemuck v1.25.0
+      Adding color_quant v1.1.0
+      Adding exr v1.74.0
+      Adding fdeflate v0.3.7
+      Adding gif v0.13.3
+      Adding id3 v1.16.4
+      Adding image v0.24.9 (available: v0.25.9)
+      Adding jpeg-decoder v0.3.2
+      Adding lebe v0.5.3
+      Adding mp4 v0.14.0
+      Adding num-bigint v0.4.6
+      Adding num-integer v0.1.46
+      Adding num-rational v0.4.2
+      Adding png v0.17.16
+      Adding qoi v0.4.1
+      Adding thiserror v1.0.69
+      Adding thiserror-impl v1.0.69
+      Adding tiff v0.9.1
+      Adding weezl v0.1.12
+      Adding zune-inflate v0.2.54
+ Downloading crates ...
+  Downloaded fdeflate v0.3.7
+  Downloaded thiserror-impl v1.0.69
+  Downloaded num-integer v0.1.46
+  Downloaded thiserror v1.0.69
+  Downloaded num-rational v0.4.2
+  Downloaded zune-inflate v0.2.54
+  Downloaded qoi v0.4.1
+  Downloaded id3 v1.16.4
+  Downloaded bytemuck v1.25.0
+  Downloaded png v0.17.16
+  Downloaded num-bigint v0.4.6
+  Downloaded mp4 v0.14.0
+  Downloaded gif v0.13.3
+  Downloaded color_quant v1.1.0
+  Downloaded lebe v0.5.3
+  Downloaded bit_field v0.10.3
+  Downloaded exr v1.74.0
+  Downloaded jpeg-decoder v0.3.2
+  Downloaded tiff v0.9.1
+  Downloaded image v0.24.9
+   Compiling simd-adler32 v0.3.8
+   Compiling num-traits v0.2.19
+   Compiling half v2.7.1
+   Compiling thiserror v1.0.69
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+   Compiling zune-inflate v0.2.54
+   Compiling flate2 v1.1.9
+warning: unused import: `regex::Regex`
+ --> perception/src/tokenizer.rs:1:5
+  |
+1 | use regex::Regex;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `once_cell::sync::Lazy`
+ --> perception/src/tokenizer.rs:2:5
+  |
+2 | use once_cell::sync::Lazy;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `perception` (lib) generated 2 warnings (run `cargo fix --lib -p perception` to apply 2 suggestions)
+   Compiling jpeg-decoder v0.3.2
+   Compiling thiserror-impl v1.0.69
+   Compiling zip v0.6.6
+   Compiling num-integer v0.1.46
+   Compiling num-bigint v0.4.6
+   Compiling bytemuck v1.25.0
+   Compiling color_quant v1.1.0
+   Compiling lebe v0.5.3
+   Compiling bit_field v0.10.3
+   Compiling png v0.17.16
+   Compiling qoi v0.4.1
+   Compiling exr v1.74.0
+   Compiling gif v0.13.3
+   Compiling num-rational v0.4.2
+   Compiling tiff v0.9.1
+   Compiling mp4 v0.14.0
+   Compiling id3 v1.16.4
+   Compiling cognition v0.1.0 (/app/cognition)
+warning: unused import: `std::collections::HashMap`
+ --> cognition/src/grammar.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::collections::HashMap`
+ --> cognition/src/tools.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `cognition` (lib) generated 2 warnings (run `cargo fix --lib -p cognition` to apply 2 suggestions)
+   Compiling memory v0.1.0 (/app/memory)
+warning: unused imports: `Read` and `Seek`
+ --> memory/src/streaming.rs:2:15
+  |
+2 | use std::io::{Read, Seek};
+  |               ^^^^  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `MindPack`
+ --> memory/src/integrity.rs:1:28
+  |
+1 | use crate::{load_snapshot, MindPack};
+  |                            ^^^^^^^^
+
+warning: unused import: `HashSet`
+ --> memory/src/index.rs:1:33
+  |
+1 | use std::collections::{HashMap, HashSet};
+  |                                 ^^^^^^^
+
+error[E0063]: missing field `relational_index` in initializer of `MemoryStore`
+   --> memory/src/lib.rs:191:17
+    |
+191 |         memory: MemoryStore { core: core.clone() },
+    |                 ^^^^^^^^^^^ missing `relational_index`
+
+For more information about this error, try `rustc --explain E0063`.
+warning: `memory` (lib) generated 3 warnings
+error: could not compile `memory` (lib) due to 1 previous error; 3 warnings emitted
+warning: build failed, waiting for other jobs to finish...

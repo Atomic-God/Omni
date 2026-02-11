@@ -5,6 +5,9 @@ use log::{info, warn};
 use std::collections::{HashSet, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub mod optimizer; // Added
+use optimizer::LearningOptimizer;
+
 pub struct ConceptFrequencyTracker {
     pub counts: HashMap<String, u64>,
 }
@@ -161,6 +164,9 @@ impl LearningEngine {
         if pruned_count > 0 {
             warn!("Pruned {} overgrown concepts (retained highest weight relations).", pruned_count);
         }
+
+        // Run Advanced Optimization
+        LearningOptimizer::compact_delta(core);
     }
 
     pub fn freeze(&mut self) {

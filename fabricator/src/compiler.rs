@@ -31,7 +31,10 @@ impl ForgeCompiler {
 
         let pack = MindPack {
             version: "8.3".to_string(),
-            memory: memory::MemoryStore { core: core_clone },
+            memory: memory::MemoryStore {
+                core: core_clone,
+                relational_index: memory::index::RelationalIndex::new(), // Init
+            },
             vocab: memory::VocabStore { words: mind.cognition.index_memory.clone() },
             encoder_config: memory::EncoderConfig { model_name: "beagle-v5".to_string() },
             learning_policies: memory::LearningPolicies {

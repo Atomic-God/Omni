@@ -6,6 +6,7 @@ pub mod planning;
 pub mod intent;
 pub mod grammar;
 pub mod tools;
+pub mod inference; // Added
 
 use core_vsa::HyperVector;
 use serde::{Deserialize, Serialize};

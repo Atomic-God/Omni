@@ -15,12 +15,14 @@ use flate2::read::GzDecoder;
 
 pub mod adapters;
 pub mod adapters_extended; // Added
+pub mod media_adapters; // Added
 pub mod fallback;
 pub mod registry;
 pub mod universal; // Added
 
 use adapters::{HtmlAdapter, DocxAdapter, MarkdownAdapter, JsonAdapter, PdfAdapterStub};
-use adapters_extended::{SpreadsheetAdapter, PresentationAdapter, ImageAdapter};
+use adapters_extended::{SpreadsheetAdapter, PresentationAdapter};
+use media_adapters::{ImageAnalysisAdapter, AudioAnalysisAdapter, VideoAnalysisAdapter};
 use fallback::{SymbolExtractor, SymbolOnlyFallback};
 use universal::UniversalAdapter;
 use registry::DataIngestionRegistry;
@@ -101,7 +103,9 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     // Extended
     registry.register(SpreadsheetAdapter);
     registry.register(PresentationAdapter);
-    registry.register(ImageAdapter);
+    registry.register(ImageAnalysisAdapter);
+    registry.register(AudioAnalysisAdapter);
+    registry.register(VideoAnalysisAdapter);
     // Universal Catch-All (Must be last check logic, or explicit fallback)
     // The registry iterates in order. But Universal claims to handle everything.
     // So we should NOT register it in the main list if the registry logic stops at first match.

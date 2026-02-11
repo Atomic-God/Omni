@@ -10,6 +10,7 @@ pub mod live;
 pub mod merge;
 pub mod compiler;
 pub mod packaging; // Added
+pub mod gpu_boundary; // Added
 
 use compiler::{ForgeCompiler, TargetProfile};
 use packaging::MindPackagingPipeline;
@@ -61,7 +62,10 @@ impl ForgeSession {
         let core_hash = self.mind.cognition.compute_integrity_hash();
         MindPack {
             version: "8.3".to_string(),
-            memory: MemoryStore { core: self.mind.cognition.clone() },
+            memory: MemoryStore {
+                core: self.mind.cognition.clone(),
+                relational_index: memory::index::RelationalIndex::new(), // Init
+            },
             vocab: VocabStore { words: self.mind.cognition.index_memory.clone() },
             encoder_config: EncoderConfig { model_name: "beagle-v5".to_string() },
             learning_policies: LearningPolicies {

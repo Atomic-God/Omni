@@ -10,8 +10,12 @@ pub mod io;
 pub mod invariant;
 pub mod streaming;
 pub mod integrity; // Added
+pub mod index; // Added
+pub mod security; // Added
 use invariant::UniversalMindInvariant;
 pub use integrity::verify_integrity;
+pub use security::SnapshotSignature;
+use index::RelationalIndex;
 
 #[allow(dead_code)]
 const MEMORY_VERSION: &str = "8.4";
@@ -33,6 +37,7 @@ pub struct VocabStore {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MemoryStore {
     pub core: CognitionCore,
+    pub relational_index: RelationalIndex, // Added
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -183,7 +188,10 @@ pub fn load_snapshot(path: &str) -> Result<MindPack, std::io::Error> {
 
     let pack = MindPack {
         version: MEMORY_VERSION.to_string(),
-        memory: MemoryStore { core: core.clone() },
+        memory: MemoryStore {
+            core: core.clone(),
+            relational_index: RelationalIndex::new(),
+        },
         vocab: VocabStore { words: core.index_memory.clone() },
         encoder_config,
         learning_policies,

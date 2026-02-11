@@ -13,6 +13,7 @@ pub mod security;
 pub mod governance;
 pub mod adapter; // Added
 pub mod metrics; // Added
+pub mod budget; // Added
 
 use context::ContextManager;
 use adapter::RuntimeAdapter;
@@ -126,7 +127,10 @@ impl ForgeMind {
         let core_hash = self.cognition.compute_integrity_hash();
         MindPack {
             version: "8.4".to_string(), // Schema version
-            memory: MemoryStore { core: self.cognition.clone() },
+            memory: MemoryStore {
+                core: self.cognition.clone(),
+                relational_index: memory::index::RelationalIndex::new(), // Initialize
+            },
             vocab: VocabStore { words: self.cognition.index_memory.clone() },
             encoder_config: EncoderConfig { model_name: "beagle-v5".to_string() },
             learning_policies: LearningPolicies {

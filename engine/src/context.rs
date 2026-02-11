@@ -1,6 +1,7 @@
 use cognition::planning::Goal;
 use std::collections::{VecDeque, HashMap};
 use crate::governance::{SalienceScoring, MemoryTier};
+use crate::budget::TokenBudget;
 use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -79,6 +80,7 @@ pub struct ContextManager {
     // Governance
     pub salience: SalienceScoring,
     pub topic_tracker: TopicTracker,
+    pub budget: TokenBudget, // Added
 }
 
 impl ContextManager {
@@ -89,6 +91,7 @@ impl ContextManager {
             structural_focus: MemoryTier::new(20), // Focus on 20 concepts max
             salience: SalienceScoring::new(0.05),
             topic_tracker: TopicTracker::new(),
+            budget: TokenBudget::new(1_000_000), // 1M tokens theoretical max
         }
     }
 
