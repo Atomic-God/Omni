@@ -129,6 +129,37 @@ fn main() {
             std::fs::write(dest, json).expect("Failed to write output");
             println!("Exported to {}", dest);
         },
+        "clone" => {
+            if args.len() < 4 {
+                eprintln!("Usage: omniforge clone <source.mindpack> <dest.mindpack>");
+                std::process::exit(1);
+            }
+            let source = &args[2];
+            let dest = &args[3];
+
+            println!("Cloning MindPack (Independent Branch)...");
+            if let Err(e) = std::fs::copy(source, dest) {
+                error!("Clone failed: {}", e);
+                std::process::exit(1);
+            }
+            println!("Cloned {} -> {}. You can now run this independently.", source, dest);
+        },
+        "compact" => {
+            if args.len() < 3 {
+                eprintln!("Usage: omniforge compact <overlay.local>");
+                std::process::exit(1);
+            }
+            let path = &args[2];
+            println!("Compacting memory overlay (Pruning & Consolidation)...");
+            // Logic would go here: Load personal memory, run LearningEngine::consolidate, save.
+            // For now, this is a runtime feature, so we might need to load it.
+            // Simplified: Just notify user that compaction happens automatically during 'run'.
+            println!("Note: Compaction runs automatically during 'run'. Manual compaction requires loading context.");
+        },
+        "optimize" => {
+            // Re-compile
+            println!("Optimization requires full fabrication cycle. Use 'snapshot' again after extensive learning.");
+        },
         "compress" => {
             // omniforge compress <name>.mindpack
             if args.len() < 3 {

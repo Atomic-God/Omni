@@ -12,9 +12,11 @@ pub mod explanation;
 pub mod security;
 pub mod governance;
 pub mod adapter; // Added
+pub mod metrics; // Added
 
 use context::ContextManager;
 use adapter::RuntimeAdapter;
+use metrics::RuntimeMetrics;
 use explanation::{ExplanationEngine, AudienceModel};
 use security::PermissionBoundary;
 
@@ -181,6 +183,7 @@ pub struct RuntimeMind {
     pub context: ContextManager,
     pub learner: LearningEngine,  // Continuous Learning Engine
     pub adapter: RuntimeAdapter,  // Hardware adaptation
+    pub metrics: RuntimeMetrics,  // Observability
 }
 
 impl RuntimeMind {
@@ -219,6 +222,7 @@ impl RuntimeMind {
             context,
             learner: LearningEngine::new(),
             adapter: RuntimeAdapter::new(),
+            metrics: RuntimeMetrics::new(),
         })
     }
 
@@ -242,6 +246,7 @@ impl RuntimeMind {
     }
 
     pub fn learn_personal(&mut self, text: &str) {
+        self.metrics.learning_events += 1;
         info!("Runtime Personal Learning: {}", text);
         // Check budget before learning
         let concept_count = self.overlay.core.index_memory.len();
@@ -273,6 +278,7 @@ impl RuntimeMind {
     }
 
     pub fn ask(&mut self, question: &str) -> String {
+        self.metrics.query_count += 1;
         self.context.activate_semantic(question);
         self.context.log_episodic(question);
 
