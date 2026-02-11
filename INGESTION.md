@@ -17,10 +17,20 @@ The ingestion pipeline converts raw files into `SemanticChunks` with preserved h
 | **PDF** | `PdfAdapter` | Stub (Requires poppler) |
 | **Images** | `ImageAdapter` | Stub (Requires OCR/GPU) |
 
+## Universal Fallback
+For any unknown or binary format (`.exe`, `.dat`, etc.), the `UniversalAdapter`:
+1.  Attempts to read as UTF-8 text.
+2.  If binary:
+    - Extracts File Metadata (Size, Magic Bytes).
+    - Calculates Entropy (to detect encryption).
+    - Extracts "Strings" (contiguous printable characters).
+
+This guarantees that **no file is ignored**—every input yields *some* semantic data.
+
 ## Registry System
 Adapters are managed by `DataIngestionRegistry`.
 - Auto-detection based on file extension.
-- Fallback to `SymbolExtractor` (hex tokens) for unknown binaries.
+- Fallback to `UniversalAdapter` for everything else.
 
 ## Hierarchy & Relations
 Chunks are metadata-rich:

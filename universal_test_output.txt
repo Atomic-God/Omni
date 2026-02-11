@@ -1,0 +1,44 @@
+warning: unused import: `chunk_content`
+ --> ingestion/src/adapters.rs:1:46
+  |
+1 | use crate::{IngestionAdapter, SemanticChunk, chunk_content};
+  |                                              ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `path`
+  --> ingestion/src/adapters_extended.rs:41:22
+   |
+41 |     fn ingest(&self, path: &Path) -> Vec<SemanticChunk> {
+   |                      ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `generic_read_file_fallback` is never used
+   --> ingestion/src/lib.rs:187:4
+    |
+187 | fn generic_read_file_fallback(path: &std::path::Path) -> String {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ingestion` (lib) generated 3 warnings (run `cargo fix --lib -p ingestion` to apply 2 suggestions)
+warning: unused import: `std::io::Write`
+ --> ingestion/tests/universal_test.rs:3:5
+  |
+3 | use std::io::Write;
+  |     ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ingestion` (test "universal_test") generated 1 warning (run `cargo fix --test "universal_test" -p ingestion` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+warning: the following packages contain code that will be rejected by a future version of Rust: xml5ever v0.16.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/universal_test.rs (target/debug/deps/universal_test-349d1d87d11e9bdc)
+
+running 2 tests
+test test_universal_adapter_text ... ok
+test test_universal_adapter_binary ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

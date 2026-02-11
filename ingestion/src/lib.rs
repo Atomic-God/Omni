@@ -17,10 +17,12 @@ pub mod adapters;
 pub mod adapters_extended; // Added
 pub mod fallback;
 pub mod registry;
+pub mod universal; // Added
 
 use adapters::{HtmlAdapter, DocxAdapter, MarkdownAdapter, JsonAdapter, PdfAdapterStub};
 use adapters_extended::{SpreadsheetAdapter, PresentationAdapter, ImageAdapter};
 use fallback::{SymbolExtractor, SymbolOnlyFallback};
+use universal::UniversalAdapter;
 use registry::DataIngestionRegistry;
 
 // --- Trait Definitions ---
@@ -100,6 +102,11 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     registry.register(SpreadsheetAdapter);
     registry.register(PresentationAdapter);
     registry.register(ImageAdapter);
+    // Universal Catch-All (Must be last check logic, or explicit fallback)
+    // The registry iterates in order. But Universal claims to handle everything.
+    // So we should NOT register it in the main list if the registry logic stops at first match.
+    // However, `ingest_path` logic uses the registry.
+    // We will handle Universal as the *fallback* if registry returns empty.
 
     info!("Ingestion Pipeline: Scanning {:?}", path);
 
@@ -140,26 +147,27 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
             "tar" => process_tar(path, chunks, seen_hashes),
             "gz" => process_tar_gz(path, chunks, seen_hashes),
             _ => {
-                // FALLBACK: Treat as opaque binary/text symbols
-                let fallback_content = generic_read_file_fallback(path);
-                if !fallback_content.is_empty() {
-                     let hash = compute_hash(&fallback_content);
-                     if !seen_hashes.contains(&hash) {
-                         seen_hashes.insert(hash.clone());
-                         chunks.push(SemanticChunk {
-                             source: path.to_string_lossy().to_string(),
-                             content: fallback_content,
-                             metadata: ChunkMetadata {
-                                 hash,
-                                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                 file_type: "unknown".to_string(),
-                                 language: "symbolic".to_string(),
-                                 structure_type: "blob".to_string(),
-                             },
-                         });
+                // FALLBACK: Universal Adapter
+                let universal = UniversalAdapter;
+                let universal_chunks = universal.ingest(path);
+
+                for chunk in universal_chunks {
+                     if !seen_hashes.contains(&chunk.metadata.hash) {
+                         seen_hashes.insert(chunk.metadata.hash.clone());
+                         chunks.push(chunk);
                      }
                 }
             }
+        }
+    } else {
+        // No extension? Universal Adapter.
+        let universal = UniversalAdapter;
+        let universal_chunks = universal.ingest(path);
+        for chunk in universal_chunks {
+             if !seen_hashes.contains(&chunk.metadata.hash) {
+                 seen_hashes.insert(chunk.metadata.hash.clone());
+                 chunks.push(chunk);
+             }
         }
     }
 }
