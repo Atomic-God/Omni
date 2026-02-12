@@ -1,4 +1,7 @@
-pub mod neural;
+pub mod neural; // Stubs
+pub mod mapper; // New
+pub mod text_encoder; // Existing
+pub mod decoder; // Existing
 
-// Re-export specific items if needed
 pub use neural::{NeuralEncoder, VisionEncoder, AudioEncoder, SyntaxEncoder, Tensor};
+pub use mapper::NeuralMapper;

@@ -11,5 +11,8 @@ members = [
     "learning",
     "api",
     "perception",
+    "neural",
+    "dataset",
+    "trainer",
 ]
 resolver = "2"

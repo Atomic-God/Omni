@@ -46,6 +46,7 @@ impl Ingestor for UniversalIngestor {
 }
 
 // --- Legacy Adapter for Backward Compatibility ---
+// Needed because lib.rs and tests expect UniversalAdapter to implement IngestionAdapter
 pub struct UniversalAdapter;
 
 impl crate::IngestionAdapter for UniversalAdapter {
@@ -55,7 +56,9 @@ impl crate::IngestionAdapter for UniversalAdapter {
 
     fn ingest(&self, path: &Path) -> Vec<crate::SemanticChunk> {
         // Fallback to generic text reading for the legacy chunk system
-        crate::generic_read_file(path, "unknown")
+        // But we should try to be smarter if possible.
+        // For now, simple fallback is enough to fix compilation.
+        crate::generic_read_file(path, "universal_fallback")
     }
 }
 
@@ -120,6 +123,7 @@ fn process_spreadsheet(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(
 
 // --- PDF Processor (using lopdf) ---
 fn process_pdf(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // lopdf Document::load can fail if file is locked or invalid
     let doc = Document::load(path).map_err(|e| e.to_string())?;
     let mut full_text = String::new();
 
