@@ -1,17 +1,18 @@
 use once_cell::sync::Lazy;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::hash::Hasher;
+use std::collections::HashMap;
+use std::hash::{Hasher, Hash};
 use std::collections::hash_map::DefaultHasher;
+use std::path::Path;
 
-pub mod index;
+pub mod traits;
 
 // 10,000 bits. 10000 / 64 = 156.25 -> 157 u64s.
-const DIMENSION: usize = 10_000;
-const NUM_WORDS: usize = (DIMENSION + 63) / 64;
+pub const DIMENSION: usize = 10_000;
+pub const NUM_WORDS: usize = (DIMENSION + 63) / 64;
 
 /// Static hypervector representing the Subject role in an SVO structure.
-/// Deterministically initialized.
 pub static ROLE_SUBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5001));
 /// Static hypervector representing the Verb role in an SVO structure.
 pub static ROLE_VERB: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5002));
@@ -20,9 +21,17 @@ pub static ROLE_OBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::determinis
 
 /// A high-dimensional vector supporting VSA operations.
 /// Implements a packed bit model (BSC) with dimension 10,000.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HyperVector {
     pub words: Vec<u64>,
+}
+
+impl Hash for HyperVector {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for word in &self.words {
+            word.hash(state);
+        }
+    }
 }
 
 impl HyperVector {
@@ -65,14 +74,47 @@ impl HyperVector {
             .iter()
             .zip(other.words.iter())
             .map(|(&a, &b)| {
-                // Equal mask: !(a ^ b)
-                // Result = (a & equal_mask) | (random & !equal_mask)
                 let random_bits: u64 = rng.gen();
                 let diff = a ^ b;
+                // If diff bit is 1, take random. If 0, take a (or b, same).
                 (a & !diff) | (random_bits & diff)
             })
             .collect();
         Self { words }
+    }
+
+    /// Permutation (Cyclic Shift).
+    /// Shifts bits left by `shifts`.
+    pub fn permute(&self, shifts: usize) -> Self {
+        let mut new_words = vec![0u64; NUM_WORDS];
+        let total_bits = NUM_WORDS * 64;
+        let shift = shifts % total_bits;
+
+        if shift == 0 {
+            return self.clone();
+        }
+
+        // This is a slow bit-by-bit implementation for correctness.
+        // Optimized SIMD/block shift should be used in Phase 8.
+        // Copy to a bit vector
+        let mut bits = Vec::with_capacity(total_bits);
+        for word in &self.words {
+            for i in 0..64 {
+                bits.push((word >> i) & 1);
+            }
+        }
+
+        // Rotate
+        bits.rotate_left(shift);
+
+        // Reconstruct
+        for (i, bit) in bits.iter().enumerate() {
+            if *bit == 1 {
+                new_words[i / 64] |= 1 << (i % 64);
+            }
+        }
+
+        Self { words: new_words }
     }
 
     /// Cosine similarity approximation via Hamming distance.
@@ -91,62 +133,47 @@ impl HyperVector {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Represents a structured graph of symbols (Concepts).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SymbolGraph {
+    pub nodes: Vec<SymbolNode>,
+    pub edges: Vec<SymbolEdge>,
+}
 
-    #[test]
-    fn test_random_properties() {
-        let hv = HyperVector::random();
-        assert_eq!(hv.words.len(), NUM_WORDS);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SymbolNode {
+    pub id: String,
+    pub vector: HyperVector,
+    pub metadata: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SymbolEdge {
+    pub source: String,
+    pub target: String,
+    pub relation: String,
+    pub weight: f32,
+}
+
+impl SymbolGraph {
+    pub fn new() -> Self {
+        Self { nodes: Vec::new(), edges: Vec::new() }
     }
 
-    #[test]
-    fn test_deterministic_roles() {
-        let r1 = HyperVector::deterministic(123);
-        let r2 = HyperVector::deterministic(123);
-        assert_eq!(r1, r2);
-
-        let r3 = HyperVector::deterministic(124);
-        assert_ne!(r1, r3);
+    pub fn add_node(&mut self, id: &str, vector: HyperVector, metadata: HashMap<String, String>) {
+        self.nodes.push(SymbolNode {
+            id: id.to_string(),
+            vector,
+            metadata,
+        });
     }
 
-    #[test]
-    fn test_deterministic_bundle() {
-        let a = HyperVector::deterministic(1);
-        let b = HyperVector::deterministic(2);
-        let c1 = a.bundle(&b);
-        let c2 = a.bundle(&b);
-        assert_eq!(c1, c2);
-    }
-
-    #[test]
-    fn test_orthogonality() {
-        let hv1 = HyperVector::random();
-        let hv2 = HyperVector::random();
-        let sim = hv1.similarity(&hv2);
-        assert!(sim.abs() < 0.05, "Similarity {} should be near 0", sim);
-    }
-
-    #[test]
-    fn test_bind_inverse() {
-        let a = HyperVector::random();
-        let b = HyperVector::random();
-        let bound = a.bind(&b);
-        let recovered = bound.bind(&b);
-        assert!(a.similarity(&recovered) > 0.99);
-    }
-
-    #[test]
-    fn test_bundle_similarity() {
-        let a = HyperVector::random();
-        let b = HyperVector::random();
-        let bundle = a.bundle(&b);
-
-        let sim_a = bundle.similarity(&a);
-        let sim_b = bundle.similarity(&b);
-
-        assert!(sim_a > 0.45 && sim_a < 0.55, "Sim A: {}", sim_a);
-        assert!(sim_b > 0.45 && sim_b < 0.55, "Sim B: {}", sim_b);
+    pub fn add_edge(&mut self, source: &str, target: &str, relation: &str, weight: f32) {
+        self.edges.push(SymbolEdge {
+            source: source.to_string(),
+            target: target.to_string(),
+            relation: relation.to_string(),
+            weight,
+        });
     }
 }

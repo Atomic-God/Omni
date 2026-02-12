@@ -1,33 +1,78 @@
+use core_vsa::traits::Ingestor;
+use core_vsa::{SymbolGraph, HyperVector};
+use std::path::Path;
+use std::error::Error;
+use log::info;
+
+pub mod adapters;
+pub mod adapters_extended;
+pub mod media_adapters;
+pub mod fallback;
+pub mod registry;
+pub mod universal;
+
+// Re-export for convenience if needed, but the main interface is the trait
+pub use registry::DataIngestionRegistry;
+
+pub struct UniversalIngestor;
+
+impl Ingestor for UniversalIngestor {
+    fn ingest(&self, path: &Path) -> Result<SymbolGraph, Box<dyn Error + Send + Sync>> {
+        info!("UniversalIngestor: Processing {:?}", path);
+
+        // This is a bridge between the old "Chunk" system and the new "SymbolGraph" system.
+        // For Phase 1, we will just wrap the old logic.
+        // In Phase 3, we will rewrite the internals to build the graph directly.
+
+        let chunks = crate::ingest_path(path.to_path_buf());
+        let mut graph = SymbolGraph::new();
+
+        for chunk in chunks {
+            // Create a node for each chunk
+            // In a real VSA system, we would encode the text into a HyperVector here.
+            // For now, we use a deterministic seed based on the hash (Placeholder).
+
+            let seed = u64::from_str_radix(&chunk.metadata.hash[0..16], 16).unwrap_or(0);
+            let vector = HyperVector::deterministic(seed);
+
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("source".to_string(), chunk.source);
+            metadata.insert("content".to_string(), chunk.content); // Warning: Heavy
+            metadata.insert("type".to_string(), chunk.metadata.file_type);
+            metadata.insert("structure".to_string(), chunk.metadata.structure_type);
+
+            graph.add_node(&chunk.metadata.hash, vector, metadata);
+        }
+
+        Ok(graph)
+    }
+}
+
+// Keep the old functions for now to support the legacy internal logic,
+// but they are now private implementation details mostly.
+// (Actually, keeping them public for now to avoid breaking other crates yet,
+// until Phase 3 cleans them up).
+
 use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
-use log::{info, warn, error};
+use log::{warn, error};
 use sha2::{Sha256, Digest};
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
-use whatlang::{detect};
+use whatlang::detect;
 use regex::Regex;
 use once_cell::sync::Lazy;
 use zip::read::ZipArchive;
 use tar::Archive;
 use flate2::read::GzDecoder;
 
-pub mod adapters;
-pub mod adapters_extended; // Added
-pub mod media_adapters; // Added
-pub mod fallback;
-pub mod registry;
-pub mod universal; // Added
-
 use adapters::{HtmlAdapter, DocxAdapter, MarkdownAdapter, JsonAdapter, PdfAdapterStub};
 use adapters_extended::{SpreadsheetAdapter, PresentationAdapter};
 use media_adapters::{ImageAnalysisAdapter, AudioAnalysisAdapter, VideoAnalysisAdapter};
-use fallback::{SymbolExtractor, SymbolOnlyFallback};
+use fallback::SymbolExtractor;
 use universal::UniversalAdapter;
-use registry::DataIngestionRegistry;
-
-// --- Trait Definitions ---
 
 pub trait IngestionAdapter: Send + Sync {
     fn can_handle(&self, path: &std::path::Path) -> bool;
@@ -40,7 +85,7 @@ pub struct ChunkMetadata {
     pub timestamp: u64,
     pub file_type: String,
     pub language: String,
-    pub structure_type: String, // e.g. "section:Introduction", "function:main"
+    pub structure_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +95,7 @@ pub struct SemanticChunk {
     pub metadata: ChunkMetadata,
 }
 
-// --- Default Adapters ---
+// ... (Rest of the old logic largely unchanged, just ensuring it compiles) ...
 
 pub struct TextAdapter;
 impl IngestionAdapter for TextAdapter {
@@ -69,12 +114,12 @@ impl IngestionAdapter for CodeAdapter {
     }
     fn ingest(&self, path: &std::path::Path) -> Vec<SemanticChunk> {
         let content = match read_file_stream(path) { Ok(c) => c, Err(_) => return vec![] };
-        let ext = path.extension().unwrap().to_str().unwrap();
+        let ext = path.extension().unwrap_or_default().to_str().unwrap_or("unknown");
         chunk_content(&content, ext, path)
     }
 }
 
-pub struct StructureAdapterStub; // Renamed, now using JsonAdapter for JSON
+pub struct StructureAdapterStub;
 impl IngestionAdapter for StructureAdapterStub {
     fn can_handle(&self, path: &std::path::Path) -> bool {
         matches!(path.extension().and_then(|s| s.to_str()), Some("csv" | "xml"))
@@ -84,13 +129,10 @@ impl IngestionAdapter for StructureAdapterStub {
     }
 }
 
-// --- Universal Ingestion Pipeline ---
-
 pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     let mut chunks = Vec::new();
     let mut seen_hashes = HashSet::new();
 
-    // Initialize Registry
     let mut registry = DataIngestionRegistry::new();
     registry.register(MarkdownAdapter);
     registry.register(JsonAdapter);
@@ -100,19 +142,11 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
     registry.register(CodeAdapter);
     registry.register(StructureAdapterStub);
     registry.register(PdfAdapterStub);
-    // Extended
     registry.register(SpreadsheetAdapter);
     registry.register(PresentationAdapter);
     registry.register(ImageAnalysisAdapter);
     registry.register(AudioAnalysisAdapter);
     registry.register(VideoAnalysisAdapter);
-    // Universal Catch-All (Must be last check logic, or explicit fallback)
-    // The registry iterates in order. But Universal claims to handle everything.
-    // So we should NOT register it in the main list if the registry logic stops at first match.
-    // However, `ingest_path` logic uses the registry.
-    // We will handle Universal as the *fallback* if registry returns empty.
-
-    info!("Ingestion Pipeline: Scanning {:?}", path);
 
     if path.is_file() {
         process_file(&path, &mut chunks, &mut seen_hashes, &registry);
@@ -127,12 +161,10 @@ pub fn ingest_path(path: PathBuf) -> Vec<SemanticChunk> {
             }
         }
     }
-    info!("Ingestion Pipeline: Ingested {} unique structural chunks.", chunks.len());
     chunks
 }
 
 fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>, registry: &DataIngestionRegistry) {
-    // Try registry first
     let new_chunks = registry.ingest(path);
     if !new_chunks.is_empty() {
         for chunk in new_chunks {
@@ -144,17 +176,14 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
         return;
     }
 
-    // Fallback logic for archives (Recursive)
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         match ext {
             "zip" => process_zip(path, chunks, seen_hashes),
             "tar" => process_tar(path, chunks, seen_hashes),
             "gz" => process_tar_gz(path, chunks, seen_hashes),
             _ => {
-                // FALLBACK: Universal Adapter
                 let universal = UniversalAdapter;
                 let universal_chunks = universal.ingest(path);
-
                 for chunk in universal_chunks {
                      if !seen_hashes.contains(&chunk.metadata.hash) {
                          seen_hashes.insert(chunk.metadata.hash.clone());
@@ -164,7 +193,6 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
             }
         }
     } else {
-        // No extension? Universal Adapter.
         let universal = UniversalAdapter;
         let universal_chunks = universal.ingest(path);
         for chunk in universal_chunks {
@@ -176,8 +204,6 @@ fn process_file(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_ha
     }
 }
 
-// --- Helper Functions ---
-
 fn generic_read_file(path: &std::path::Path, type_hint: &str) -> Vec<SemanticChunk> {
     match read_file_stream(path) {
         Ok(content) => chunk_content(&content, type_hint, path),
@@ -188,27 +214,12 @@ fn generic_read_file(path: &std::path::Path, type_hint: &str) -> Vec<SemanticChu
     }
 }
 
-fn generic_read_file_fallback(path: &std::path::Path) -> String {
-    let mut file = match File::open(path) { Ok(f) => f, Err(_) => return String::new() };
-    let mut buffer = Vec::new();
-    let metadata = match fs::metadata(path) { Ok(m) => m, Err(_) => return String::new() };
-
-    if metadata.len() > 10 * 1024 * 1024 {
-        let _ = file.take(10 * 1024 * 1024).read_to_end(&mut buffer);
-    } else {
-        let _ = file.read_to_end(&mut buffer);
-    }
-
-    SymbolExtractor.extract_symbols(&buffer)
-}
-
 fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut buffer = Vec::new();
     let metadata = fs::metadata(path)?;
 
-    // Safety limit: 10MB
     if metadata.len() > 10 * 1024 * 1024 {
         warn!("File {:?} is too large. Truncating to 10MB.", path);
         reader.take(10 * 1024 * 1024).read_to_end(&mut buffer)?;
@@ -216,7 +227,6 @@ fn read_file_stream(path: &std::path::Path) -> std::io::Result<String> {
         reader.read_to_end(&mut buffer)?;
     }
 
-    // Attempt UTF-8 conversion, replace invalid sequences (Lossy)
     let content = String::from_utf8_lossy(&buffer).to_string();
     Ok(content)
 }
@@ -228,7 +238,6 @@ pub(crate) fn chunk_content(text: &str, file_type: &str, path: &std::path::Path)
 pub(crate) fn chunk_content_with_structure(text: &str, file_type: &str, path: &std::path::Path, structure_hint: &str) -> Vec<SemanticChunk> {
     let lang = detect(text).map(|info| info.lang().to_string()).unwrap_or_else(|| "unknown".to_string());
 
-    // Binary check (Heuristic: many control chars)
     if lang == "unknown" && text.chars().take(100).filter(|c| c.is_control() && !c.is_whitespace()).count() > 5 {
         return vec![];
     }
@@ -241,7 +250,6 @@ pub(crate) fn chunk_content_with_structure(text: &str, file_type: &str, path: &s
 
     let mut chunks = Vec::new();
     for (chunk_text, struct_type) in raw_chunks {
-        // If the chunker returns generic "code_block" or "sentence_group", we can append the hint
         let final_struct_type = if struct_type == "sentence_group" || struct_type == "code_block" {
              if structure_hint != "root" {
                  format!("{}:{}", structure_hint, struct_type)
@@ -249,7 +257,6 @@ pub(crate) fn chunk_content_with_structure(text: &str, file_type: &str, path: &s
                  struct_type
              }
         } else {
-             // chunker found something specific (e.g. function:foo)
              struct_type
         };
 
@@ -327,7 +334,6 @@ pub(crate) fn compute_hash(text: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-// Archive processing (legacy style, kept for now)
 fn process_zip(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_hashes: &mut HashSet<String>) {
     let file = match File::open(path) { Ok(f) => f, Err(e) => { error!("Failed to open zip: {}", e); return; } };
     let mut archive = match ZipArchive::new(file) { Ok(a) => a, Err(e) => { error!("Failed to parse zip: {}", e); return; } };
@@ -336,7 +342,6 @@ fn process_zip(path: &std::path::Path, chunks: &mut Vec<SemanticChunk>, seen_has
         let mut file = match archive.by_index(i) { Ok(f) => f, Err(_) => continue };
         if file.is_dir() { continue; }
 
-        // Simple heuristic: process only text-like extensions inside zip
         let name = file.name().to_string();
         if !name.ends_with(".txt") && !name.ends_with(".md") && !name.ends_with(".rs") && !name.ends_with(".json") {
             continue;

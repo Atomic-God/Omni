@@ -3,25 +3,25 @@ name = "engine"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["fabrication"]
-fabrication = []
-
 [dependencies]
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+chrono = "0.4"
+# Crate dependencies
+core-vsa = { path = "../core-vsa" }
 cognition = { path = "../cognition" }
 memory = { path = "../memory" }
-hte = { path = "../hte" }
-perception = { path = "../perception" }
-core-vsa = { path = "../core-vsa" }
-learning = { path = "../learning" }
 ingestion = { path = "../ingestion" }
-serde = { version = "1.0", features = ["derive"] }
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-log = "0.4"
-env_logger = "0.10"
+runtime = { path = "../runtime" }
+hte = { path = "../hte" }
+fabricator = { path = "../fabricator" }
+perception = { path = "../perception" }
+learning = { path = "../learning" }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
 name = "omni_bench"
