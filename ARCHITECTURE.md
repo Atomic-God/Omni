@@ -1,43 +1,22 @@
-# Omni Forge Architecture
-**Version 9.0 (Industrial)**
+# Architecture: OmniForge v10.0 (Industrial Phase 1)
 
-Omni Forge is a sovereign, neuro-symbolic AI Mind-Factory. It generates "Minds" that run on edge devices without external dependencies.
+## Overview
+A Neuro-Symbolic AI Runtime entirely in Rust. No Transformers, No Python Dependencies.
 
-## Core Modules
+## Crates
+- `core-vsa`: HyperVector Algebra (10k-bit).
+- `neural`: CPU-based Deep Learning Stack (Tensor, Autograd, RNN, Optimizers).
+- `cognition`: Sequence Resonator & Abductive Reasoner.
+- `memory`: LSH Index & Sharded Storage (Binary Snapshots).
+- `ingestion`: Universal Parser (PDF, Excel, Code).
+- `trainer`: Training Loop & Checkpointing.
+- `gpu-bridge`: Kaggle Interop.
+- `hte`: Hardware Truth Engine.
+- `runtime`: OODA Loop Controller.
+- `cli`: Unified Command Interface.
 
-### 1. Engine (`engine`)
-The runtime orchestrator.
-- **ForgeMind**: The Creator. Mutable, unlimited memory. Runs on Workstation.
-- **RuntimeMind**: The Consumer. Immutable Base + Mutable Overlay. Runs on Edge.
-- **ContextManager**: Arbitrates between Structural, Episodic, and Goal memory.
-
-### 2. Cognition (`cognition`)
-The reasoning core (Vector Symbolic Architecture).
-- **CognitionCore**: Hypervector graph.
-- **Grammar**: Clause analysis, conversation state.
-- **Tools**: Abstract Action interface.
-
-### 3. Perception (`perception`)
-Input handling and synthesis.
-- **Polyglot**: Multilingual analysis (frequency/morphology).
-- **Encoders**: Text-to-Vector (SVO).
-
-### 4. Memory (`memory`)
-Persistence layer.
-- **MindBlueprint (MindPack)**: Immutable base artifact.
-- **MindDelta (PersonalMemory)**: User-specific learning.
-- **Streaming**: Lazy loading interfaces.
-
-### 5. Ingestion (`ingestion`)
-Universal data pipeline.
-- **Registry**: Dispatches parsers (MD, JSON, HTML, Code).
-- **Structure**: Extracts hierarchy and relations.
-
-### 6. Learning (`learning`)
-Continuous improvement.
-- **LearningEngine**: Entropy-based consolidation, drift protection.
-
-## Safety & Governance
-- **Immutability**: Base Mind is never modified by Runtime.
-- **Sovereignty**: No telemetry. Local-first.
-- **Deterministic**: Rebuilds guarantee identical vector spaces.
+## Key Features
+- **Deterministic:** 100% Reproducible builds and seeds.
+- **Scalable:** Sharded memory supports millions of items.
+- **Safe:** `unwrap()` minimized, Result-based flow.
+- **Portable:** Binary-compatible snapshots across OS.

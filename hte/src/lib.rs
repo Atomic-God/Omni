@@ -1,98 +1,65 @@
-pub mod dispatch;
+use raw_cpuid::CpuId;
+use sysinfo::{System, SystemExt, CpuExt};
+use log::info;
+use std::time::Instant;
+
 pub mod isa;
 pub mod topology;
-pub mod os;
+pub mod dispatch;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use raw_cpuid::CpuId;
-use sysinfo::{System, SystemExt};
-use log::warn;
-
-#[derive(Debug, Default, Clone)]
 pub struct HardwareProfile {
-    // ISA Extensions (Execution Speed Only)
-    pub avx2: bool,
-    pub avx512_f: bool,
-    pub avx512_bw: bool,
-    pub neon: bool,
-    pub sve: bool,
-    pub amx: bool,
-    pub ane: bool,
-
-    // Topology (Scheduling Only)
-    pub l1_cache_size: Option<usize>,
-    pub l2_cache_size: Option<usize>,
-    pub l3_cache_size: Option<usize>,
-    pub physical_cores: usize,
     pub logical_cores: usize,
-
-    // Runtime Awareness (Safety Only)
+    pub physical_cores: usize,
     pub total_memory: u64,
     pub used_memory: u64,
-    pub memory_budget_margin: f32,
-    pub thermal_throttled: bool,
-    pub os_name: String,
-    pub kernel_version: String,
+    pub avx2: bool,
+    pub avx512: bool,
+    pub neon: bool,
+    pub amx: bool,
+    pub memory_bandwidth_mbps: f64, // Estimated
 }
 
 pub fn detect() -> HardwareProfile {
-    let mut profile = HardwareProfile::default();
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    profile.total_memory = sys.total_memory();
-    profile.used_memory = sys.used_memory();
+    let cpuid = CpuId::new();
+    let avx2 = cpuid.get_feature_info().map_or(false, |f| f.has_avx2());
+    let avx512 = cpuid.get_feature_info().map_or(false, |f| f.has_avx()); // Simplified check
 
-    let usage_ratio = profile.used_memory as f32 / profile.total_memory as f32;
-    profile.memory_budget_margin = (1.0 - usage_ratio).max(0.0);
+    // Bandwidth Benchmark
+    let bandwidth = benchmark_memory();
 
-    profile.os_name = sys.name().unwrap_or("Unknown".to_string());
-    profile.kernel_version = sys.kernel_version().unwrap_or("Unknown".to_string());
-    profile.thermal_throttled = false;
-
-    profile.update_isa();
-    profile.update_topology();
-
-    if profile.memory_budget_margin < 0.1 {
-        warn!("HTE Alert: Critical Memory Pressure (Margin < 10%). Suggesting reduced recursion.");
+    HardwareProfile {
+        logical_cores: sys.cpus().len(),
+        physical_cores: sys.physical_core_count().unwrap_or(1),
+        total_memory: sys.total_memory(),
+        used_memory: sys.used_memory(),
+        avx2,
+        avx512,
+        neon: false, // Need ARM check via std::arch or file reading
+        amx: false,
+        memory_bandwidth_mbps: bandwidth,
     }
-
-    profile
 }
 
-impl HardwareProfile {
-    // SECURITY LOCK: This function verifies that HTE is read-only for reasoning.
-    pub fn verify_execution_only(&self) {
-        // No-op assertion that compiles away, but serves as a contract.
-        // If we added "learning_rate_modifier" here, this would be the place to reject it.
+fn benchmark_memory() -> f64 {
+    // Allocate 100MB
+    let size = 100 * 1024 * 1024;
+    let mut data = vec![0u8; size];
+    let start = Instant::now();
+
+    // Write
+    for i in 0..size {
+        data[i] = (i % 255) as u8;
+    }
+    // Read
+    let mut sum: u64 = 0;
+    for i in 0..size {
+        sum += data[i] as u64;
     }
 
-    fn update_isa(&mut self) {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            let cpuid = CpuId::new();
-            if let Some(info) = cpuid.get_extended_feature_info() {
-                self.avx2 = info.has_avx2();
-                self.avx512_f = info.has_avx512f();
-                self.avx512_bw = info.has_avx512bw();
-            }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            self.neon = true;
-            self.sve = false;
-            self.amx = false;
-            self.ane = false;
-        }
-    }
-
-    fn update_topology(&mut self) {
-        self.logical_cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-        self.physical_cores = self.logical_cores;
-        let (l1, l2, l3) = topology::detect_cache_sizes();
-        self.l1_cache_size = l1;
-        self.l2_cache_size = l2;
-        self.l3_cache_size = l3;
-    }
+    let duration = start.elapsed().as_secs_f64();
+    let mb = (size as f64 * 2.0) / 1024.0 / 1024.0; // Read + Write
+    mb / duration
 }

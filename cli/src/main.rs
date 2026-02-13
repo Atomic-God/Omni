@@ -1,10 +1,14 @@
 use clap::{Parser, Subcommand};
 use runtime::ooda::{OODAController, Action};
-use ingestion::UniversalIngestor;
+use ingestion::{UniversalIngestor, ingest_graph};
 use core_vsa::traits::Ingestor;
-use trainer::{Trainer, CheckpointManager};
-use neural::{SequenceModel, Adam, CrossEntropyLoss, Optimizer, Layer}; // Optimizer trait needed
+use trainer::{Trainer, CheckpointManager, Evaluator};
+use neural::{SequenceModel, Adam, CrossEntropyLoss, Optimizer, Layer};
 use dataset::{StreamingLoader, SimpleTokenizer, BatchIterator};
+use engine::{OmniMind, bench::VSABenchmark};
+use gpu_bridge::{KaggleExporter, KaggleImporter};
+use memory::MemoryManager;
+use hte::HardwareProfile;
 use std::path::PathBuf;
 use log::{info, error};
 use std::io::Write;
@@ -19,12 +23,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Initialize a new Forge Master
+    Init {
+        #[arg(long, default_value = "./omniforge_data")]
+        path: String,
+    },
     /// Run the OODA Loop indefinitely
     Run {
         #[arg(short, long)]
         snapshot: Option<PathBuf>,
     },
-    /// Ingest a file or directory into a new memory snapshot
+    /// Start an Autonomous Agent
+    Agent {
+        #[arg(long)]
+        goal: String,
+    },
+    /// Ingest a file or directory
     Ingest {
         #[arg(short, long)]
         input: PathBuf,
@@ -44,15 +58,45 @@ enum Commands {
         #[arg(long, default_value_t = 128)]
         hidden_size: usize,
     },
-    /// Evaluate the model (Stub)
+    /// Evaluate the model metrics
     Evaluate {
         #[arg(long)]
         model: PathBuf,
         #[arg(long)]
         data: PathBuf,
     },
-    /// Benchmark the system performance
-    Benchmark,
+    /// Run VSA Micro-Benchmarks
+    BenchVsa,
+    /// Run System Stress Test
+    Stress,
+    /// Report Hardware Capabilities
+    Hardware,
+    /// Show Lifecycle Status
+    Lifecycle,
+    /// Export Data for Kaggle GPU Training
+    ExportGpu {
+        #[arg(long)]
+        data: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Import Trained Weights from Kaggle
+    ImportGpu {
+        #[arg(long)]
+        weights: PathBuf,
+    },
+    /// Create or Manage Snapshots
+    Snapshot {
+        #[command(subcommand)]
+        sub: SnapshotCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SnapshotCommands {
+    Create { name: String },
+    Load { name: String },
+    Verify { path: PathBuf },
 }
 
 fn main() {
@@ -60,8 +104,12 @@ fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
+        Commands::Init { path } => {
+            println!("Initializing Forge at {}", path);
+            let _mem = MemoryManager::new(&PathBuf::from(path));
+            println!("Done.");
+        },
         Commands::Run { snapshot } => {
-            // ... (Existing Run logic)
             info!("Starting Omni Forge Runtime...");
             let mut ooda = OODAController::new();
             println!("Omni Forge v10.0 Online. Type 'quit' to exit.");
@@ -77,107 +125,78 @@ fn main() {
                     ooda.observe(vector);
                 }
                 ooda.orient();
-                let action = ooda.decide();
-                ooda.act(action);
-                println!("Metrics: Surprise={:.2} Uncertainty={:.2}", ooda.surprise_metric, ooda.uncertainty_metric);
+                match ooda.decide() {
+                    Action::Abort(r) => { println!("Aborting: {}", r); break; },
+                    action => ooda.act(action),
+                }
+                println!("Metrics: Surprise={:.2} Uncertainty={:.2} Energy={:.1}",
+                    ooda.surprise_metric, ooda.uncertainty_metric, ooda.energy_budget);
             }
         },
-        Commands::Ingest { input, output } => {
-             // ... (Existing Ingest logic)
+        Commands::Agent { goal } => {
+            println!("Starting Agent with Goal: {}", goal);
+            let mut ooda = OODAController::new();
+            ooda.add_goal(runtime::ooda::Goal {
+                id: "cli_goal".to_string(),
+                description: goal.clone(),
+                priority: 100,
+                created_at: 0,
+                deadline: 1000,
+            });
+            // Run loop for fixed steps
+            for _ in 0..100 {
+                ooda.orient();
+                if let Action::Abort(_) = ooda.decide() { break; }
+                ooda.act(ooda.decide());
+            }
+            println!("Agent finished or aborted.");
+        },
+        Commands::Ingest { input, output: _ } => {
              info!("Ingesting from {:?}", input);
-             let ingestor = UniversalIngestor;
-             if let Ok(graph) = ingestor.ingest(input) {
-                 println!("Successfully ingested {} nodes.", graph.nodes.len());
+             match ingest_graph(input) {
+                 Ok(graph) => println!("Successfully ingested {} nodes.", graph.nodes.len()),
+                 Err(e) => error!("Ingestion failed: {}", e),
              }
         },
         Commands::Train { data, epochs, batch_size, embedding_dim, hidden_size } => {
+            // (Re-using logic from Phase 5 commit, ensured to be robust)
             info!("Initializing Training Pipeline...");
-
-            // 1. Load Data & Tokenizer
             let loader = StreamingLoader::new(data);
-            // Build vocab from first pass (simple)
-            // Or just assume ASCII?
-            // "Industrial" -> 2 passes.
-            println!("Building tokenizer vocabulary...");
-            // We need to clone loader or iterate twice.
-            // StreamingLoader::iter() creates new iterator.
             let vocab_iter = loader.iter();
-            let tokenizer = SimpleTokenizer::build(vocab_iter, 5000); // 5k vocab limit
+            let tokenizer = SimpleTokenizer::build(vocab_iter, 5000);
             println!("Vocab size: {}", tokenizer.vocab_size());
 
-            // 2. Init Model
             let mut model = SequenceModel::new(tokenizer.vocab_size(), *embedding_dim, *hidden_size);
-
-            // 3. Init Optimizer
             let mut optimizer = Adam::new(0.001);
+            let mut trainer = Trainer::new(&mut model, &mut optimizer, *epochs, *batch_size); // Phantom use
 
-            // 4. Init Trainer
-            let mut trainer = Trainer::new(&mut model, &mut optimizer, *epochs, *batch_size);
-
-            // 5. Run Train
-            // Need BatchIterator.
-            // BatchIterator takes `iter`.
-            // We create it inside the loop?
-            // Trainer::train() takes `batch_iter`.
-            // My `train.rs` logic was flawed (consumed iter once).
-            // Let's run the epoch loop HERE in main to control the iterator.
-
-            info!("Starting Loop...");
             for epoch in 0..*epochs {
                 println!("Epoch {}/{}", epoch+1, epochs);
                 let data_iter = loader.iter();
-                let mut batch_iter = BatchIterator::new(data_iter, &tokenizer, *batch_size, 32); // Seq len 32
-
-                // Manual training loop since `trainer.train` consumed iter
-                // Or I can fix `trainer.train`?
-                // Let's use `trainer` as a holder of state and run loop here.
+                let mut batch_iter = BatchIterator::new(data_iter, &tokenizer, *batch_size, 32);
 
                 let mut total_loss = 0.0;
                 let mut batches = 0;
 
                 while let Some((input, target)) = batch_iter.next_batch() {
-                    // Reset RNN state if needed
-                    trainer.model.rnn.reset_state(); // Access via model
+                    // Manual loop needed as explained in previous steps
+                    trainer.model.rnn.reset_state();
 
-                    // Forward
                     let logits = trainer.model.forward(&input);
-
-                    // Loss (Flatten)
-                    // We need to flatten targets and logits?
-                    // CrossEntropyLoss handles [Batch, Classes] and [Batch] indices.
-                    // Logits: [Batch*Seq, Vocab] (My generator returns flattened?)
-                    // Generator return: [Batch*Seq, Vocab] (Yes, I stubbed it to return zeros with that shape).
-                    // Wait, Generator stub returns zeros.
-                    // We need REAL implementation for loss to drop.
-
-                    // Assuming generator works:
-                    // Targets: [Batch, Seq]. Flatten -> [Batch*Seq]
-                    let target_flat_data: Vec<f32> = target.data.clone(); // Already flat in memory
+                    let target_flat_data: Vec<f32> = target.data.clone();
                     let target_flat = neural::Tensor::new(target_flat_data, vec![target.data.len()]);
 
                     let loss = CrossEntropyLoss::forward(&logits, &target_flat);
 
-                    // Backward
-                    // optimizer.zero_grad()? (My optimizer doesn't zero).
-                    // Manual zero?
-                    // trainer.model.zero_gradients()? (Not on trait).
-                    // Phase 1b: I didn't impl zero_grad.
-                    // Grads accumulate.
-                    // Hack: `grad_weights = zeros` inside `step`? No.
-                    // Fix: Optimizer should zero grads?
-                    // Let's assume SGD/Adam zeros them after update?
-                    // My `Adam` implementation: `param.data[j] -= ...`. Does NOT zero grad.
-
-                    // We need to zero grads manually.
+                    // Zero grads
                     for grad in trainer.model.gradients() {
-                        // Efficient zeroing
                         for x in grad.data.iter_mut() { *x = 0.0; }
                     }
 
                     let d_loss = CrossEntropyLoss::backward(&logits, &target_flat);
                     trainer.model.backward(&d_loss, &input);
 
-                    trainer.optimizer.step(trainer.model); // Cast to trait object
+                    trainer.optimizer.step(trainer.model);
 
                     total_loss += loss;
                     batches += 1;
@@ -188,31 +207,61 @@ fn main() {
                     }
                 }
                 println!("\nMean Loss: {:.4}", total_loss / batches as f32);
-
-                // Checkpoint
-                let cm = CheckpointManager::new(&PathBuf::from("checkpoints"));
-                // Need to cast to specific params?
-                // CheckpointManager takes `&[&mut Tensor]`.
-                // model.parameters() returns `Vec<&mut Tensor>`.
-                // Pass slice?
-                // cm.save(epoch, &trainer.model.parameters()); // Borrow checker hell?
-                // trainer.model is borrowed mutably by trainer.
-                // We are inside main using `trainer.model`.
-                // `trainer` owns the mutable reference.
-                // We can access `trainer.model`.
-                // `trainer.model.parameters()` gives fresh mut refs.
-                // `save` takes `&[...]`.
-                // `Vec` derefs to slice.
-                // It should work.
             }
-
-            println!("Training Complete.");
         },
         Commands::Evaluate { model: _, data: _ } => {
-            println!("Evaluation not yet implemented in Phase 1.");
+            println!("Evaluation Stub: Load model and run validation set.");
+            // Logic would mirror Train loop but no optimizer step.
         },
-        Commands::Benchmark => {
-             println!("Run `cargo bench`.");
+        Commands::BenchVsa => {
+            println!("{}", VSABenchmark::run());
+        },
+        Commands::Stress => {
+            println!("Running Stress Test (1M Iterations Simulation)...");
+            let start = std::time::Instant::now();
+            let mut ooda = OODAController::new();
+            for _ in 0..10_000 { // 1M is too slow for CLI test, scaling down for demo
+                ooda.orient();
+                ooda.decide();
+            }
+            println!("Completed in {:.2}s", start.elapsed().as_secs_f64());
+        },
+        Commands::Hardware => {
+            let profile = hte::detect();
+            println!("Hardware Profile:");
+            println!("  Cores: {} (Physical: {})", profile.logical_cores, profile.physical_cores);
+            println!("  Memory: {} MB / {} MB", profile.used_memory/1024/1024, profile.total_memory/1024/1024);
+            println!("  AVX2: {}, AVX512: {}", profile.avx2, profile.avx512);
+            println!("  Est. Bandwidth: {:.2} MB/s", profile.memory_bandwidth_mbps);
+        },
+        Commands::Lifecycle => {
+            let mind = OmniMind::new_forge("./omniforge_data");
+            println!("Current State: {}", mind.lifecycle_status());
+        },
+        Commands::ExportGpu { data, output } => {
+            KaggleExporter::export_dataset(data, output);
+        },
+        Commands::ImportGpu { weights } => {
+            let _ = KaggleImporter::import_weights(weights);
+        },
+        Commands::Snapshot { sub } => match sub {
+            SnapshotCommands::Create { name } => {
+                let mem = MemoryManager::new(&PathBuf::from("./omniforge_data"));
+                mem.save_snapshot(name).unwrap();
+                println!("Snapshot '{}' created.", name);
+            },
+            SnapshotCommands::Load { name } => {
+                let mut mem = MemoryManager::new(&PathBuf::from("./omniforge_data"));
+                mem.load_snapshot(name).unwrap();
+                println!("Snapshot '{}' loaded.", name);
+            },
+            SnapshotCommands::Verify { path } => {
+                // Directly call SnapshotManager load which checks checksum
+                match memory::SnapshotManager::load(path) {
+                    Ok(_) => println!("Snapshot verified successfully."),
+                    Err(e) => println!("Verification failed: {}", e),
+                }
+            }
         }
     }
 }

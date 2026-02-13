@@ -14,5 +14,6 @@ members = [
     "neural",
     "dataset",
     "trainer",
+    "gpu-bridge",
 ]
 resolver = "2"

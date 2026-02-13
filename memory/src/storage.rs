@@ -4,30 +4,27 @@ use std::path::{Path, PathBuf};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use log::{info, warn};
-use bincode::{serialize, deserialize};
 use serde::{Serialize, Deserialize};
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
 
-/// Storage Manager that handles Sharding and Persistence.
-///
-/// Strategy:
-/// - Keep a "Hot" LSH Index in memory.
-/// - Offload "Cold" vectors to Sharded Disk Files.
-/// - On startup, load Indices (lightweight) or rebuild them.
-///
-/// For this phase, we implement basic Sharded Storage where:
-/// - We write to `shard_N.bin` when `current_shard` is full.
-/// - We keep a map `ID -> (ShardID, Offset)`?
-///   - Offset is hard with compressed binaries.
-///   - Simplification: `ID -> ShardID`. Load full shard into cache if needed.
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ShardedStorage {
     pub root_dir: PathBuf,
     pub current_shard_id: usize,
     pub shard_capacity: usize,
-    pub current_shard_buffer: HashMap<String, HyperVector>,
+    // RefCell for interior mutability during 'retrieve' (caching)
+    // But Cache should be transient?
+    // Serializing RefCell is tricky if we want to save cache state.
+    // Usually we don't save cache.
+    // We mark it skip?
+    #[serde(skip, default = "default_buffer")]
+    pub current_shard_buffer: RefCell<HashMap<String, HyperVector>>,
 
-    // Global Index of ID -> ShardID (0 means memory/current, >0 means disk)
     pub location_map: HashMap<String, usize>,
+}
+
+fn default_buffer() -> RefCell<HashMap<String, HyperVector>> {
+    RefCell::new(HashMap::new())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -44,31 +41,31 @@ impl ShardedStorage {
 
         Self {
             root_dir: root_dir.to_path_buf(),
-            current_shard_id: 1, // Start at 1
-            shard_capacity: 1000, // Small for testing, typically 10k-100k
-            current_shard_buffer: HashMap::new(),
+            current_shard_id: 1,
+            shard_capacity: 1000,
+            current_shard_buffer: RefCell::new(HashMap::new()),
             location_map: HashMap::new(),
         }
     }
 
     pub fn insert(&mut self, key: &str, vector: HyperVector) {
-        self.current_shard_buffer.insert(key.to_string(), vector);
-        self.location_map.insert(key.to_string(), 0); // 0 = Hot Buffer
+        self.current_shard_buffer.borrow_mut().insert(key.to_string(), vector);
+        self.location_map.insert(key.to_string(), 0);
 
-        if self.current_shard_buffer.len() >= self.shard_capacity {
+        if self.current_shard_buffer.borrow().len() >= self.shard_capacity {
             self.flush_shard();
         }
     }
 
-    pub fn retrieve(&mut self, key: &str) -> Option<HyperVector> {
+    pub fn retrieve(&self, key: &str) -> Option<HyperVector> {
         let loc = self.location_map.get(key)?;
 
         if *loc == 0 {
-            return self.current_shard_buffer.get(key).cloned();
+            return self.current_shard_buffer.borrow().get(key).cloned();
         }
 
         // Cold Retrieval: Load shard
-        // In a real DB, we'd cache this. Here we just read, find, return.
+        // TODO: Cache loaded shard?
         let shard_path = self.root_dir.join(format!("shard_{}.bin", loc));
         if let Ok(file) = File::open(&shard_path) {
             let shard: ShardFile = bincode::deserialize_from(file).ok()?;
@@ -84,21 +81,23 @@ impl ShardedStorage {
 
         info!("Flushing memory to shard {}", shard_id);
 
+        let buffer = self.current_shard_buffer.borrow();
         let shard_data = ShardFile {
             id: shard_id,
-            data: self.current_shard_buffer.clone(),
+            data: buffer.clone(),
         };
 
         let file = File::create(&shard_path).unwrap();
         bincode::serialize_into(file, &shard_data).unwrap();
 
         // Update locations
-        for k in self.current_shard_buffer.keys() {
+        for k in buffer.keys() {
             self.location_map.insert(k.clone(), shard_id);
         }
 
         // Reset buffer
-        self.current_shard_buffer.clear();
+        drop(buffer); // Release borrow
+        self.current_shard_buffer.borrow_mut().clear();
         self.current_shard_id += 1;
     }
 }

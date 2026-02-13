@@ -1,70 +1,117 @@
-use crate::MemorySystem;
-use core_vsa::HyperVector;
-use std::path::Path;
-use std::fs;
+use crate::{MemoryManager, LSHIndex, ShardedStorage};
 use serde::{Serialize, Deserialize};
+use std::path::Path;
+use std::fs::File;
+use std::io::{Read, Write};
+use sha2::{Sha256, Digest};
+use flate2::write::GzEncoder;
+use flate2::read::GzDecoder;
+use flate2::Compression;
 
 #[derive(Serialize, Deserialize)]
-pub struct SnapshotManifest {
-    pub version: String,
+pub struct SnapshotHeader {
+    pub version: u32,
     pub timestamp: u64,
-    pub shards: Vec<usize>,
+    pub checksum: String, // SHA256 of the body
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MindSnapshot {
+    pub header: SnapshotHeader,
+    pub index: LSHIndex,
+    pub storage: ShardedStorage,
 }
 
 pub struct SnapshotManager;
 
 impl SnapshotManager {
-    pub fn save_snapshot(memory: &MemorySystem, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        // 1. Ensure all buffers flushed (requires mut memory, but here we pass ref? logic gap)
-        // Ideally MemorySystem should auto-flush or we call flush before save.
-        // Since we can't mutate here, we assume flushed or we snapshot the ShardStorage state on disk.
-
-        // 2. Create Manifest
-        let manifest = SnapshotManifest {
-            version: "1.0".to_string(),
-            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            shards: (1..memory.storage.current_shard_id).collect(),
+    pub fn save(memory: &MemoryManager, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        // Serialize body
+        let body = MindSnapshotBody {
+            index: memory.index.clone(), // Clone is expensive. Industrial? Move?
+            // Snapshotting usually happens at checkpoints.
+            storage: memory.storage.clone(),
         };
 
-        let file = fs::File::create(path.join("manifest.json"))?;
-        serde_json::to_writer(file, &manifest)?;
+        let body_bytes = bincode::serialize(&body)?;
 
-        // Shards are already on disk in memory.storage.root_dir.
-        // If path != root_dir, we might need to copy.
-        // Assuming path IS root_dir for simplicity.
+        // Compute Checksum
+        let mut hasher = Sha256::new();
+        hasher.update(&body_bytes);
+        let checksum = hex::encode(hasher.finalize());
+
+        let header = SnapshotHeader {
+            version: crate::MEMORY_VERSION,
+            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
+            checksum,
+        };
+
+        // Write File: Header + Gzip(Body)
+        let file = File::create(path)?;
+        let mut encoder = GzEncoder::new(file, Compression::default());
+
+        bincode::serialize_into(&mut encoder, &header)?;
+        encoder.write_all(&body_bytes)?;
+        encoder.finish()?;
 
         Ok(())
     }
 
-    pub fn load_snapshot(path: &Path) -> Result<MemorySystem, Box<dyn std::error::Error>> {
-        // 1. Read Manifest
-        let file = fs::File::open(path.join("manifest.json"))?;
-        let manifest: SnapshotManifest = serde_json::from_reader(file)?;
+    pub fn load(path: &Path) -> Result<MindSnapshot, Box<dyn std::error::Error>> {
+        let file = File::open(path)?;
+        let mut decoder = GzDecoder::new(file);
 
-        // 2. Init System
-        let mut memory = MemorySystem::new(path);
+        // Read Header?
+        // Gzip stream contains everything.
+        // We need to read continuously.
+        // But header is inside gzip?
+        // My save logic: `serialize_into(encoder, &header)` -> Header IS compressed.
 
-        // 3. Rehydrate Index
-        // Iterate all shards, load vectors, insert into LSH.
-        // This is "Eager Loading". "Lazy Loading" would mean only indexing headers.
-        // For "Millions of symbols", eager loading might be slow but it's safe.
-        // Or we use "Memory Mapped" files.
+        // So just deserialize MindSnapshot struct which contains header?
+        // No, I wrote header then body bytes.
+        // I should define a container struct.
 
-        for shard_id in manifest.shards {
-            let shard_path = path.join(format!("shard_{}.bin", shard_id));
-            if let Ok(file) = fs::File::open(shard_path) {
-                if let Ok(shard) = bincode::deserialize_from::<_, crate::storage::ShardFile>(file) {
-                    for (k, v) in shard.data {
-                        memory.index.insert(&k, v); // Populates LSH cache
-                        memory.storage.location_map.insert(k, shard_id);
-                    }
-                }
-            }
+        let container: MindSnapshotContainer = bincode::deserialize_from(&mut decoder)?;
+
+        // Validate checksum
+        // This requires re-serializing index/storage to bytes to hash them?
+        // Or we trust Bincode?
+        // "Checksum validation" is required.
+        // If I serialize entire container, I can't check checksum before full load.
+
+        // Correct way:
+        // 1. Read Header (Uncompressed or separate?)
+        // If everything compressed, we must decompress all.
+
+        // Let's assume validation happens AFTER load for simplicity in Phase 3,
+        // or we use a container that separates header hash.
+
+        // Re-compute hash of body
+        let body_bytes = bincode::serialize(&container.body)?;
+        let mut hasher = Sha256::new();
+        hasher.update(&body_bytes);
+        let computed = hex::encode(hasher.finalize());
+
+        if computed != container.header.checksum {
+            return Err("Snapshot checksum mismatch! File corrupted.".into());
         }
 
-        // Update current shard ID to max + 1
-        memory.storage.current_shard_id = manifest.shards.iter().max().unwrap_or(&0) + 1;
-
-        Ok(memory)
+        Ok(MindSnapshot {
+            header: container.header,
+            index: container.body.index,
+            storage: container.body.storage,
+        })
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct MindSnapshotBody {
+    index: LSHIndex,
+    storage: ShardedStorage,
+}
+
+#[derive(Serialize, Deserialize)]
+struct MindSnapshotContainer {
+    header: SnapshotHeader,
+    body: MindSnapshotBody,
 }
