@@ -7,28 +7,23 @@ pub struct SimpleTokenizer {
     pub reverse_vocab: HashMap<usize, String>,
     pub unk_token: usize,
     pub pad_token: usize,
+    pub bos_token: usize,
+    pub eos_token: usize,
 }
 
 impl SimpleTokenizer {
     pub fn build(data_iter: impl Iterator<Item = String>, max_vocab: usize) -> Self {
         let mut counts = HashMap::new();
-        // Use a reservoir sampler or limit iteration for building vocab to avoid massive memory
-        // For Phase 1, we assume the iterator is streamable.
+        // Reservoir sampling or streaming stats could be used here for efficiency
 
         for line in data_iter {
             let normalized = line.nfc().collect::<String>();
-            // Split by whitespace and punctuation boundaries
-            // Simple regex-less split for "Industrial" robustness without heavy regex crate deps if possible?
-            // Actually regex is standard.
-            // Let's use simple char checks for multilingual safety.
-
             let tokens = Self::tokenize_raw(&normalized);
             for token in tokens {
                 *counts.entry(token).or_insert(0) += 1;
             }
         }
 
-        // Sort by frequency
         let mut entries: Vec<_> = counts.into_iter().collect();
         entries.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
 
@@ -48,16 +43,10 @@ impl SimpleTokenizer {
             reverse_vocab.insert(idx, token);
         }
 
-        Self { vocab, reverse_vocab, unk_token: 1, pad_token: 0 }
+        Self { vocab, reverse_vocab, unk_token: 1, pad_token: 0, bos_token: 2, eos_token: 3 }
     }
 
-    fn tokenize_raw(text: &str) -> Vec<String> {
-        // Multilingual splitting:
-        // 1. Normalize (NFC) - handled by caller or here
-        // 2. Split on whitespace
-        // 3. Keep punctuation separate?
-        // Simple logic: Isolate punctuation chars.
-
+    pub fn tokenize_raw(text: &str) -> Vec<String> {
         let mut tokens = Vec::new();
         let mut current_token = String::new();
 
@@ -67,14 +56,13 @@ impl SimpleTokenizer {
                     tokens.push(current_token.clone());
                     current_token.clear();
                 }
-            } else if c.is_ascii_punctuation() || c.is_control() {
+            } else if c.is_ascii_punctuation() || c.is_control() { // Simple punctuation boundary
                 if !current_token.is_empty() {
                     tokens.push(current_token.clone());
                     current_token.clear();
                 }
                 tokens.push(c.to_string());
             } else {
-                // Accumulate alnum / other unicode
                 current_token.push(c);
             }
         }
@@ -87,13 +75,20 @@ impl SimpleTokenizer {
     pub fn encode(&self, text: &str) -> Vec<usize> {
         let normalized = text.nfc().collect::<String>();
         let raw_tokens = Self::tokenize_raw(&normalized);
-        raw_tokens.iter()
-            .map(|t| *self.vocab.get(t).unwrap_or(&self.unk_token))
-            .collect()
+        let mut ids = Vec::new();
+
+        ids.push(self.bos_token);
+        for t in raw_tokens {
+            ids.push(*self.vocab.get(&t).unwrap_or(&self.unk_token));
+        }
+        ids.push(self.eos_token);
+
+        ids
     }
 
     pub fn decode(&self, tokens: &[usize]) -> String {
         tokens.iter()
+            .filter(|&&id| id != self.pad_token && id != self.bos_token && id != self.eos_token)
             .map(|&id| self.reverse_vocab.get(&id).map(|s| s.as_str()).unwrap_or(""))
             .collect::<Vec<&str>>()
             .join(" ")
