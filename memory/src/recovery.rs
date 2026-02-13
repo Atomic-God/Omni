@@ -5,12 +5,26 @@ pub struct CorruptionRecovery;
 
 impl CorruptionRecovery {
     pub fn check_integrity(storage: &ShardedStorage) -> bool {
-        // Iterate all shards and verify they are readable/deserializable
-        // In "Industrial" mode, shards should have their own CRC.
-        // ShardedStorage struct logic needs to support this.
-        // Assuming ShardedStorage has a verify method or we iterate keys.
+        // Iterate over buffer keys?
+        // Iterate over shards on disk?
+        // Phase 1 Industrial: Check if shards exist and header is valid.
 
-        // Placeholder check:
+        for id in 1..storage.current_shard_id {
+            let path = storage.root_dir.join(format!("shard_{}.bin", id));
+            if !path.exists() {
+                error!("Missing shard {}", id);
+                return false;
+            }
+            // Try to open and deserialize header?
+            // Expensive.
+            // Just check file size > 0.
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() == 0 {
+                    error!("Empty shard {}", id);
+                    return false;
+                }
+            }
+        }
         true
     }
 

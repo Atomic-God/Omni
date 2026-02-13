@@ -1,6 +1,7 @@
 use core_vsa::{HyperVector, DIMENSION};
 use cognition::abductive::AbductiveReasoner;
 use cognition::sequence::SequenceResonator;
+use cognition::{IntentResolver, Intent};
 use std::collections::{BinaryHeap, VecDeque};
 use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -38,6 +39,7 @@ pub struct OODAController {
     pub surprise_history: VecDeque<f32>,
     pub energy_budget: f32,
     pub step_count: usize,
+    pub current_intent: Intent, // New
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +50,7 @@ pub enum Action {
     Explore(String),
     Output(String),
     Abort(String),
+    ExecuteCommand(String), // New
 }
 
 impl OODAController {
@@ -63,12 +66,18 @@ impl OODAController {
             surprise_history: VecDeque::new(),
             energy_budget: 100.0,
             step_count: 0,
+            current_intent: Intent::Unknown,
         }
     }
 
-    pub fn observe(&mut self, input: HyperVector) {
+    pub fn observe(&mut self, input: HyperVector, text_hint: Option<&str>) {
         self.current_observation = Some(input.clone());
         self.resonator.add(&input);
+
+        // Resolve Intent
+        self.current_intent = IntentResolver::resolve(&input, text_hint);
+        debug!("Observed Intent: {:?}", self.current_intent);
+
         self.energy_budget -= 0.1;
     }
 
@@ -99,8 +108,15 @@ impl OODAController {
         if self.energy_budget <= 0.0 {
             return Action::Abort("Energy Depleted".to_string());
         }
-        if self.step_count > 10000 { // Infinite loop guard
+        if self.step_count > 10000 {
             return Action::Abort("Max Steps Exceeded".to_string());
+        }
+
+        // Intent-driven logic
+        match &self.current_intent {
+            Intent::Command(cmd) => return Action::ExecuteCommand(cmd.clone()),
+            Intent::Query(q) => return Action::Output(format!("Answering: {}", q)), // Stub for reasoning
+            _ => {}
         }
 
         if self.surprise_metric > 0.6 {
@@ -139,6 +155,7 @@ impl OODAController {
                 }
             },
             Action::Output(msg) => info!("ACT: Outputting - {}", msg),
+            Action::ExecuteCommand(cmd) => info!("ACT: Executing - {}", cmd),
             Action::Abort(reason) => warn!("ACT: Aborting - {}", reason),
         }
 

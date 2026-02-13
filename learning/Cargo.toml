@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cognition = { path = "../cognition" }
+core-vsa = { path = "../core-vsa" }
+memory = { path = "../memory" }
 ingestion = { path = "../ingestion" }
 log = "0.4"

@@ -122,7 +122,7 @@ fn main() {
                 if input == "quit" { break; }
                 if !input.is_empty() {
                     let vector = core_vsa::HyperVector::deterministic(input.len() as u64);
-                    ooda.observe(vector);
+                    ooda.observe(vector, Some(input)); // Pass text hint
                 }
                 ooda.orient();
                 match ooda.decide() {
@@ -159,7 +159,6 @@ fn main() {
              }
         },
         Commands::Train { data, epochs, batch_size, embedding_dim, hidden_size } => {
-            // (Re-using logic from Phase 5 commit, ensured to be robust)
             info!("Initializing Training Pipeline...");
             let loader = StreamingLoader::new(data);
             let vocab_iter = loader.iter();
@@ -168,7 +167,7 @@ fn main() {
 
             let mut model = SequenceModel::new(tokenizer.vocab_size(), *embedding_dim, *hidden_size);
             let mut optimizer = Adam::new(0.001);
-            let mut trainer = Trainer::new(&mut model, &mut optimizer, *epochs, *batch_size); // Phantom use
+            let mut trainer = Trainer::new(&mut model, &mut optimizer, *epochs, *batch_size);
 
             for epoch in 0..*epochs {
                 println!("Epoch {}/{}", epoch+1, epochs);
@@ -179,7 +178,6 @@ fn main() {
                 let mut batches = 0;
 
                 while let Some((input, target)) = batch_iter.next_batch() {
-                    // Manual loop needed as explained in previous steps
                     trainer.model.rnn.reset_state();
 
                     let logits = trainer.model.forward(&input);
@@ -188,7 +186,6 @@ fn main() {
 
                     let loss = CrossEntropyLoss::forward(&logits, &target_flat);
 
-                    // Zero grads
                     for grad in trainer.model.gradients() {
                         for x in grad.data.iter_mut() { *x = 0.0; }
                     }
@@ -206,12 +203,15 @@ fn main() {
                         std::io::stdout().flush().unwrap();
                     }
                 }
-                println!("\nMean Loss: {:.4}", total_loss / batches as f32);
+                if batches > 0 {
+                    println!("\nMean Loss: {:.4}", total_loss / batches as f32);
+                } else {
+                    println!("\nNo batches processed.");
+                }
             }
         },
         Commands::Evaluate { model: _, data: _ } => {
             println!("Evaluation Stub: Load model and run validation set.");
-            // Logic would mirror Train loop but no optimizer step.
         },
         Commands::BenchVsa => {
             println!("{}", VSABenchmark::run());
@@ -220,7 +220,7 @@ fn main() {
             println!("Running Stress Test (1M Iterations Simulation)...");
             let start = std::time::Instant::now();
             let mut ooda = OODAController::new();
-            for _ in 0..10_000 { // 1M is too slow for CLI test, scaling down for demo
+            for _ in 0..10_000 { // Scaled down for CI speed
                 ooda.orient();
                 ooda.decide();
             }
@@ -232,6 +232,9 @@ fn main() {
             println!("  Cores: {} (Physical: {})", profile.logical_cores, profile.physical_cores);
             println!("  Memory: {} MB / {} MB", profile.used_memory/1024/1024, profile.total_memory/1024/1024);
             println!("  AVX2: {}, AVX512: {}", profile.avx2, profile.avx512);
+            if let Some(l3) = profile.cache_l3_size_kb {
+                println!("  L3 Cache: {} KB", l3);
+            }
             println!("  Est. Bandwidth: {:.2} MB/s", profile.memory_bandwidth_mbps);
         },
         Commands::Lifecycle => {
@@ -256,7 +259,6 @@ fn main() {
                 println!("Snapshot '{}' loaded.", name);
             },
             SnapshotCommands::Verify { path } => {
-                // Directly call SnapshotManager load which checks checksum
                 match memory::SnapshotManager::load(path) {
                     Ok(_) => println!("Snapshot verified successfully."),
                     Err(e) => println!("Verification failed: {}", e),

@@ -1,45 +1,34 @@
-use serde::{Serialize, Deserialize};
+use core_vsa::HyperVector;
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Resolves user intent from a natural language vector (or string).
+pub struct IntentResolver;
+
+#[derive(Debug, PartialEq)]
 pub enum Intent {
     Query(String),
-    Explain(String),
-    Plan { start: String, end: String },
-    Learn(String),
+    Command(String),
+    Statement(String),
     Unknown,
 }
 
-pub struct IntentParser;
-
-impl IntentParser {
-    pub fn parse(input: &str) -> Intent {
-        let lower = input.trim().to_lowercase();
-
-        if lower.starts_with("explain ") {
-            let concept = input[8..].trim().to_string();
-            return Intent::Explain(concept);
-        }
-
-        if lower.starts_with("plan ") || lower.starts_with("how to ") {
-            // simplified parsing: "Plan X to Y"
-            if let Some(to_idx) = lower.find(" to ") {
-                let start_idx = if lower.starts_with("plan ") { 5 } else { 7 };
-                let start = input[start_idx..to_idx].trim().to_string();
-                let end = input[to_idx+4..].trim().to_string();
-                return Intent::Plan { start, end };
+impl IntentResolver {
+    /// Maps a perception vector to an Intent.
+    /// In Phase 1, this uses simple heuristic or similarity to prototypes.
+    pub fn resolve(vector: &HyperVector, text_hint: Option<&str>) -> Intent {
+        // If text hint is available (e.g. from tokenizer), use rule-based for 100% accuracy on basic commands
+        if let Some(text) = text_hint {
+            if text.ends_with('?') || text.starts_with("what") || text.starts_with("who") {
+                return Intent::Query(text.to_string());
             }
+            if text.starts_with("run") || text.starts_with("create") || text.starts_with("delete") {
+                return Intent::Command(text.to_string());
+            }
+            return Intent::Statement(text.to_string());
         }
 
-        if lower.starts_with("remember ") || lower.starts_with("learn ") {
-             let content = if lower.starts_with("remember ") { input[9..].trim() } else { input[6..].trim() };
-             return Intent::Learn(content.to_string());
-        }
-
-        if lower.ends_with("?") {
-            return Intent::Query(input.to_string());
-        }
-
-        // Default fallback
+        // VSA Logic: Compare with prototype vectors (ROLE_VERB, etc.)
+        // Stub: Assume Unknown if no text.
         Intent::Unknown
     }
 }

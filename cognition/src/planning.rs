@@ -1,77 +1,78 @@
-use crate::CognitionCore;
-use std::collections::{HashSet, VecDeque};
-use serde::{Deserialize, Serialize};
+use core_vsa::HyperVector;
+use std::collections::{HashMap, VecDeque};
+use log::{info, warn};
 
-// Planning Engine & Goals
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Goal {
-    pub description: String,
-    pub target_state: String,
-    pub priority: u8,
-    pub completed: bool,
+#[derive(Clone, Debug)]
+pub struct Plan {
+    pub steps: VecDeque<String>,
+    pub status: PlanStatus,
 }
 
-impl CognitionCore {
-    /// Add a new goal to the system.
-    pub fn add_goal(&mut self, description: String, target_state: String, priority: u8) {
-        self.goals.push(Goal {
-            description,
-            target_state,
-            priority,
-            completed: false,
-        });
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub enum PlanStatus {
+    Pending,
+    Active,
+    Completed,
+    Failed,
+}
 
-    /// Mark a goal as completed.
-    pub fn complete_goal(&mut self, target_state: &str) {
-        for goal in &mut self.goals {
-            if goal.target_state == target_state {
-                goal.completed = true;
-            }
+pub struct Planner {
+    pub current_plan: Option<Plan>,
+    pub goal_history: Vec<String>,
+}
+
+impl Planner {
+    pub fn new() -> Self {
+        Self {
+            current_plan: None,
+            goal_history: Vec::new(),
         }
     }
 
-    /// List active goals.
-    pub fn active_goals(&self) -> Vec<&Goal> {
-        self.goals.iter().filter(|g| !g.completed).collect()
+    pub fn decompose_goal(&mut self, goal: &str) -> Plan {
+        info!("Decomposing goal: {}", goal);
+        // Rule-based decomposition for Phase 1
+        let mut steps = VecDeque::new();
+
+        if goal.contains("create") && goal.contains("file") {
+            steps.push_back("generate_content".to_string());
+            steps.push_back("write_file".to_string());
+            steps.push_back("verify_file".to_string());
+        } else if goal.contains("research") {
+            steps.push_back("search_knowledge".to_string());
+            steps.push_back("summarize".to_string());
+        } else {
+            // Default generic step
+            steps.push_back(format!("execute_{}", goal.replace(" ", "_")));
+        }
+
+        let plan = Plan {
+            steps,
+            status: PlanStatus::Pending,
+        };
+
+        self.current_plan = Some(plan.clone());
+        plan
     }
 
-    /// Finds a path of actions/relations to get from start_state to end_state.
-    /// This is a simplified symbolic planner (Action abstraction via Causal/Temporal links).
-    pub fn find_path(&self, start: &str, end: &str) -> Option<Vec<String>> {
-        let mut queue = VecDeque::new();
-        let mut visited = HashSet::new();
-
-        queue.push_back((start.to_string(), vec![start.to_string()]));
-        visited.insert(start.to_string());
-
-        let mut steps = 0;
-        const MAX_PLAN_STEPS: usize = 200;
-
-        while let Some((current, path)) = queue.pop_front() {
-            steps += 1;
-            if steps > MAX_PLAN_STEPS { return None; }
-
-            if current == end {
-                return Some(path);
-            }
-
-            // Limit depth for performance in prototype
-            if path.len() > 10 { continue; }
-
-            if let Some(relations) = self.relation_graph.get(&current) {
-                for rel in relations {
-                    // Planning traverses Causal or Generic links
-                    if !visited.contains(&rel.target) {
-                        visited.insert(rel.target.clone());
-                        let mut new_path = path.clone();
-                        new_path.push(rel.target.clone());
-                        queue.push_back((rel.target.clone(), new_path));
-                    }
+    pub fn update_plan(&mut self, success: bool) {
+        if let Some(plan) = &mut self.current_plan {
+            if success {
+                plan.steps.pop_front();
+                if plan.steps.is_empty() {
+                    plan.status = PlanStatus::Completed;
+                    info!("Plan completed successfully.");
+                } else {
+                    plan.status = PlanStatus::Active;
                 }
+            } else {
+                plan.status = PlanStatus::Failed;
+                warn!("Step failed. Triggering replan...");
+                // Simple replan: Retry once or abort
+                // Industrial: Add "analyze_failure" step
+                plan.steps.push_front("analyze_failure".to_string());
+                plan.status = PlanStatus::Active;
             }
         }
-        None
     }
 }

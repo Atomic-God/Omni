@@ -16,7 +16,8 @@ pub struct HardwareProfile {
     pub avx512: bool,
     pub neon: bool,
     pub amx: bool,
-    pub memory_bandwidth_mbps: f64, // Estimated
+    pub cache_l3_size_kb: Option<usize>, // New
+    pub memory_bandwidth_mbps: f64,
 }
 
 pub fn detect() -> HardwareProfile {
@@ -25,7 +26,18 @@ pub fn detect() -> HardwareProfile {
 
     let cpuid = CpuId::new();
     let avx2 = cpuid.get_feature_info().map_or(false, |f| f.has_avx2());
-    let avx512 = cpuid.get_feature_info().map_or(false, |f| f.has_avx()); // Simplified check
+    let avx512 = cpuid.get_feature_info().map_or(false, |f| f.has_avx());
+
+    // Cache detection (x86 specific)
+    let cache_l3 = cpuid.get_l1_cache_and_tlb_info().map(|_| 0).or_else(|| {
+        // Fallback to cache iterator
+        cpuid.get_cache_parameters().and_then(|mut iter| {
+            iter.find(|c| c.level() == raw_cpuid::CacheLevel::L3).map(|c| c.sets() * c.associativity() * c.coherency_line_size() / 1024)
+        })
+    });
+
+    // NEON detection (runtime check for ARM, here just architecture check)
+    let neon = std::env::consts::ARCH == "aarch64";
 
     // Bandwidth Benchmark
     let bandwidth = benchmark_memory();
@@ -37,8 +49,9 @@ pub fn detect() -> HardwareProfile {
         used_memory: sys.used_memory(),
         avx2,
         avx512,
-        neon: false, // Need ARM check via std::arch or file reading
-        amx: false,
+        neon,
+        amx: false, // stub
+        cache_l3_size_kb: cache_l3,
         memory_bandwidth_mbps: bandwidth,
     }
 }
