@@ -12,7 +12,8 @@ pub mod snapshot;
 pub mod consolidation;
 pub mod recovery;
 pub mod hierarchy;
-pub mod tests; // Tests module
+pub mod tests;
+pub mod layered; // New
 
 pub use lsh::LSHIndex;
 pub use storage::ShardedStorage;
@@ -20,6 +21,7 @@ pub use snapshot::{SnapshotManager, MindSnapshot, SnapshotHeader};
 pub use consolidation::Consolidator;
 pub use recovery::CorruptionRecovery;
 pub use hierarchy::{MemoryLayer, MemoryEntry, HierarchicalMemory};
+pub use layered::LayeredMemory;
 
 use std::error::Error;
 use core_vsa::traits::MemoryStore;

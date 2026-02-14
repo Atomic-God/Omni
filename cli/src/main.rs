@@ -12,6 +12,7 @@ use hte::HardwareProfile;
 use std::path::PathBuf;
 use log::{info, error};
 use std::io::Write;
+use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Parser)]
 #[command(name = "omni-forge")]
@@ -42,8 +43,6 @@ enum Commands {
     Ingest {
         #[arg(short, long)]
         input: PathBuf,
-        #[arg(short, long)]
-        output: PathBuf,
     },
     /// Train the neural perception/generation model
     Train {
@@ -90,6 +89,8 @@ enum Commands {
         #[command(subcommand)]
         sub: SnapshotCommands,
     },
+    /// Show Memory Statistics
+    MemoryStats,
 }
 
 #[derive(Subcommand)]
@@ -109,7 +110,7 @@ fn main() {
             let _mem = MemoryManager::new(&PathBuf::from(path));
             println!("Done.");
         },
-        Commands::Run { snapshot } => {
+        Commands::Run { snapshot: _ } => {
             info!("Starting Omni Forge Runtime...");
             let mut ooda = OODAController::new();
             println!("Omni Forge v10.0 Online. Type 'quit' to exit.");
@@ -122,7 +123,7 @@ fn main() {
                 if input == "quit" { break; }
                 if !input.is_empty() {
                     let vector = core_vsa::HyperVector::deterministic(input.len() as u64);
-                    ooda.observe(vector, Some(input)); // Pass text hint
+                    ooda.observe(vector, Some(input));
                 }
                 ooda.orient();
                 match ooda.decide() {
@@ -143,7 +144,6 @@ fn main() {
                 created_at: 0,
                 deadline: 1000,
             });
-            // Run loop for fixed steps
             for _ in 0..100 {
                 ooda.orient();
                 if let Action::Abort(_) = ooda.decide() { break; }
@@ -151,16 +151,27 @@ fn main() {
             }
             println!("Agent finished or aborted.");
         },
-        Commands::Ingest { input, output: _ } => {
-             info!("Ingesting from {:?}", input);
+        Commands::Ingest { input } => {
+             println!("Ingesting from {:?}", input);
+             let pb = ProgressBar::new_spinner();
+             pb.set_style(ProgressStyle::default_spinner().template("{spinner} {msg}").unwrap());
+             pb.set_message("Scanning & Processing...");
+
              match ingest_graph(input) {
-                 Ok(graph) => println!("Successfully ingested {} nodes.", graph.nodes.len()),
-                 Err(e) => error!("Ingestion failed: {}", e),
+                 Ok(graph) => {
+                     pb.finish_with_message("Done");
+                     println!("Successfully ingested {} nodes.", graph.nodes.len());
+                 },
+                 Err(e) => {
+                     pb.finish_with_message("Failed");
+                     error!("Ingestion failed: {}", e);
+                 },
              }
         },
         Commands::Train { data, epochs, batch_size, embedding_dim, hidden_size } => {
-            info!("Initializing Training Pipeline...");
+            println!("Initializing Training Pipeline...");
             let loader = StreamingLoader::new(data);
+            println!("Building Tokenizer...");
             let vocab_iter = loader.iter();
             let tokenizer = SimpleTokenizer::build(vocab_iter, 5000);
             println!("Vocab size: {}", tokenizer.vocab_size());
@@ -176,6 +187,8 @@ fn main() {
 
                 let mut total_loss = 0.0;
                 let mut batches = 0;
+                let pb = ProgressBar::new(100); // Approximate
+                pb.set_style(ProgressStyle::default_bar().template("{bar:40} {msg}").unwrap());
 
                 while let Some((input, target)) = batch_iter.next_batch() {
                     trainer.model.rnn.reset_state();
@@ -199,14 +212,13 @@ fn main() {
                     batches += 1;
 
                     if batches % 10 == 0 {
-                        print!("\rBatch {}: Loss {:.4}", batches, loss);
-                        std::io::stdout().flush().unwrap();
+                        pb.set_message(format!("Loss: {:.4}", loss));
+                        pb.inc(1);
                     }
                 }
+                pb.finish();
                 if batches > 0 {
-                    println!("\nMean Loss: {:.4}", total_loss / batches as f32);
-                } else {
-                    println!("\nNo batches processed.");
+                    println!("Mean Loss: {:.4}", total_loss / batches as f32);
                 }
             }
         },
@@ -220,7 +232,7 @@ fn main() {
             println!("Running Stress Test (1M Iterations Simulation)...");
             let start = std::time::Instant::now();
             let mut ooda = OODAController::new();
-            for _ in 0..10_000 { // Scaled down for CI speed
+            for _ in 0..10_000 {
                 ooda.orient();
                 ooda.decide();
             }
@@ -264,6 +276,10 @@ fn main() {
                     Err(e) => println!("Verification failed: {}", e),
                 }
             }
+        },
+        Commands::MemoryStats => {
+            let mind = OmniMind::new_forge("./omniforge_data"); // Default to forge view
+            println!("{}", mind.memory_stats());
         }
     }
 }

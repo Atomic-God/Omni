@@ -1,150 +1,78 @@
-use cognition::planning::Goal;
-use std::collections::{VecDeque, HashMap};
-use crate::governance::{SalienceScoring, MemoryTier};
-use crate::budget::TokenBudget;
-use serde::{Serialize, Deserialize};
+use core_vsa::{HyperVector, traits::MemoryStore};
+use memory::MemoryManager;
+use cognition::Intent;
+use std::collections::VecDeque;
+use log::{info, warn};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TopicTracker {
-    pub active_topics: VecDeque<String>,
-}
-
-impl TopicTracker {
-    pub fn new() -> Self {
-        Self {
-            active_topics: VecDeque::new(),
-        }
-    }
-
-    pub fn track(&mut self, text: &str) {
-        if text.len() < 50 {
-            self.active_topics.push_back(text.to_string());
-            if self.active_topics.len() > 5 {
-                self.active_topics.pop_front();
-            }
-        }
-    }
-}
-
-// Arbitration Layers
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EpisodicMemory {
-    pub buffer: MemoryTier,
-    // Future: Could store full Episode objects with timestamps
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GoalMemory {
-    pub active: VecDeque<Goal>,
-    pub completed: Vec<Goal>, // History
-}
-
-impl GoalMemory {
-    pub fn new() -> Self {
-        Self { active: VecDeque::new(), completed: Vec::new() }
-    }
-
-    pub fn push(&mut self, goal: Goal) {
-        // Priority sort? For now, just push.
-        self.active.push_front(goal);
-    }
-
-    pub fn complete(&mut self, target_state: &str) {
-        // Move to completed
-        let mut still_active = VecDeque::new();
-        while let Some(mut g) = self.active.pop_front() {
-            if g.target_state == target_state {
-                g.completed = true;
-                self.completed.push(g);
-            } else {
-                still_active.push_back(g);
-            }
-        }
-        self.active = still_active;
-    }
-
-    pub fn compact(&mut self) {
-        // Remove low priority completed goals
-        self.completed.retain(|g| g.priority > 10);
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Manages the active working context of the agent.
 pub struct ContextManager {
-    // Arbitrated Memory Stores
-    pub episodic: EpisodicMemory,
-    pub goals: GoalMemory,
-    pub structural_focus: MemoryTier, // Pointers to knowledge graph
+    // Short-term sliding window of recent observations
+    pub working_context: VecDeque<HyperVector>,
+    pub max_working_size: usize,
 
-    // Governance
-    pub salience: SalienceScoring,
-    pub topic_tracker: TopicTracker,
-    pub budget: TokenBudget, // Added
+    // Active Goals
+    pub active_goals: Vec<crate::governance::Goal>, // Assuming existing Goal struct
+
+    // Episodic Recall Buffer (retrieved memories relevant to current context)
+    pub episodic_buffer: Vec<HyperVector>,
 }
 
 impl ContextManager {
     pub fn new() -> Self {
         Self {
-            episodic: EpisodicMemory { buffer: MemoryTier::new(100) },
-            goals: GoalMemory::new(),
-            structural_focus: MemoryTier::new(20), // Focus on 20 concepts max
-            salience: SalienceScoring::new(0.05),
-            topic_tracker: TopicTracker::new(),
-            budget: TokenBudget::new(1_000_000), // 1M tokens theoretical max
+            working_context: VecDeque::new(),
+            max_working_size: 10,
+            active_goals: Vec::new(),
+            episodic_buffer: Vec::new(),
         }
     }
 
-    pub fn push_goal(&mut self, goal: Goal) {
-        self.goals.push(goal);
+    /// Update context with new observation
+    pub fn update(&mut self, observation: &HyperVector) {
+        if self.working_context.len() >= self.max_working_size {
+            self.working_context.pop_front();
+        }
+        self.working_context.push_back(observation.clone());
     }
 
-    pub fn complete_goal(&mut self, target_state: &str) {
-        self.goals.complete(target_state);
-    }
-
-    pub fn activate_semantic(&mut self, concept: &str) {
-        self.salience.score(concept, 1.0);
-
-        // Add to structural focus
-        self.structural_focus.add(concept.to_string());
-
-        self.topic_tracker.track(concept);
-    }
-
-    pub fn log_episodic(&mut self, text: &str) {
-        self.episodic.buffer.add(text.to_string());
-    }
-
-    pub fn get_active_context(&self) -> Vec<String> {
-        // Combine Focus + Top Salience + Active Goals
-        let mut context = Vec::new();
-
-        // 1. High Salience (Structural)
-        let top_concepts = self.salience.get_top(5);
-        context.extend(top_concepts);
-
-        // 2. Recent Focus
-        for item in &self.structural_focus.items {
-            if !context.contains(item) {
-                context.push(item.clone());
+    /// Retrieve relevant episodes from memory based on current working context
+    pub fn recall_episodes(&mut self, memory: &MemoryManager) {
+        // Form query vector from working context (e.g. bundle or last item)
+        if let Some(current) = self.working_context.back() {
+            // Query memory
+            // Phase 6: We use `query_nearest` from MemoryStore trait
+            let results = memory.query_nearest(current, 5);
+            self.episodic_buffer.clear();
+            for (id, _score) in results {
+                if let Some(vec) = memory.retrieve(&id) {
+                    self.episodic_buffer.push(vec);
+                }
             }
+            info!("Recalled {} relevant episodes.", self.episodic_buffer.len());
         }
-
-        // 3. Goals
-        for goal in &self.goals.active {
-            let desc = format!("Goal: {}", goal.description);
-            if !context.contains(&desc) {
-                context.push(desc);
-            }
-        }
-
-        context
     }
 
-    pub fn compact(&mut self) {
-        self.goals.compact();
-        // Decay salience
-        self.salience.update_decay();
+    /// Rank relevance of an item against current context
+    pub fn rank_relevance(&self, item: &HyperVector) -> f32 {
+        if let Some(current) = self.working_context.back() {
+            current.similarity(item)
+        } else {
+            0.0
+        }
+    }
+
+    /// Compress context into a single summary vector
+    pub fn compress_context(&self) -> HyperVector {
+        // Bundle all working context vectors?
+        // Simple superposition.
+        if self.working_context.is_empty() {
+            return HyperVector::deterministic(0); // Zero-like
+        }
+
+        let mut summary = self.working_context[0].clone();
+        for i in 1..self.working_context.len() {
+            summary = summary.bundle(&self.working_context[i]);
+        }
+        summary
     }
 }
