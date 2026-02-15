@@ -1,10 +1,9 @@
-#[cfg(feature = "fabrication")]
 mod tests {
     use engine::OmniMind;
 
     #[test]
     fn test_omni_mind_learning_and_inference() {
-        let mut mind = OmniMind::new();
+        let mut mind = OmniMind::new_forge("./test_data");
 
         // Test Learning and Inference
         mind.learn("dog is animal");
@@ -23,7 +22,7 @@ mod tests {
 
     #[test]
     fn test_svo_query() {
-        let mut mind = OmniMind::new();
+        let mut mind = OmniMind::new_forge("./test_data");
         mind.learn("cat eats fish");
         mind.learn("cat eat fish");
         let response = mind.ask("What does cat eat?");
@@ -32,8 +31,8 @@ mod tests {
 
     #[test]
     fn test_persistence() {
-        let path = "test_memory.omf";
-        let mut mind = OmniMind::new();
+        let _path = "test_memory.omf";
+        let mut mind = OmniMind::new_forge("./test_data");
 
         // Since test paths are relative to Cargo.toml, "test_memory.omf" is in the cwd.
         // PermissionBoundary defaults to allowing cwd.
@@ -44,7 +43,7 @@ mod tests {
         // If it still fails, it might be that tests run in a temp dir or target dir?
         // Let's print the error more clearly if it fails.
         // Or explicitly allow the test path in a configured mind.
-        // But OmniMind::new() uses default permissions (cwd).
+        // But OmniMind::new_forge("./test_data") uses default permissions (cwd).
 
         // Let's inspect the panic. "Invalid path or does not exist".
         // This comes from `canonicalize` failing on a non-existent file?
@@ -62,7 +61,7 @@ mod tests {
         }
 
         {
-            let mut mind = OmniMind::new();
+            let mut mind = OmniMind::new_forge("./test_data");
             mind.load(path).expect("Failed to load memory");
             let response = mind.ask("Does birds fly?");
             println!("Response: {}", response);

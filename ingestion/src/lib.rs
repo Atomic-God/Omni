@@ -9,6 +9,7 @@ pub mod media_adapters;
 pub mod fallback;
 pub mod registry;
 pub mod universal;
+pub mod metadata;
 
 pub use registry::DataIngestionRegistry;
 pub use universal::UniversalIngestor;

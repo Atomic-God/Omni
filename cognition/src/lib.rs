@@ -29,7 +29,7 @@ pub struct Relation {
     pub relation_type: RelationType,
     pub target: String,
     pub weight: f32,
-    pub confidence: f32, // Added
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,10 +38,11 @@ pub struct ReasoningTrace {
     pub final_confidence: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CognitionCore {
     pub relation_graph: HashMap<String, Vec<Relation>>,
     pub trace_log: Vec<ReasoningTrace>,
-    pub knowledge_graph: knowledge::KnowledgeGraph, // Added
+    pub knowledge_graph: knowledge::KnowledgeGraph,
 }
 
 impl CognitionCore {

@@ -1,11 +1,11 @@
-use core_vsa::{SymbolGraph, HyperVector, SymbolNode, SymbolEdge};
+use core_vsa::{SymbolGraph, HyperVector, SymbolEdge};
 use core_vsa::traits::Ingestor;
 use std::path::Path;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, Read, BufRead};
 use log::{info, warn};
-use calamine::{Reader, Xlsx, open_workbook, Data};
+use calamine::{Reader, open_workbook_auto};
 use lopdf::Document;
 use lofty::{Probe, TaggedFileExt, Accessor, AudioFile};
 use walkdir::WalkDir;
@@ -15,6 +15,7 @@ use image::GenericImageView;
 use sha2::{Sha256, Digest};
 use whatlang::detect;
 use unicode_normalization::UnicodeNormalization;
+use crate::metadata::NormalizedMetadata;
 
 pub struct UniversalIngestor;
 
@@ -24,7 +25,9 @@ impl Ingestor for UniversalIngestor {
         let graph = Arc::new(Mutex::new(SymbolGraph::new()));
 
         if path.is_file() {
-            process_single_file(path, &graph)?;
+            if let Err(e) = process_single_file(path, &graph) {
+                warn!("Failed to process {:?}: {}", path, e);
+            }
         } else {
             let entries: Vec<_> = WalkDir::new(path)
                 .into_iter()
@@ -77,56 +80,53 @@ fn compute_file_hash(path: &Path) -> Option<String> {
 }
 
 fn process_spreadsheet(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut workbook: Xlsx<BufReader<File>> = open_workbook(path).map_err(|e: calamine::XlsxError| e.to_string())?;
+    let mut workbook = open_workbook_auto(path).map_err(|e| e.to_string())?;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    if let Some(Ok(range)) = workbook.worksheet_range_at(0) {
-        let mut headers: Vec<String> = Vec::new();
-        for (i, row) in range.rows().enumerate() {
-            let row: &[Data] = row;
-            if i == 0 {
-                for cell in row.iter() { headers.push(cell.to_string()); }
-                continue;
-            }
-            let row_str = row.iter().map(|c: &Data| c.to_string()).collect::<Vec<String>>().join(",");
-            let row_hash = {
-                let mut h = Sha256::new(); h.update(row_str.as_bytes()); hex::encode(h.finalize())
-            };
-            let row_id = format!("row:{}", row_hash);
-            let mut row_node = SymbolNode {
-                id: row_id.clone(),
-                vector: HyperVector::deterministic(u64::from_str_radix(&row_hash[0..16], 16).unwrap_or(0)),
-                metadata: std::collections::HashMap::new(),
-                confidence: 1.0,
-                source_reliability: 1.0,
-                reinforcement_count: 1,
-                timestamp: now,
-            };
-            row_node.metadata.insert("type".to_string(), "spreadsheet_row".to_string());
-            row_node.metadata.insert("source".to_string(), path.to_string_lossy().to_string());
 
-            let mut edges = Vec::new();
-            for (j, cell) in row.iter().enumerate() {
-                let cell: &Data = cell;
-                if j < headers.len() {
-                    let header: &String = &headers[j];
-                    let val = cell.to_string();
-                    row_node.metadata.insert(header.clone(), val.clone());
-                    let col_id = format!("col:{}", &header);
-                    edges.push(SymbolEdge {
-                        source: row_id.clone(),
-                        target: col_id,
-                        relation: "has_field".to_string(),
-                        weight: 1.0,
-                        confidence: 1.0,
-                        source_reliability: 1.0,
-                        reinforcement_count: 1,
-                        timestamp: now,
-                    });
+    let sheet_names = workbook.sheet_names().to_vec();
+    for sheet_name in sheet_names {
+        if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+            let mut headers: Vec<String> = Vec::new();
+            for (i, row) in range.rows().enumerate() {
+                if i == 0 {
+                    for cell in row.iter() { headers.push(cell.to_string()); }
+                    continue;
                 }
+                let row_str = row.iter().map(|c| c.to_string()).collect::<Vec<String>>().join(",");
+                let row_hash = {
+                    let mut h = Sha256::new(); h.update(row_str.as_bytes()); hex::encode(h.finalize())
+                };
+                let row_id = format!("row:{}#{}", sheet_name, row_hash);
+
+                let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+                meta.file_type = "spreadsheet_row".to_string();
+                meta.hash = row_hash;
+                meta.timestamp = now;
+                meta.insert("sheet", sheet_name.clone());
+
+                let mut edges = Vec::new();
+                for (j, cell) in row.iter().enumerate() {
+                    if j < headers.len() {
+                        let header = &headers[j];
+                        let val = cell.to_string();
+                        meta.insert(header, val.clone());
+                        let col_id = format!("col:{}", header);
+                        edges.push(SymbolEdge {
+                            source: row_id.clone(),
+                            target: col_id,
+                            relation: "has_field".to_string(),
+                            weight: 1.0,
+                            confidence: 1.0,
+                            source_reliability: 1.0,
+                            reinforcement_count: 1,
+                            timestamp: now,
+                        });
+                    }
+                }
+                let mut g = graph.lock().unwrap();
+                g.add_node_with_confidence(&row_id, HyperVector::random(), meta.to_map(), 1.0);
+                for edge in edges { g.edges.push(edge); }
             }
-            let mut g = graph.lock().unwrap();
-            g.add_node_with_confidence(&row_node.id, row_node.vector, row_node.metadata, 1.0);
-            for edge in edges { g.edges.push(edge); }
         }
     }
     Ok(())
@@ -143,19 +143,20 @@ fn process_pdf(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
     }
     let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
     let node_id = format!("doc:{}", file_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "pdf_document".to_string());
-    metadata.insert("page_count".to_string(), doc.get_pages().len().to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "pdf_document".to_string();
+    meta.hash = file_hash;
+    meta.insert("page_count", doc.get_pages().len().to_string());
 
     if let Some(info) = detect(&full_text) {
-        metadata.insert("language".to_string(), info.lang().to_string());
+        meta.language = info.lang().to_string();
     }
 
-    metadata.insert("content_preview".to_string(), full_text.chars().take(200).collect());
+    meta.insert("content_preview", full_text.chars().take(200).collect());
     let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, metadata, 1.0);
+    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -169,13 +170,16 @@ fn process_csv(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
         for field in &record { h.update(field.as_bytes()); }
         let row_hash = hex::encode(h.finalize());
         let row_id = format!("row:{}", row_hash);
-        let mut metadata = std::collections::HashMap::new();
-        metadata.insert("type".to_string(), "csv_row".to_string());
-        metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+
+        let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+        meta.file_type = "csv_row".to_string();
+        meta.hash = row_hash;
+        meta.timestamp = now;
+
         let mut edges = Vec::new();
         for (j, field) in record.iter().enumerate() {
             if j < headers.len() {
-                metadata.insert(headers[j].to_string(), field.to_string());
+                meta.insert(&headers[j], field.to_string());
                 edges.push(SymbolEdge {
                     source: row_id.clone(),
                     target: format!("col:{}", &headers[j]),
@@ -190,7 +194,7 @@ fn process_csv(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
         }
         let vector = HyperVector::random();
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&row_id, vector, metadata, 1.0);
+        g.add_node_with_confidence(&row_id, vector, meta.to_map(), 1.0);
         g.edges.extend(edges);
     }
     Ok(())
@@ -201,14 +205,16 @@ fn process_image(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box
     let (width, height) = img.dimensions();
     let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
     let node_id = format!("img:{}", file_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "image".to_string());
-    metadata.insert("width".to_string(), width.to_string());
-    metadata.insert("height".to_string(), height.to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "image".to_string();
+    meta.hash = file_hash;
+    meta.insert("width", width.to_string());
+    meta.insert("height", height.to_string());
+
     let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, metadata, 1.0);
+    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -216,18 +222,23 @@ fn process_audio(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box
     let tagged_file = Probe::open(path).map_err(|e| e.to_string())?.read().map_err(|e| e.to_string())?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
     let node_id = format!("audio:{}", file_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "audio".to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "audio".to_string();
+    meta.hash = file_hash;
+
     if let Some(tag) = tagged_file.primary_tag() {
-        if let Some(title) = tag.title() { metadata.insert("title".to_string(), title.to_string()); }
-        if let Some(artist) = tag.artist() { metadata.insert("artist".to_string(), artist.to_string()); }
+        if let Some(title) = tag.title() { meta.insert("title", title.to_owned().to_string()); }
+        if let Some(artist) = tag.artist() { meta.insert("artist", artist.to_owned().to_string()); }
+        if let Some(album) = tag.album() { meta.insert("album", album.to_owned().to_string()); }
     }
+
     let properties = tagged_file.properties();
-    metadata.insert("duration_seconds".to_string(), properties.duration().as_secs().to_string());
+    meta.insert("duration_seconds", properties.duration().as_secs().to_string());
+
     let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, metadata, 1.0);
+    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -238,10 +249,10 @@ fn process_archive(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), B
     let archive_id = format!("archive:{}", archive_hash);
     {
         let mut g = graph.lock().unwrap();
-        let mut meta = std::collections::HashMap::new();
-        meta.insert("type".to_string(), "archive".to_string());
-        meta.insert("source".to_string(), path.to_string_lossy().to_string());
-        g.add_node_with_confidence(&archive_id, HyperVector::random(), meta, 1.0);
+        let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+        meta.file_type = "archive".to_string();
+        meta.hash = archive_hash.clone();
+        g.add_node_with_confidence(&archive_id, HyperVector::random(), meta.to_map(), 1.0);
     }
     if ext == "zip" {
         let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
@@ -251,12 +262,15 @@ fn process_archive(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), B
              let name = file.name().to_string();
              if name.ends_with(".exe") || name.ends_with(".dll") { continue; }
              let entry_id = format!("{}#{}", archive_id, name);
-             let mut metadata = std::collections::HashMap::new();
-             metadata.insert("type".to_string(), "archive_entry".to_string());
-             metadata.insert("container".to_string(), path.to_string_lossy().to_string());
+
+             let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+             meta.file_type = "archive_entry".to_string();
+             meta.insert("container", path.to_string_lossy().to_string());
+             meta.insert("entry_name", name);
+
              let vector = HyperVector::random();
              let mut g = graph.lock().unwrap();
-             g.add_node_with_confidence(&entry_id, vector, metadata, 1.0);
+             g.add_node_with_confidence(&entry_id, vector, meta.to_map(), 1.0);
              g.add_edge_with_confidence(&entry_id, &archive_id, "contained_in", 1.0, 1.0);
         }
     }
@@ -268,11 +282,12 @@ fn process_json(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
     let _val: serde_json::Value = serde_json::from_reader(file)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("json:{}", file_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "json_data".to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "json_data".to_string();
+    meta.hash = file_hash;
+
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -282,11 +297,13 @@ fn process_yaml(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
     file.read_to_string(&mut content)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("yaml:{}", file_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "yaml_data".to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "yaml_data".to_string();
+    meta.hash = file_hash;
+
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -310,11 +327,13 @@ fn process_docx(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
     }
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("doc:{}", file_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "docx_document".to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "docx_document".to_string();
+    meta.hash = file_hash;
+
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -324,12 +343,14 @@ fn process_code(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
     file.read_to_string(&mut content)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("code:{}", file_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "source_code".to_string());
-    metadata.insert("language".to_string(), path.extension().and_then(|s| s.to_str()).unwrap_or("unknown").to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "source_code".to_string();
+    meta.hash = file_hash;
+    meta.language = path.extension().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
+
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -374,15 +395,17 @@ fn ingest_text_chunk(text_raw: &str, path: &Path, graph: &Arc<Mutex<SymbolGraph>
         let mut h = Sha256::new(); h.update(text.as_bytes()); hex::encode(h.finalize())
     };
     let node_id = format!("chunk:{}", chunk_hash);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("type".to_string(), "text_chunk".to_string());
-    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
-    metadata.insert("timestamp".to_string(), file_meta.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "text_chunk".to_string();
+    meta.hash = chunk_hash;
+    meta.timestamp = file_meta.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs();
+
     if let Some(info) = detect(&text) {
-         metadata.insert("language".to_string(), info.lang().to_string());
+         meta.language = info.lang().to_string();
     }
     let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, metadata, 1.0);
+    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
     Ok(())
 }

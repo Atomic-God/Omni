@@ -11,6 +11,7 @@ pub struct KnowledgeFact {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeGraph {
     pub facts: HashMap<String, KnowledgeFact>,
     pub contradictions: Vec<(String, String)>,
@@ -34,8 +35,6 @@ impl KnowledgeGraph {
             timestamp: now,
         });
 
-        // Bayesian-inspired update: P(H|E) = P(E|H)P(H) / P(E)
-        // Simplified: confidence = (prior * count + evidence) / (count + 1)
         let prior = fact.confidence;
         let n = fact.reinforcement_count as f32;
 
@@ -49,7 +48,7 @@ impl KnowledgeGraph {
     pub fn apply_temporal_decay(&mut self, decay_rate: f32, now: u64) {
         for fact in self.facts.values_mut() {
             let age = now.saturating_sub(fact.timestamp);
-            if age > 3600 { // Decay every hour of inactivity
+            if age > 3600 {
                 let periods = (age / 3600) as f32;
                 fact.confidence *= decay_rate.powf(periods);
             }
@@ -69,12 +68,10 @@ impl KnowledgeGraph {
         let conf_b = self.facts.get(b_id).map(|f| f.confidence).unwrap_or(0.0);
 
         if conf_a > conf_b {
-            info!("Resolving conflict: Favoring {} (conf={:.2}) over {} (conf={:.2})", a_id, conf_a, b_id, conf_b);
             if let Some(fact) = self.facts.get_mut(b_id) {
-                fact.confidence *= 0.1; // Aggressive penalization for contradicted fact
+                fact.confidence *= 0.1;
             }
         } else {
-            info!("Resolving conflict: Favoring {} (conf={:.2}) over {} (conf={:.2})", b_id, conf_b, a_id, conf_a);
             if let Some(fact) = self.facts.get_mut(a_id) {
                 fact.confidence *= 0.1;
             }

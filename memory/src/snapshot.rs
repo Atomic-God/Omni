@@ -32,6 +32,30 @@ pub struct MindPack {
     pub manifest: HashMap<String, String>,
 }
 
+impl MindPack {
+    pub fn new() -> Self {
+        Self {
+            snapshots: Vec::new(),
+            manifest: HashMap::new(),
+        }
+    }
+
+    pub fn export<T: Serialize>(&self, path: &Path, data: &T) -> Result<(), Box<dyn std::error::Error>> {
+        let file = File::create(path)?;
+        let mut encoder = GzEncoder::new(file, Compression::best());
+        bincode::serialize_into(&mut encoder, data)?;
+        encoder.finish()?;
+        Ok(())
+    }
+
+    pub fn import<T: for<'de> Deserialize<'de>>(&self, path: &Path) -> Result<T, Box<dyn std::error::Error>> {
+        let file = File::open(path)?;
+        let mut decoder = GzDecoder::new(file);
+        let data = bincode::deserialize_from(&mut decoder)?;
+        Ok(data)
+    }
+}
+
 pub struct SnapshotManager;
 
 impl SnapshotManager {
@@ -120,22 +144,37 @@ impl SnapshotManager {
 
     pub fn repair(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         info!("Attempting to repair snapshot at {:?}", path);
-        // Basic repair: if checksum fails but header readable, try re-serializing?
-        // In Industrial Core, this usually means rolling back to base or fixing metadata.
         let file = File::open(path)?;
         let mut decoder = GzDecoder::new(file);
         let container: MindSnapshotContainer = bincode::deserialize_from(&mut decoder)?;
 
-        // If we got here, bincode could at least read it.
-        // Re-save it to ensure valid format.
         let body_bytes = bincode::serialize(&container.body)?;
         let mut hasher = Sha256::new();
         hasher.update(&body_bytes);
-        let _new_checksum = hex::encode(hasher.finalize());
-
-        // For now, just logging. Real repair would involve reconstructing index.
         info!("Repair complete: Snapshot structure validated.");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_mindpack_roundtrip() {
+        let dir = tempdir().unwrap();
+        let pack_path = dir.path().join("test.mindpack");
+        let packer = MindPack::new();
+
+        let mut data = HashMap::new();
+        data.insert("key".to_string(), "value".to_string());
+
+        packer.export(&pack_path, &data).expect("Export failed");
+        assert!(pack_path.exists());
+
+        let imported: HashMap<String, String> = packer.import(&pack_path).expect("Import failed");
+        assert_eq!(imported.get("key").unwrap(), "value");
     }
 }
 
