@@ -4,35 +4,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hasher, Hash};
 use std::collections::hash_map::DefaultHasher;
-use std::path::Path;
 
 pub mod traits;
 
-// Configurable Dimension via Compile-Time Constant or Default?
-// Requirement: "Configurable dimension".
-// Rust const generics or runtime config?
-// Core-VSA typically uses fixed dim for performance.
-// Let's stick to 10,000 for "Industrial Core" default but allow resizing if we change the struct to wrap `BitVec` instead of `Vec<u64>`.
-// However, `Vec<u64>` is faster.
-// We will keep 10,000 as standard but add a method to resize or re-init?
-// Actually, `HyperVector` struct owns `words`. It doesn't enforce length in type system (unlike array).
-// So it is already configurable at runtime, just need to manage `NUM_WORDS`.
-
 pub const DEFAULT_DIMENSION: usize = 10_000;
+pub const DIMENSION: usize = DEFAULT_DIMENSION;
 
-/// Static hypervector representing the Subject role in an SVO structure.
 pub static ROLE_SUBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5001));
-/// Static hypervector representing the Verb role in an SVO structure.
 pub static ROLE_VERB: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5002));
-/// Static hypervector representing the Object role in an SVO structure.
 pub static ROLE_OBJECT: Lazy<HyperVector> = Lazy::new(|| HyperVector::deterministic(0x5003));
 
-/// A high-dimensional vector supporting VSA operations.
-/// Implements a packed bit model (BSC).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HyperVector {
     pub words: Vec<u64>,
-    pub dim: usize, // Explicit dimension tracking
+    pub dim: usize,
 }
 
 impl Hash for HyperVector {
@@ -45,7 +30,6 @@ impl Hash for HyperVector {
 }
 
 impl HyperVector {
-    /// Generates a random hypervector (non-deterministic).
     pub fn random() -> Self {
         Self::random_dim(DEFAULT_DIMENSION)
     }
@@ -57,7 +41,6 @@ impl HyperVector {
         Self { words, dim }
     }
 
-    /// Generates a deterministic hypervector from a seed.
     pub fn deterministic(seed: u64) -> Self {
         Self::deterministic_dim(seed, DEFAULT_DIMENSION)
     }
@@ -69,7 +52,6 @@ impl HyperVector {
         Self { words, dim }
     }
 
-    /// Binding operation (XOR).
     pub fn bind(&self, other: &Self) -> Self {
         assert_eq!(self.dim, other.dim, "Dimension mismatch in bind");
         let words = self
@@ -81,15 +63,12 @@ impl HyperVector {
         Self { words, dim: self.dim }
     }
 
-    /// Inverse Binding (XOR is self-inverse).
     pub fn inverse(&self) -> Self {
         self.clone()
     }
 
-    /// Bundling operation (Majority Rule) with Deterministic Tie-Breaking.
     pub fn bundle(&self, other: &Self) -> Self {
         assert_eq!(self.dim, other.dim, "Dimension mismatch in bundle");
-        // Hash the inputs to seed the tie-breaker
         let mut hasher = DefaultHasher::new();
         for w in &self.words { hasher.write_u64(*w); }
         for w in &other.words { hasher.write_u64(*w); }
@@ -103,42 +82,31 @@ impl HyperVector {
             .map(|(&a, &b)| {
                 let random_bits: u64 = rng.gen();
                 let diff = a ^ b;
-                // If diff bit is 1, take random. If 0, take a (or b, same).
                 (a & !diff) | (random_bits & diff)
             })
             .collect();
         Self { words, dim: self.dim }
     }
 
-    /// Permutation (Cyclic Shift).
-    /// Shifts bits left by `shifts`.
     pub fn permute(&self, shifts: usize) -> Self {
-        let num_words = self.words.len();
-        let mut new_words = vec![0u64; num_words];
-        let total_bits = num_words * 64; // Approximate to word boundary for speed? No, strict cyclic.
-        // Actually, we should use self.dim.
-        // But packed u64 rotation is hard if dim is not multiple of 64.
-        // For Industrial Core, assume dim is padded to 64-bit align or we handle partial last word.
-        // Let's stick to full 64-bit words rotation for performance (dim ~ multiple of 64).
-
-        let shift = shifts % total_bits;
+        let shift = shifts % self.dim;
 
         if shift == 0 {
             return self.clone();
         }
 
-        // Bit-level rotation implementation
-        // Optimization: Use `bs` crate or similar?
-        // Manual implementation:
-        let mut bits = Vec::with_capacity(total_bits);
-        for word in &self.words {
-            for i in 0..64 {
-                bits.push((word >> i) & 1);
+        let mut bits = Vec::with_capacity(self.dim);
+        for (i, word) in self.words.iter().enumerate() {
+            for j in 0..64 {
+                if i * 64 + j < self.dim {
+                    bits.push((word >> j) & 1);
+                }
             }
         }
 
         bits.rotate_left(shift);
 
+        let mut new_words = vec![0u64; self.words.len()];
         for (i, bit) in bits.iter().enumerate() {
             if *bit == 1 {
                 new_words[i / 64] |= 1 << (i % 64);
@@ -148,26 +116,24 @@ impl HyperVector {
         Self { words: new_words, dim: self.dim }
     }
 
-    /// Cosine similarity approximation via Hamming distance.
     pub fn similarity(&self, other: &Self) -> f32 {
         assert_eq!(self.dim, other.dim, "Dimension mismatch in similarity");
-        let hamming: u32 = self
-            .words
-            .iter()
-            .zip(other.words.iter())
-            .map(|(a, b)| (a ^ b).count_ones())
-            .sum();
+        let mut hamming: u32 = 0;
+        for i in 0..self.dim {
+            let word_idx = i / 64;
+            let bit_idx = i % 64;
+            let bit_a = (self.words[word_idx] >> bit_idx) & 1;
+            let bit_b = (other.words[word_idx] >> bit_idx) & 1;
+            if bit_a != bit_b {
+                hamming += 1;
+            }
+        }
 
-        let total_bits = (self.words.len() * 64) as f32; // Use actual allocation size for normalization?
-        // Or self.dim? If we padded, padded bits might add noise if not zeroed.
-        // We initialize random, so padded bits are random.
-        // This is fine for Hamming.
-
+        let total_bits = self.dim as f32;
         1.0 - 2.0 * (hamming as f32 / total_bits)
     }
 }
 
-/// Represents a structured graph of symbols (Concepts).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolGraph {
     pub nodes: Vec<SymbolNode>,
@@ -179,6 +145,7 @@ pub struct SymbolNode {
     pub id: String,
     pub vector: HyperVector,
     pub metadata: HashMap<String, String>,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +154,7 @@ pub struct SymbolEdge {
     pub target: String,
     pub relation: String,
     pub weight: f32,
+    pub confidence: f32,
 }
 
 impl SymbolGraph {
@@ -199,6 +167,16 @@ impl SymbolGraph {
             id: id.to_string(),
             vector,
             metadata,
+            confidence: 1.0,
+        });
+    }
+
+    pub fn add_node_with_confidence(&mut self, id: &str, vector: HyperVector, metadata: HashMap<String, String>, confidence: f32) {
+        self.nodes.push(SymbolNode {
+            id: id.to_string(),
+            vector,
+            metadata,
+            confidence,
         });
     }
 
@@ -208,6 +186,17 @@ impl SymbolGraph {
             target: target.to_string(),
             relation: relation.to_string(),
             weight,
+            confidence: 1.0,
+        });
+    }
+
+    pub fn add_edge_with_confidence(&mut self, source: &str, target: &str, relation: &str, weight: f32, confidence: f32) {
+        self.edges.push(SymbolEdge {
+            source: source.to_string(),
+            target: target.to_string(),
+            relation: relation.to_string(),
+            weight,
+            confidence,
         });
     }
 }

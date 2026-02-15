@@ -1,4 +1,4 @@
-use crate::{MemoryManager, LSHIndex, ShardedStorage};
+use crate::{MemoryManager, LSHIndex, ShardedStorage, MemoryEntry};
 use serde::{Serialize, Deserialize};
 use std::path::Path;
 use std::fs::File;
@@ -7,12 +7,15 @@ use sha2::{Sha256, Digest};
 use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
 use flate2::Compression;
+use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SnapshotHeader {
     pub version: u32,
     pub timestamp: u64,
-    pub checksum: String, // SHA256 of the body
+    pub checksum: String,
+    pub is_delta: bool,
+    pub base_snapshot: Option<String>, // Hash of base snapshot
 }
 
 #[derive(Serialize, Deserialize)]
@@ -20,22 +23,35 @@ pub struct MindSnapshot {
     pub header: SnapshotHeader,
     pub index: LSHIndex,
     pub storage: ShardedStorage,
+    pub metadata: HashMap<String, MemoryEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MindPack {
+    pub snapshots: Vec<MindSnapshot>,
+    pub manifest: HashMap<String, String>,
 }
 
 pub struct SnapshotManager;
 
 impl SnapshotManager {
     pub fn save(memory: &MemoryManager, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        // Serialize body
+        Self::save_ext(memory, path, false, None)
+    }
+
+    pub fn save_delta(memory: &MemoryManager, path: &Path, base_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::save_ext(memory, path, true, Some(base_hash.to_string()))
+    }
+
+    fn save_ext(memory: &MemoryManager, path: &Path, is_delta: bool, base_snapshot: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         let body = MindSnapshotBody {
-            index: memory.index.clone(), // Clone is expensive. Industrial? Move?
-            // Snapshotting usually happens at checkpoints.
+            index: memory.index.clone(),
             storage: memory.storage.clone(),
+            metadata: memory.metadata.clone(),
         };
 
         let body_bytes = bincode::serialize(&body)?;
 
-        // Compute Checksum
         let mut hasher = Sha256::new();
         hasher.update(&body_bytes);
         let checksum = hex::encode(hasher.finalize());
@@ -44,14 +60,19 @@ impl SnapshotManager {
             version: crate::MEMORY_VERSION,
             timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
             checksum,
+            is_delta,
+            base_snapshot,
         };
 
-        // Write File: Header + Gzip(Body)
         let file = File::create(path)?;
-        let mut encoder = GzEncoder::new(file, Compression::default());
+        let mut encoder = GzEncoder::new(file, Compression::best());
 
-        bincode::serialize_into(&mut encoder, &header)?;
-        encoder.write_all(&body_bytes)?;
+        let container = MindSnapshotContainer {
+            header,
+            body,
+        };
+
+        bincode::serialize_into(&mut encoder, &container)?;
         encoder.finish()?;
 
         Ok(())
@@ -61,32 +82,8 @@ impl SnapshotManager {
         let file = File::open(path)?;
         let mut decoder = GzDecoder::new(file);
 
-        // Read Header?
-        // Gzip stream contains everything.
-        // We need to read continuously.
-        // But header is inside gzip?
-        // My save logic: `serialize_into(encoder, &header)` -> Header IS compressed.
-
-        // So just deserialize MindSnapshot struct which contains header?
-        // No, I wrote header then body bytes.
-        // I should define a container struct.
-
         let container: MindSnapshotContainer = bincode::deserialize_from(&mut decoder)?;
 
-        // Validate checksum
-        // This requires re-serializing index/storage to bytes to hash them?
-        // Or we trust Bincode?
-        // "Checksum validation" is required.
-        // If I serialize entire container, I can't check checksum before full load.
-
-        // Correct way:
-        // 1. Read Header (Uncompressed or separate?)
-        // If everything compressed, we must decompress all.
-
-        // Let's assume validation happens AFTER load for simplicity in Phase 3,
-        // or we use a container that separates header hash.
-
-        // Re-compute hash of body
         let body_bytes = bincode::serialize(&container.body)?;
         let mut hasher = Sha256::new();
         hasher.update(&body_bytes);
@@ -100,6 +97,7 @@ impl SnapshotManager {
             header: container.header,
             index: container.body.index,
             storage: container.body.storage,
+            metadata: container.body.metadata,
         })
     }
 }
@@ -108,6 +106,7 @@ impl SnapshotManager {
 struct MindSnapshotBody {
     index: LSHIndex,
     storage: ShardedStorage,
+    metadata: HashMap<String, MemoryEntry>,
 }
 
 #[derive(Serialize, Deserialize)]

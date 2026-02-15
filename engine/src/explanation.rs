@@ -1,4 +1,4 @@
-use cognition::CognitionCore;
+use cognition::{CognitionCore, RelationType, Relation};
 
 pub enum AudienceModel {
     Child,
@@ -17,26 +17,30 @@ impl ExplanationEngine {
 
         match audience {
             AudienceModel::Child => {
-                // ELI5: Use analogies ("like X") and simple attributes
                 let mut explanation = format!("Imagine {}. ", concept);
-                for rel in relations.iter().filter(|r| r.weight > 60).take(3) {
+                for rel in relations.iter().filter(|r| r.weight > 60.0).take(3) {
                     explanation.push_str(&format!("It is like {} because it relates to {}. ", concept, rel.target));
                 }
                 explanation
             },
             AudienceModel::Student => {
-                // Structural definition
                 let mut explanation = format!("{} is defined by: ", concept);
                 let targets: Vec<String> = relations.iter().take(5).map(|r| r.target.clone()).collect();
                 explanation.push_str(&targets.join(", "));
                 explanation
             },
             AudienceModel::Expert => {
-                // Full graph dump with confidence
-                let mut explanation = format!("Structural Analysis of {}:\n", concept);
+                let mut explanation = format!("Structural Analysis of {} (Uncertainty: {:.2}):\n", concept, core.compute_global_entropy());
                 for rel in relations {
-                    explanation.push_str(&format!("- [{:?}] -> {} (w={})\n", rel.relation_type, rel.target, rel.weight));
+                    explanation.push_str(&format!("- [{:?}] -> {} (w={:.2}, c={:.2})\n", rel.relation_type, rel.target, rel.weight, rel.confidence));
                 }
+
+                let contradictions = core.detect_contradictions(concept);
+                if !contradictions.is_empty() {
+                    explanation.push_str("\nWARNING: Contradictions detected with: ");
+                    explanation.push_str(&contradictions.join(", "));
+                }
+
                 explanation
             },
         }

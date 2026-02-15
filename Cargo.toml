@@ -13,7 +13,7 @@ members = [
     "perception",
     "neural",
     "dataset",
-    "trainer",
     "gpu-bridge",
+    "runtime",
 ]
 resolver = "2"

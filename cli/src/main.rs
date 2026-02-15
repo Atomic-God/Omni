@@ -1,14 +1,12 @@
 use clap::{Parser, Subcommand};
-use runtime::ooda::{OODAController, Action};
-use ingestion::{UniversalIngestor, ingest_graph};
-use core_vsa::traits::Ingestor;
-use trainer::{Trainer, CheckpointManager, Evaluator};
-use neural::{SequenceModel, Adam, CrossEntropyLoss, Optimizer, Layer};
-use dataset::{StreamingLoader, SimpleTokenizer, BatchIterator};
+use runtime::{OODAController, Action, Goal};
+use ingestion::ingest_graph;
+// use trainer::{Trainer, CheckpointManager, Evaluator};
+// use neural::{SequenceModel, Adam, CrossEntropyLoss, Optimizer, Layer};
+// use dataset::{StreamingLoader, SimpleTokenizer, BatchIterator};
 use engine::{OmniMind, bench::VSABenchmark};
-use gpu_bridge::{KaggleExporter, KaggleImporter};
+// use gpu_bridge::{KaggleExporter, KaggleImporter};
 use memory::MemoryManager;
-use hte::HardwareProfile;
 use std::path::PathBuf;
 use log::{info, error};
 use std::io::Write;
@@ -44,6 +42,7 @@ enum Commands {
         #[arg(short, long)]
         input: PathBuf,
     },
+    /*
     /// Train the neural perception/generation model
     Train {
         #[arg(long)]
@@ -64,6 +63,7 @@ enum Commands {
         #[arg(long)]
         data: PathBuf,
     },
+    */
     /// Run VSA Micro-Benchmarks
     BenchVsa,
     /// Run System Stress Test
@@ -72,6 +72,7 @@ enum Commands {
     Hardware,
     /// Show Lifecycle Status
     Lifecycle,
+    /*
     /// Export Data for Kaggle GPU Training
     ExportGpu {
         #[arg(long)]
@@ -84,6 +85,7 @@ enum Commands {
         #[arg(long)]
         weights: PathBuf,
     },
+    */
     /// Create or Manage Snapshots
     Snapshot {
         #[command(subcommand)]
@@ -107,7 +109,7 @@ fn main() {
     match &cli.command {
         Commands::Init { path } => {
             println!("Initializing Forge at {}", path);
-            let _mem = MemoryManager::new(&PathBuf::from(path));
+            let _mem = MemoryManager::new(&std::path::Path::new(path));
             println!("Done.");
         },
         Commands::Run { snapshot: _ } => {
@@ -137,7 +139,7 @@ fn main() {
         Commands::Agent { goal } => {
             println!("Starting Agent with Goal: {}", goal);
             let mut ooda = OODAController::new();
-            ooda.add_goal(runtime::ooda::Goal {
+            ooda.add_goal(Goal {
                 id: "cli_goal".to_string(),
                 description: goal.clone(),
                 priority: 100,
@@ -146,8 +148,9 @@ fn main() {
             });
             for _ in 0..100 {
                 ooda.orient();
-                if let Action::Abort(_) = ooda.decide() { break; }
-                ooda.act(ooda.decide());
+                let action = ooda.decide();
+                if let Action::Abort(_) = action { break; }
+                ooda.act(action);
             }
             println!("Agent finished or aborted.");
         },
@@ -157,7 +160,7 @@ fn main() {
              pb.set_style(ProgressStyle::default_spinner().template("{spinner} {msg}").unwrap());
              pb.set_message("Scanning & Processing...");
 
-             match ingest_graph(input) {
+             match ingest_graph(&input) {
                  Ok(graph) => {
                      pb.finish_with_message("Done");
                      println!("Successfully ingested {} nodes.", graph.nodes.len());
@@ -168,63 +171,14 @@ fn main() {
                  },
              }
         },
+        /*
         Commands::Train { data, epochs, batch_size, embedding_dim, hidden_size } => {
-            println!("Initializing Training Pipeline...");
-            let loader = StreamingLoader::new(data);
-            println!("Building Tokenizer...");
-            let vocab_iter = loader.iter();
-            let tokenizer = SimpleTokenizer::build(vocab_iter, 5000);
-            println!("Vocab size: {}", tokenizer.vocab_size());
-
-            let mut model = SequenceModel::new(tokenizer.vocab_size(), *embedding_dim, *hidden_size);
-            let mut optimizer = Adam::new(0.001);
-            let mut trainer = Trainer::new(&mut model, &mut optimizer, *epochs, *batch_size);
-
-            for epoch in 0..*epochs {
-                println!("Epoch {}/{}", epoch+1, epochs);
-                let data_iter = loader.iter();
-                let mut batch_iter = BatchIterator::new(data_iter, &tokenizer, *batch_size, 32);
-
-                let mut total_loss = 0.0;
-                let mut batches = 0;
-                let pb = ProgressBar::new(100); // Approximate
-                pb.set_style(ProgressStyle::default_bar().template("{bar:40} {msg}").unwrap());
-
-                while let Some((input, target)) = batch_iter.next_batch() {
-                    trainer.model.rnn.reset_state();
-
-                    let logits = trainer.model.forward(&input);
-                    let target_flat_data: Vec<f32> = target.data.clone();
-                    let target_flat = neural::Tensor::new(target_flat_data, vec![target.data.len()]);
-
-                    let loss = CrossEntropyLoss::forward(&logits, &target_flat);
-
-                    for grad in trainer.model.gradients() {
-                        for x in grad.data.iter_mut() { *x = 0.0; }
-                    }
-
-                    let d_loss = CrossEntropyLoss::backward(&logits, &target_flat);
-                    trainer.model.backward(&d_loss, &input);
-
-                    trainer.optimizer.step(trainer.model);
-
-                    total_loss += loss;
-                    batches += 1;
-
-                    if batches % 10 == 0 {
-                        pb.set_message(format!("Loss: {:.4}", loss));
-                        pb.inc(1);
-                    }
-                }
-                pb.finish();
-                if batches > 0 {
-                    println!("Mean Loss: {:.4}", total_loss / batches as f32);
-                }
-            }
+            // ...
         },
         Commands::Evaluate { model: _, data: _ } => {
             println!("Evaluation Stub: Load model and run validation set.");
         },
+        */
         Commands::BenchVsa => {
             println!("{}", VSABenchmark::run());
         },
@@ -253,25 +207,27 @@ fn main() {
             let mind = OmniMind::new_forge("./omniforge_data");
             println!("Current State: {}", mind.lifecycle_status());
         },
+        /*
         Commands::ExportGpu { data, output } => {
             KaggleExporter::export_dataset(data, output);
         },
         Commands::ImportGpu { weights } => {
             let _ = KaggleImporter::import_weights(weights);
         },
+        */
         Commands::Snapshot { sub } => match sub {
             SnapshotCommands::Create { name } => {
-                let mem = MemoryManager::new(&PathBuf::from("./omniforge_data"));
-                mem.save_snapshot(name).unwrap();
+                let mem = MemoryManager::new(&std::path::Path::new("./omniforge_data"));
+                mem.save_snapshot(&name).unwrap();
                 println!("Snapshot '{}' created.", name);
             },
             SnapshotCommands::Load { name } => {
-                let mut mem = MemoryManager::new(&PathBuf::from("./omniforge_data"));
-                mem.load_snapshot(name).unwrap();
+                let mut mem = MemoryManager::new(&std::path::Path::new("./omniforge_data"));
+                mem.load_snapshot(&name).unwrap();
                 println!("Snapshot '{}' loaded.", name);
             },
             SnapshotCommands::Verify { path } => {
-                match memory::SnapshotManager::load(path) {
+                match memory::SnapshotManager::load(&path) {
                     Ok(_) => println!("Snapshot verified successfully."),
                     Err(e) => println!("Verification failed: {}", e),
                 }

@@ -16,7 +16,6 @@ memory = { path = "../memory" }
 ingestion = { path = "../ingestion" }
 runtime = { path = "../runtime" }
 hte = { path = "../hte" }
-fabricator = { path = "../fabricator" }
 perception = { path = "../perception" }
 learning = { path = "../learning" }
 

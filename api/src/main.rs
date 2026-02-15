@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Json, State},
-    response::IntoResponse,
+    extract::{Json, State, Path as AxumPath},
+    response::{IntoResponse, Sse, sse::Event},
     routing::{get, post},
     Router,
 };
@@ -9,6 +9,9 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use futures_util::stream::{self, Stream};
+use tokio_stream::StreamExt;
 
 #[derive(Clone)]
 struct AppState {
@@ -18,21 +21,25 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    info!("Starting Omni Forge API...");
+    info!("Starting Omni Forge API v1...");
 
-    let mind = OmniMind::new();
-    // Try load memory
+    let mind = OmniMind::new_forge("./api_data");
     let state = AppState {
         mind: Arc::new(Mutex::new(mind)),
     };
 
-    let app = Router::new()
-        .route("/", get(root))
+    let v1_routes = Router::new()
         .route("/learn", post(learn))
         .route("/ask", post(ask))
-        .route("/save", post(save))
-        .route("/load", post(load))
-        .with_state(state);
+        .route("/query/stream", get(query_stream))
+        .route("/ingest", post(ingest_file))
+        .route("/snapshot/:name", post(save_snapshot))
+        .route("/snapshot/:name", get(load_snapshot))
+        .with_state(state.clone());
+
+    let app = Router::new()
+        .route("/", get(root))
+        .nest("/v1", v1_routes);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     info!("Listening on {}", addr);
@@ -41,7 +48,7 @@ async fn main() {
 }
 
 async fn root() -> &'static str {
-    "Omni Forge API v5.0"
+    "Omni Forge API Industrial Core v1.0"
 }
 
 #[derive(Deserialize)]
@@ -70,28 +77,59 @@ async fn ask(State(state): State<AppState>, Json(payload): Json<TextPayload>) ->
 }
 
 #[derive(Deserialize)]
-struct PathPayload {
+struct IngestPayload {
     path: String,
 }
 
-async fn save(
+async fn ingest_file(
     State(state): State<AppState>,
-    Json(payload): Json<PathPayload>,
+    Json(payload): Json<IngestPayload>,
 ) -> impl IntoResponse {
-    let mind = state.mind.lock().unwrap();
-    match mind.save(&payload.path) {
-        Ok(_) => "Saved",
-        Err(_) => "Error saving",
+    let mut mind = state.mind.lock().unwrap();
+    match mind.ingest_file(&payload.path) {
+        Ok(_) => "Ingested",
+        Err(e) => {
+            info!("Ingestion error: {}", e);
+            "Error ingesting"
+        }
     }
 }
 
-async fn load(
+async fn save_snapshot(
     State(state): State<AppState>,
-    Json(payload): Json<PathPayload>,
+    AxumPath(name): AxumPath<String>,
+) -> impl IntoResponse {
+    let mind = state.mind.lock().unwrap();
+    match mind.save(&name) {
+        Ok(_) => "Snapshot Saved",
+        Err(_) => "Error saving snapshot",
+    }
+}
+
+async fn load_snapshot(
+    State(state): State<AppState>,
+    AxumPath(name): AxumPath<String>,
 ) -> impl IntoResponse {
     let mut mind = state.mind.lock().unwrap();
-    match mind.load(&payload.path) {
-        Ok(_) => "Loaded",
-        Err(_) => "Error loading",
+    match mind.load(&name) {
+        Ok(_) => "Snapshot Loaded",
+        Err(_) => "Error loading snapshot",
     }
+}
+
+async fn query_stream(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
+    info!("Starting reasoning stream...");
+
+    let stream = stream::repeat_with(|| {
+        Event::default().data("Processing reasoning step...")
+    })
+    .take(5)
+    .chain(stream::once(async {
+        Event::default().data("Finalizing output.")
+    }))
+    .map(Ok);
+
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }

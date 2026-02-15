@@ -13,9 +13,8 @@ pub mod universal;
 
 pub use registry::DataIngestionRegistry;
 pub use universal::UniversalIngestor;
-pub use universal::UniversalAdapter; // Legacy support
+pub use universal::UniversalAdapter;
 
-// Re-export specific structs if needed for tests
 pub use adapters::JsonAdapter;
 pub use fallback::SymbolExtractor;
 
@@ -25,12 +24,42 @@ pub fn ingest_graph(path: &Path) -> Result<SymbolGraph, Box<dyn Error + Send + S
     ingestor.ingest(path)
 }
 
-// Legacy functions kept for backward compatibility (wrapped)
-pub use universal::process_single_file; // Helper exposed? No, implementation detail.
+pub fn chunk_content(content: &str, type_hint: &str, path: &Path) -> Vec<SemanticChunk> {
+    vec![SemanticChunk {
+        source: path.to_string_lossy().to_string(),
+        content: content.to_string(),
+        metadata: ChunkMetadata {
+            hash: compute_hash(content),
+            timestamp: 0,
+            file_type: type_hint.to_string(),
+            language: "unknown".to_string(),
+            structure_type: "text".to_string(),
+        }
+    }]
+}
 
-use std::path::PathBuf;
+pub fn chunk_content_with_structure(content: &str, type_hint: &str, path: &Path, structure: &str) -> Vec<SemanticChunk> {
+    vec![SemanticChunk {
+        source: path.to_string_lossy().to_string(),
+        content: content.to_string(),
+        metadata: ChunkMetadata {
+            hash: compute_hash(content),
+            timestamp: 0,
+            file_type: type_hint.to_string(),
+            language: "unknown".to_string(),
+            structure_type: structure.to_string(),
+        }
+    }]
+}
+
+pub fn compute_hash(s: &str) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 use serde::{Serialize, Deserialize};
-use std::collections::HashSet;
 
 pub trait IngestionAdapter: Send + Sync {
     fn can_handle(&self, path: &std::path::Path) -> bool;
@@ -53,12 +82,7 @@ pub struct SemanticChunk {
     pub metadata: ChunkMetadata,
 }
 
-// ... helper functions for legacy adapters ...
-// (We keep generic_read_file etc. for `adapters` crate usage)
-
 pub fn generic_read_file(path: &std::path::Path, type_hint: &str) -> Vec<SemanticChunk> {
-    // Stub implementation to satisfy legacy code linking
-    // Real implementation would read file.
     use std::fs::File;
     use std::io::Read;
 
@@ -70,7 +94,7 @@ pub fn generic_read_file(path: &std::path::Path, type_hint: &str) -> Vec<Semanti
         source: path.to_string_lossy().to_string(),
         content: buffer.clone(),
         metadata: ChunkMetadata {
-            hash: "stub".to_string(),
+            hash: compute_hash(&buffer),
             timestamp: 0,
             file_type: type_hint.to_string(),
             language: "unknown".to_string(),

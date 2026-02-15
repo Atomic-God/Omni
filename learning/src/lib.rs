@@ -1,9 +1,9 @@
-use core_vsa::{HyperVector, traits::MemoryStore};
+use core_vsa::traits::MemoryStore;
 use memory::{MemoryManager, MemoryLayer, HierarchicalMemory};
-use ingestion::{UniversalIngestor, ingest_graph};
+use ingestion::UniversalIngestor;
 use core_vsa::traits::Ingestor;
 use std::path::Path;
-use log::{info, warn};
+use log::info;
 use crate::consolidation::ConsolidationEngine;
 
 pub mod consolidation;
@@ -27,28 +27,28 @@ impl RuntimeLearner {
 
     pub fn process_input(&mut self, input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         info!("Learning from {:?}", input_path);
-        let graph = self.ingestor.ingest(input_path)?;
+        let graph = self.ingestor.ingest(input_path).map_err(|e| e.to_string())?;
 
         for node in graph.nodes {
-            self.memory.store_in_layer(&node.id, node.vector, MemoryLayer::Working)?;
+            let _ = self.memory.store_in_layer(&node.id, node.vector, MemoryLayer::Working);
         }
 
         self.run_consolidation_cycle();
         Ok(())
     }
 
+    pub fn reinforce(&mut self, key: &str, delta: f32) {
+        if let Some(entry) = self.memory.metadata.get_mut(key) {
+            entry.importance += delta;
+            info!("Reinforced {}: importance now {}", key, entry.importance);
+        }
+    }
+
     pub fn run_consolidation_cycle(&mut self) {
         info!("Running consolidation cycle...");
 
-        // 1. Decay & Prune Metadata
         ConsolidationEngine::decay_and_prune(&mut self.memory.metadata, self.decay_rate, 0.1);
 
-        // 2. Consolidate Vectors (Clustering) - Requires extracting vectors from storage?
-        // MemoryManager keeps storage separate.
-        // We can only consolidate what's in 'metadata' if it stores vectors?
-        // Yes, MemoryEntry stores vector.
-
-        // Extract map for consolidation
         let mut vector_map = std::collections::HashMap::new();
         for (k, v) in &self.memory.metadata {
             vector_map.insert(k.clone(), v.vector.clone());
@@ -56,18 +56,14 @@ impl RuntimeLearner {
 
         let merged = ConsolidationEngine::consolidate(&mut vector_map, self.similarity_threshold);
 
-        // Write back merged vectors
         for (k, v) in merged {
-            // Update vector in memory entry
             if let Some(entry) = self.memory.metadata.get_mut(&k) {
                 entry.vector = v;
-                // Boost importance of merged concept
                 entry.importance += 1.0;
                 info!("Merged concept updated: {}", k);
             }
         }
 
-        // 3. Promote Layers
         self.memory.consolidate_layers();
     }
 }

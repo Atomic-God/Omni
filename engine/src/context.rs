@@ -1,8 +1,8 @@
 use core_vsa::{HyperVector, traits::MemoryStore};
 use memory::MemoryManager;
-use cognition::Intent;
 use std::collections::VecDeque;
-use log::{info, warn};
+use log::info;
+use runtime::Goal;
 
 /// Manages the active working context of the agent.
 pub struct ContextManager {
@@ -11,7 +11,7 @@ pub struct ContextManager {
     pub max_working_size: usize,
 
     // Active Goals
-    pub active_goals: Vec<crate::governance::Goal>, // Assuming existing Goal struct
+    pub active_goals: Vec<Goal>,
 
     // Episodic Recall Buffer (retrieved memories relevant to current context)
     pub episodic_buffer: Vec<HyperVector>,
@@ -37,10 +37,7 @@ impl ContextManager {
 
     /// Retrieve relevant episodes from memory based on current working context
     pub fn recall_episodes(&mut self, memory: &MemoryManager) {
-        // Form query vector from working context (e.g. bundle or last item)
         if let Some(current) = self.working_context.back() {
-            // Query memory
-            // Phase 6: We use `query_nearest` from MemoryStore trait
             let results = memory.query_nearest(current, 5);
             self.episodic_buffer.clear();
             for (id, _score) in results {
@@ -63,10 +60,8 @@ impl ContextManager {
 
     /// Compress context into a single summary vector
     pub fn compress_context(&self) -> HyperVector {
-        // Bundle all working context vectors?
-        // Simple superposition.
         if self.working_context.is_empty() {
-            return HyperVector::deterministic(0); // Zero-like
+            return HyperVector::deterministic(0);
         }
 
         let mut summary = self.working_context[0].clone();
