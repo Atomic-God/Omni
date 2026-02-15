@@ -11,11 +11,14 @@ use lofty::{Probe, TaggedFileExt, Accessor, AudioFile};
 use walkdir::WalkDir;
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
-use image::GenericImageView;
+use std::collections::HashSet;
 use sha2::{Sha256, Digest};
 use whatlang::detect;
 use unicode_normalization::UnicodeNormalization;
 use crate::metadata::NormalizedMetadata;
+use crate::layout::SemanticLayoutExtractor;
+use crate::ocr::SymbolicOCR;
+use crate::video::VideoIngestor;
 
 pub struct UniversalIngestor;
 
@@ -23,9 +26,10 @@ impl Ingestor for UniversalIngestor {
     fn ingest(&self, path: &Path) -> Result<SymbolGraph, Box<dyn Error + Send + Sync>> {
         info!("Ingesting: {:?}", path);
         let graph = Arc::new(Mutex::new(SymbolGraph::new()));
+        let seen_hashes = Arc::new(Mutex::new(HashSet::new()));
 
         if path.is_file() {
-            if let Err(e) = process_single_file(path, &graph) {
+            if let Err(e) = process_single_file(path, &graph, &seen_hashes) {
                 warn!("Failed to process {:?}: {}", path, e);
             }
         } else {
@@ -37,7 +41,7 @@ impl Ingestor for UniversalIngestor {
                 .collect();
 
             entries.par_iter().for_each(|entry| {
-                if let Err(e) = process_single_file(entry.path(), &graph) {
+                if let Err(e) = process_single_file(entry.path(), &graph, &seen_hashes) {
                     warn!("Failed to process {:?}: {}", entry.path(), e);
                 }
             });
@@ -55,7 +59,17 @@ impl crate::IngestionAdapter for UniversalAdapter {
     }
 }
 
-fn process_single_file(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn process_single_file(path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<HashSet<String>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
+    {
+        let mut s = seen.lock().unwrap();
+        if s.contains(&file_hash) {
+            info!("Skipping duplicate file: {:?}", path);
+            return Ok(());
+        }
+        s.insert(file_hash.clone());
+    }
+
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
     match ext.as_str() {
         "xlsx" | "xls" | "ods" => process_spreadsheet(path, graph),
@@ -67,8 +81,9 @@ fn process_single_file(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(
         "rs" | "py" | "c" | "cpp" | "js" | "ts" | "java" | "go" | "rb" => process_code(path, graph),
         "jpg" | "png" | "jpeg" | "webp" => process_image(path, graph),
         "mp3" | "wav" | "flac" | "m4a" => process_audio(path, graph),
+        "mp4" | "mkv" | "avi" => process_video(path, graph),
         "zip" | "tar" | "gz" => process_archive(path, graph),
-        _ => process_text_generic(path, graph),
+        _ => process_text_generic(path, graph, seen),
     }
 }
 
@@ -141,22 +156,22 @@ fn process_pdf(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
             full_text.push('\n');
         }
     }
+
+    let layout = SemanticLayoutExtractor::extract_from_text(&full_text);
     let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
     let node_id = format!("doc:{}", file_hash);
 
     let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
     meta.file_type = "pdf_document".to_string();
     meta.hash = file_hash;
-    meta.insert("page_count", doc.get_pages().len().to_string());
+    meta.insert("layout_elements", layout.len().to_string());
 
     if let Some(info) = detect(&full_text) {
         meta.language = info.lang().to_string();
     }
 
-    meta.insert("content_preview", full_text.chars().take(200).collect());
-    let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -192,9 +207,8 @@ fn process_csv(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
                 });
             }
         }
-        let vector = HyperVector::random();
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&row_id, vector, meta.to_map(), 1.0);
+        g.add_node_with_confidence(&row_id, HyperVector::random(), meta.to_map(), 1.0);
         g.edges.extend(edges);
     }
     Ok(())
@@ -202,19 +216,32 @@ fn process_csv(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
 
 fn process_image(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let img = image::open(path).map_err(|e| e.to_string())?;
-    let (width, height) = img.dimensions();
+    let ocr_text = SymbolicOCR::extract_text(&img);
     let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
     let node_id = format!("img:{}", file_hash);
 
     let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
     meta.file_type = "image".to_string();
     meta.hash = file_hash;
-    meta.insert("width", width.to_string());
-    meta.insert("height", height.to_string());
+    meta.insert("ocr_content", ocr_text);
 
-    let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+    Ok(())
+}
+
+fn process_video(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let report = VideoIngestor::process_video(path)?;
+    let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
+    let node_id = format!("video:{}", file_hash);
+
+    let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
+    meta.file_type = "video".to_string();
+    meta.hash = file_hash;
+    meta.insert("video_report", report);
+
+    let mut g = graph.lock().unwrap();
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -236,9 +263,8 @@ fn process_audio(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box
     let properties = tagged_file.properties();
     meta.insert("duration_seconds", properties.duration().as_secs().to_string());
 
-    let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }
 
@@ -260,17 +286,14 @@ fn process_archive(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), B
              let file = archive.by_index(i).map_err(|e| e.to_string())?;
              if file.is_dir() { continue; }
              let name = file.name().to_string();
-             if name.ends_with(".exe") || name.ends_with(".dll") { continue; }
              let entry_id = format!("{}#{}", archive_id, name);
 
              let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
              meta.file_type = "archive_entry".to_string();
-             meta.insert("container", path.to_string_lossy().to_string());
              meta.insert("entry_name", name);
 
-             let vector = HyperVector::random();
              let mut g = graph.lock().unwrap();
-             g.add_node_with_confidence(&entry_id, vector, meta.to_map(), 1.0);
+             g.add_node_with_confidence(&entry_id, HyperVector::random(), meta.to_map(), 1.0);
              g.add_edge_with_confidence(&entry_id, &archive_id, "contained_in", 1.0, 1.0);
         }
     }
@@ -278,8 +301,6 @@ fn process_archive(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), B
 }
 
 fn process_json(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let file = File::open(path)?;
-    let _val: serde_json::Value = serde_json::from_reader(file)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("json:{}", file_hash);
     let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
@@ -292,12 +313,8 @@ fn process_json(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
 }
 
 fn process_yaml(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut file = File::open(path)?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("yaml:{}", file_hash);
-
     let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
     meta.file_type = "yaml_data".to_string();
     meta.hash = file_hash;
@@ -308,26 +325,8 @@ fn process_yaml(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
 }
 
 fn process_docx(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    use zip::read::ZipArchive;
-    use xml::reader::{EventReader, XmlEvent};
-    let file = File::open(path)?;
-    let mut archive = ZipArchive::new(file)?;
-    let mut content = String::new();
-    if let Ok(mut doc_file) = archive.by_name("word/document.xml") {
-        let mut xml_content = String::new();
-        if doc_file.read_to_string(&mut xml_content).is_ok() {
-            let parser = EventReader::from_str(&xml_content);
-            for e in parser {
-                if let Ok(XmlEvent::Characters(text)) = e {
-                    content.push_str(&text);
-                    content.push(' ');
-                }
-            }
-        }
-    }
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("doc:{}", file_hash);
-
     let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
     meta.file_type = "docx_document".to_string();
     meta.hash = file_hash;
@@ -338,12 +337,8 @@ fn process_docx(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
 }
 
 fn process_code(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut file = File::open(path)?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("code:{}", file_hash);
-
     let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
     meta.file_type = "source_code".to_string();
     meta.hash = file_hash;
@@ -354,26 +349,23 @@ fn process_code(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
     Ok(())
 }
 
-fn process_text_generic(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn process_text_generic(path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<HashSet<String>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let file = File::open(path)?;
     let file_meta = file.metadata()?;
     let reader = BufReader::new(file);
-    let mut line_count = 0;
     let mut content_buffer = String::new();
     for line in reader.lines() {
         let l = line?;
         if compute_entropy(&l) < 2.0 { continue; }
         content_buffer.push_str(&l);
         content_buffer.push_str("\n");
-        line_count += 1;
-        if line_count >= 100 {
-            ingest_text_chunk(&content_buffer, path, graph, &file_meta)?;
+        if content_buffer.len() > 5000 {
+            ingest_text_chunk(&content_buffer, path, graph, &file_meta, seen)?;
             content_buffer.clear();
-            line_count = 0;
         }
     }
     if !content_buffer.is_empty() {
-        ingest_text_chunk(&content_buffer, path, graph, &file_meta)?;
+        ingest_text_chunk(&content_buffer, path, graph, &file_meta, seen)?;
     }
     Ok(())
 }
@@ -389,13 +381,19 @@ fn compute_entropy(s: &str) -> f32 {
     }).sum()
 }
 
-fn ingest_text_chunk(text_raw: &str, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, file_meta: &std::fs::Metadata) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn ingest_text_chunk(text_raw: &str, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, file_meta: &std::fs::Metadata, seen: &Arc<Mutex<HashSet<String>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let text: String = text_raw.nfc().collect();
     let chunk_hash = {
         let mut h = Sha256::new(); h.update(text.as_bytes()); hex::encode(h.finalize())
     };
-    let node_id = format!("chunk:{}", chunk_hash);
 
+    {
+        let mut s = seen.lock().unwrap();
+        if s.contains(&chunk_hash) { return Ok(()); }
+        s.insert(chunk_hash.clone());
+    }
+
+    let node_id = format!("chunk:{}", chunk_hash);
     let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
     meta.file_type = "text_chunk".to_string();
     meta.hash = chunk_hash;
@@ -404,8 +402,7 @@ fn ingest_text_chunk(text_raw: &str, path: &Path, graph: &Arc<Mutex<SymbolGraph>
     if let Some(info) = detect(&text) {
          meta.language = info.lang().to_string();
     }
-    let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
-    g.add_node_with_confidence(&node_id, vector, meta.to_map(), 1.0);
+    g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
     Ok(())
 }

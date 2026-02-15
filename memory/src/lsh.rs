@@ -10,8 +10,8 @@ const BITS_PER_KEY: usize = 16;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LSHIndex {
     tables: Vec<HashMap<u64, Vec<String>>>,
-    masks: Vec<Vec<usize>>, // Indices of bits to sample for each table
-    vectors: HashMap<String, HyperVector>, // The actual store (or cache)
+    masks: Vec<Vec<usize>>,
+    vectors: HashMap<String, HyperVector>,
 }
 
 impl LSHIndex {
@@ -35,12 +35,30 @@ impl LSHIndex {
     }
 
     pub fn insert(&mut self, key: &str, vector: HyperVector) {
+        if self.vectors.contains_key(key) {
+            self.remove(key);
+        }
         self.vectors.insert(key.to_string(), vector.clone());
 
         for i in 0..NUM_TABLES {
             let hash = self.compute_hash(&vector, i);
             self.tables[i].entry(hash).or_insert_with(Vec::new).push(key.to_string());
         }
+    }
+
+    pub fn remove(&mut self, key: &str) {
+        if let Some(vector) = self.vectors.remove(key) {
+            for i in 0..NUM_TABLES {
+                let hash = self.compute_hash(&vector, i);
+                if let Some(bucket) = self.tables[i].get_mut(&hash) {
+                    bucket.retain(|id| id != key);
+                }
+            }
+        }
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.vectors.contains_key(key)
     }
 
     pub fn query(&self, query_vec: &HyperVector, k: usize) -> Vec<(String, f32)> {

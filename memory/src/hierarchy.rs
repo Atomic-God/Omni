@@ -1,10 +1,11 @@
 use core_vsa::HyperVector;
 use std::error::Error;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MemoryLayer {
     Working,
     Episodic,
-    Invariant,
+    Semantic, // Renamed from Invariant
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -15,9 +16,9 @@ pub struct MemoryEntry {
     pub last_access: u64,
     pub layer: String,
     pub importance: f32,
-    pub confidence: f32, // Added
-    pub source_reliability: f32, // Added
-    pub reinforcement_count: u32, // Added
+    pub confidence: f32,
+    pub source_reliability: f32,
+    pub reinforcement_count: u32,
 }
 
 impl MemoryEntry {
@@ -26,7 +27,7 @@ impl MemoryEntry {
         let layer_str = match layer {
             MemoryLayer::Working => "working",
             MemoryLayer::Episodic => "episodic",
-            MemoryLayer::Invariant => "invariant",
+            MemoryLayer::Semantic => "semantic",
         };
         Self {
             vector,
@@ -57,7 +58,6 @@ impl MemoryEntry {
 
     pub fn decay(&mut self, rate: f32) {
         self.importance *= rate;
-        // Unverified facts decay faster in confidence too
         if self.reinforcement_count < 2 {
             self.confidence *= rate;
         }

@@ -10,6 +10,9 @@ pub mod fallback;
 pub mod registry;
 pub mod universal;
 pub mod metadata;
+pub mod layout;
+pub mod ocr;
+pub mod video;
 
 pub use registry::DataIngestionRegistry;
 pub use universal::UniversalIngestor;

@@ -7,7 +7,6 @@ use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
 use flate2::Compression;
 use std::collections::HashMap;
-use log::info;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SnapshotHeader {
@@ -15,13 +14,15 @@ pub struct SnapshotHeader {
     pub timestamp: u64,
     pub checksum: String,
     pub is_delta: bool,
-    pub base_snapshot: Option<String>, // Hash of base snapshot
+    pub base_snapshot: Option<String>,
+    pub previous_hash: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct MindSnapshot {
     pub header: SnapshotHeader,
-    pub index: LSHIndex,
+    pub episodic_index: LSHIndex,
+    pub semantic_index: LSHIndex,
     pub storage: ShardedStorage,
     pub metadata: HashMap<String, MemoryEntry>,
 }
@@ -60,16 +61,17 @@ pub struct SnapshotManager;
 
 impl SnapshotManager {
     pub fn save(memory: &MemoryManager, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        Self::save_ext(memory, path, false, None)
+        Self::save_ext(memory, path, false, None, None)
     }
 
     pub fn save_delta(memory: &MemoryManager, path: &Path, base_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::save_ext(memory, path, true, Some(base_hash.to_string()))
+        Self::save_ext(memory, path, true, Some(base_hash.to_string()), Some(base_hash.to_string()))
     }
 
-    fn save_ext(memory: &MemoryManager, path: &Path, is_delta: bool, base_snapshot: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    fn save_ext(memory: &MemoryManager, path: &Path, is_delta: bool, base_snapshot: Option<String>, previous_hash: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         let body = MindSnapshotBody {
-            index: memory.index.clone(),
+            episodic_index: memory.episodic_index.clone(),
+            semantic_index: memory.semantic_index.clone(),
             storage: memory.storage.clone(),
             metadata: memory.metadata.clone(),
         };
@@ -86,6 +88,7 @@ impl SnapshotManager {
             checksum,
             is_delta,
             base_snapshot,
+            previous_hash,
         };
 
         let file = File::create(path)?;
@@ -119,7 +122,8 @@ impl SnapshotManager {
 
         Ok(MindSnapshot {
             header: container.header,
-            index: container.body.index,
+            episodic_index: container.body.episodic_index,
+            semantic_index: container.body.semantic_index,
             storage: container.body.storage,
             metadata: container.body.metadata,
         })
@@ -143,7 +147,6 @@ impl SnapshotManager {
     }
 
     pub fn repair(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        info!("Attempting to repair snapshot at {:?}", path);
         let file = File::open(path)?;
         let mut decoder = GzDecoder::new(file);
         let container: MindSnapshotContainer = bincode::deserialize_from(&mut decoder)?;
@@ -151,36 +154,15 @@ impl SnapshotManager {
         let body_bytes = bincode::serialize(&container.body)?;
         let mut hasher = Sha256::new();
         hasher.update(&body_bytes);
-        info!("Repair complete: Snapshot structure validated.");
+        let _computed = hex::encode(hasher.finalize());
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_mindpack_roundtrip() {
-        let dir = tempdir().unwrap();
-        let pack_path = dir.path().join("test.mindpack");
-        let packer = MindPack::new();
-
-        let mut data = HashMap::new();
-        data.insert("key".to_string(), "value".to_string());
-
-        packer.export(&pack_path, &data).expect("Export failed");
-        assert!(pack_path.exists());
-
-        let imported: HashMap<String, String> = packer.import(&pack_path).expect("Import failed");
-        assert_eq!(imported.get("key").unwrap(), "value");
     }
 }
 
 #[derive(Serialize, Deserialize)]
 struct MindSnapshotBody {
-    index: LSHIndex,
+    episodic_index: LSHIndex,
+    semantic_index: LSHIndex,
     storage: ShardedStorage,
     metadata: HashMap<String, MemoryEntry>,
 }

@@ -8,6 +8,7 @@ use runtime::HardwareAdapter;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use cognition::{CognitionCore, RelationType};
+use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
@@ -107,7 +108,7 @@ impl OmniMind {
         }
     }
 
-    fn encode_text(&self, text: &str) -> HyperVector {
+    pub fn encode_text(&self, text: &str) -> HyperVector {
         let mut words: Vec<String> = text.split_whitespace()
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
             .filter(|w| !w.is_empty())
@@ -176,7 +177,12 @@ impl OmniMind {
                     if let Some(next_rels) = cog.relation_graph.get(intermediate) {
                         for next_rel in next_rels {
                             if words.contains(&next_rel.target) {
-                                return format!("Logic: Yes, {} related to {} (via {})", s_candidate, next_rel.target, intermediate);
+                                if ReasoningValidator::validate_inference(cog, s_candidate, &next_rel.target) {
+                                    let uncertainty = UncertaintyScorer::calculate_uncertainty(next_rel.confidence, rel.weight);
+                                    return format!("Logic: Yes, {} related to {} (via {}). [Uncertainty: {:.2}]", s_candidate, next_rel.target, intermediate, uncertainty);
+                                } else {
+                                    info!("Validation Loop: Blocked contradictory inference {} -> {}", s_candidate, next_rel.target);
+                                }
                             }
                         }
                     }
@@ -188,7 +194,8 @@ impl OmniMind {
              if let Some(relations) = cog.relation_graph.get(s_candidate) {
                  for rel in relations {
                      if words.contains(&rel.target) || words.contains(&"what".to_string()) || words.contains(&"who".to_string()) {
-                         return format!("Logic: {} is related to {}", s_candidate, rel.target);
+                         let uncertainty = UncertaintyScorer::calculate_uncertainty(rel.confidence, 1.0);
+                         return format!("Logic: {} is related to {}. [Uncertainty: {:.2}]", s_candidate, rel.target, uncertainty);
                      }
                  }
              }
@@ -198,12 +205,27 @@ impl OmniMind {
         let results = self.query(&vector);
         if let Some((top, sim)) = results.first() {
             if *sim > 0.3 {
-                format!("Logic: Match found for query. Result: {} (confidence: {:.2})", top, sim)
+                let uncertainty = UncertaintyScorer::calculate_uncertainty(0.8, *sim);
+                format!("Logic: Match found. Result: {} (sim: {:.2}) [Uncertainty: {:.2}]", top, sim, uncertainty)
             } else {
                 "No match found.".to_string()
             }
         } else {
             "No match found.".to_string()
+        }
+    }
+
+    pub fn lifecycle_status(&self) -> String {
+        match &self.state {
+            LifecycleState::Forge(_, _) => "FORGE".to_string(),
+            LifecycleState::Runtime(_, _, _) => "RUNTIME".to_string(),
+        }
+    }
+
+    pub fn memory_stats(&self) -> String {
+        match &self.state {
+            LifecycleState::Forge(mem, _) => format!("Memory: {} entries", mem.metadata.len()),
+            LifecycleState::Runtime(base, delta, _) => format!("Base: {}, Delta: {}", base.metadata.len(), delta.metadata.len()),
         }
     }
 

@@ -1,54 +1,100 @@
 use hte::{HardwareProfile, detect, get_current_load};
-use log::{info, warn};
+use log::info;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PowerMode {
+    LowPower,
+    Balanced,
+    HighPerformance,
+}
 
 pub struct HardwareAdapter {
     pub profile: HardwareProfile,
+    pub current_mode: PowerMode,
 }
 
 impl HardwareAdapter {
     pub fn new() -> Self {
+        let profile = detect();
+        let load = get_current_load();
+        let mode = if load > 80.0 {
+            PowerMode::LowPower
+        } else if load > 40.0 {
+            PowerMode::Balanced
+        } else {
+            PowerMode::HighPerformance
+        };
+
         Self {
-            profile: detect(),
+            profile,
+            current_mode: mode,
+        }
+    }
+
+    pub fn set_mode(&mut self, mode: PowerMode) {
+        info!("Switching to PowerMode: {:?}", mode);
+        self.current_mode = mode;
+    }
+
+    pub fn auto_adjust_mode(&mut self) {
+        let load = get_current_load();
+        let new_mode = if load > 85.0 {
+            PowerMode::LowPower
+        } else if load < 30.0 {
+            PowerMode::HighPerformance
+        } else {
+            PowerMode::Balanced
+        };
+
+        if new_mode != self.current_mode {
+            self.set_mode(new_mode);
+        }
+    }
+
+    pub fn get_concurrency_limit(&self) -> usize {
+        match self.current_mode {
+            PowerMode::LowPower => 1,
+            PowerMode::Balanced => (self.profile.physical_cores / 2).max(1),
+            PowerMode::HighPerformance => self.profile.logical_cores,
         }
     }
 
     pub fn suggest_dimension(&self) -> usize {
         let total_ram_gb = self.profile.total_memory / 1024 / 1024 / 1024;
 
-        if total_ram_gb < 2 {
-            info!("Low memory detected ({}GB). Suggesting 2,048-bit dimension.", total_ram_gb);
+        let base = if total_ram_gb < 2 {
             2048
         } else if total_ram_gb < 8 {
-            info!("Standard memory detected ({}GB). Suggesting 10,000-bit dimension.", total_ram_gb);
             10000
         } else {
-            info!("High memory detected ({}GB). Suggesting 20,000-bit dimension.", total_ram_gb);
             20000
+        };
+
+        // Scale based on power mode
+        match self.current_mode {
+            PowerMode::LowPower => base / 2,
+            _ => base,
         }
     }
 
     pub fn suggest_batch_size(&self) -> usize {
-        let load = get_current_load();
-        if load > 90.0 {
-            warn!("System load very high ({:.1}%). Reducing batch size to 1.", load);
-            1
-        } else if load > 60.0 {
-            4
-        } else {
-            16
+        match self.current_mode {
+            PowerMode::LowPower => 1,
+            PowerMode::Balanced => 4,
+            PowerMode::HighPerformance => 32,
         }
     }
 
     pub fn is_low_memory_mode(&self) -> bool {
         let free_ram_gb = (self.profile.total_memory - self.profile.used_memory) / 1024 / 1024 / 1024;
-        free_ram_gb < 1
+        free_ram_gb < 1 || self.current_mode == PowerMode::LowPower
     }
 
     pub fn report(&self) {
-        info!("Hardware Adaptation Report:");
+        info!("Hardware Adaptation Report [Mode: {:?}]:", self.current_mode);
         info!("  Cores: {}/{}", self.profile.physical_cores, self.profile.logical_cores);
         info!("  RAM: {}MB / {}MB", self.profile.used_memory / 1024 / 1024, self.profile.total_memory / 1024 / 1024);
-        info!("  AVX512: {}, AVX2: {}, NEON: {}", self.profile.avx512, self.profile.avx2, self.profile.neon);
         info!("  Current Load: {:.1}%", get_current_load());
+        info!("  Concurrency Limit: {}", self.get_concurrency_limit());
     }
 }
