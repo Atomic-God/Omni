@@ -15,5 +15,6 @@ members = [
     "dataset",
     "gpu-bridge",
     "runtime",
+    "xtask",
 ]
 resolver = "2"

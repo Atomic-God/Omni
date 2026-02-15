@@ -1,4 +1,4 @@
-use core_vsa::{HyperVector, DIMENSION};
+use core_vsa::HyperVector;
 use cognition::abductive::AbductiveReasoner;
 use cognition::sequence::SequenceResonator;
 use cognition::{IntentResolver, Intent};

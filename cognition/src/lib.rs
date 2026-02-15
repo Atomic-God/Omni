@@ -1,4 +1,4 @@
-use core_vsa::{HyperVector, SymbolGraph};
+use core_vsa::SymbolGraph;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
@@ -9,6 +9,7 @@ pub mod planning;
 pub mod world_model;
 pub mod inference;
 pub mod temporal;
+pub mod knowledge;
 
 pub use sequence::SequenceResonator;
 pub use abductive::AbductiveReasoner;
@@ -39,7 +40,8 @@ pub struct ReasoningTrace {
 
 pub struct CognitionCore {
     pub relation_graph: HashMap<String, Vec<Relation>>,
-    pub trace_log: Vec<ReasoningTrace>, // Added
+    pub trace_log: Vec<ReasoningTrace>,
+    pub knowledge_graph: knowledge::KnowledgeGraph, // Added
 }
 
 impl CognitionCore {
@@ -47,6 +49,7 @@ impl CognitionCore {
         Self {
             relation_graph: HashMap::new(),
             trace_log: Vec::new(),
+            knowledge_graph: knowledge::KnowledgeGraph::new(),
         }
     }
 
@@ -87,6 +90,15 @@ impl CognitionCore {
     pub fn link_multilingual_symbols(&mut self, source_id: &str, target_id: &str, confidence: f32) {
         self.add_relation(source_id, target_id, RelationType::Taxonomic, 1.0, confidence);
         self.add_relation(target_id, source_id, RelationType::Taxonomic, 1.0, confidence);
+    }
+
+    pub fn reinforce_knowledge(&mut self, id: &str, reliability: f32) {
+        self.knowledge_graph.reinforce(id, reliability);
+    }
+
+    pub fn apply_knowledge_decay(&mut self, decay_rate: f32) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        self.knowledge_graph.apply_temporal_decay(decay_rate, now);
     }
 
     pub fn ingest_from_graph(&mut self, graph: &SymbolGraph) {

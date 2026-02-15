@@ -1,13 +1,11 @@
 use std::path::Path;
 use std::fs::File;
-use serde::Serialize;
-use neural::Tensor;
 use core_vsa::SymbolGraph;
 
 pub struct KaggleExporter;
 
 impl KaggleExporter {
-    pub fn export_dataset(data_path: &Path, output_path: &Path) {
+    pub fn export_dataset(data_path: &Path, _output_path: &Path) {
         // Mock export to Parquet (simulated via JSON for Phase 1 simplicity if parquet dependency fails or is heavy)
         // For "Industrial", Parquet is preferred.
         // We included parquet crate.

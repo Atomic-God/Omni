@@ -1,4 +1,4 @@
-use crate::{IngestionAdapter, SemanticChunk, chunk_content};
+use crate::{IngestionAdapter, SemanticChunk};
 use std::path::Path;
 use std::fs::File;
 use std::io::Read;

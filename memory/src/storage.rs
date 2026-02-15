@@ -1,9 +1,8 @@
-use core_vsa::{HyperVector, DIMENSION};
+use core_vsa::HyperVector;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::{self, File};
-use std::io::{Read, Write};
-use log::{info, warn};
+use log::info;
 use serde::{Serialize, Deserialize};
 use std::cell::RefCell;
 

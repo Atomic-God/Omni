@@ -13,6 +13,7 @@ pub mod context;
 pub mod budget;
 pub mod governance;
 pub mod bench;
+pub mod learning;
 
 pub enum LifecycleState {
     Forge(MemoryManager),

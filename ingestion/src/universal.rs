@@ -3,8 +3,8 @@ use core_vsa::traits::Ingestor;
 use std::path::Path;
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, Read};
-use log::{info, warn, error};
+use std::io::{BufReader, Read, BufRead};
+use log::{info, warn};
 use calamine::{Reader, Xlsx, open_workbook, Data};
 use lopdf::Document;
 use lofty::{Probe, TaggedFileExt, Accessor, AudioFile};
@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 use image::GenericImageView;
 use sha2::{Sha256, Digest};
-use whatlang::{detect, Lang};
+use whatlang::detect;
 use unicode_normalization::UnicodeNormalization;
 
 pub struct UniversalIngestor;
@@ -78,6 +78,7 @@ fn compute_file_hash(path: &Path) -> Option<String> {
 
 fn process_spreadsheet(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut workbook: Xlsx<BufReader<File>> = open_workbook(path).map_err(|e: calamine::XlsxError| e.to_string())?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     if let Some(Ok(range)) = workbook.worksheet_range_at(0) {
         let mut headers: Vec<String> = Vec::new();
         for (i, row) in range.rows().enumerate() {
@@ -96,6 +97,9 @@ fn process_spreadsheet(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(
                 vector: HyperVector::deterministic(u64::from_str_radix(&row_hash[0..16], 16).unwrap_or(0)),
                 metadata: std::collections::HashMap::new(),
                 confidence: 1.0,
+                source_reliability: 1.0,
+                reinforcement_count: 1,
+                timestamp: now,
             };
             row_node.metadata.insert("type".to_string(), "spreadsheet_row".to_string());
             row_node.metadata.insert("source".to_string(), path.to_string_lossy().to_string());
@@ -114,6 +118,9 @@ fn process_spreadsheet(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(
                         relation: "has_field".to_string(),
                         weight: 1.0,
                         confidence: 1.0,
+                        source_reliability: 1.0,
+                        reinforcement_count: 1,
+                        timestamp: now,
                     });
                 }
             }
@@ -143,11 +150,10 @@ fn process_pdf(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
 
     if let Some(info) = detect(&full_text) {
         metadata.insert("language".to_string(), info.lang().to_string());
-        metadata.insert("script".to_string(), info.script().to_string());
     }
 
     metadata.insert("content_preview".to_string(), full_text.chars().take(200).collect());
-    let vector = HyperVector::deterministic(full_text.len() as u64);
+    let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
     g.add_node_with_confidence(&node_id, vector, metadata, 1.0);
     Ok(())
@@ -156,6 +162,7 @@ fn process_pdf(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
 fn process_csv(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut rdr = csv::Reader::from_path(path).map_err(|e| e.to_string())?;
     let headers = rdr.headers().map_err(|e| e.to_string())?.clone();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     for result in rdr.records() {
         let record = result.map_err(|e| e.to_string())?;
         let mut h = Sha256::new();
@@ -175,6 +182,9 @@ fn process_csv(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<d
                     relation: "has_field".to_string(),
                     weight: 1.0,
                     confidence: 1.0,
+                    source_reliability: 1.0,
+                    reinforcement_count: 1,
+                    timestamp: now,
                 });
             }
         }
@@ -195,7 +205,6 @@ fn process_image(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box
     metadata.insert("type".to_string(), "image".to_string());
     metadata.insert("width".to_string(), width.to_string());
     metadata.insert("height".to_string(), height.to_string());
-    metadata.insert("color_type".to_string(), format!("{:?}", img.color()));
     metadata.insert("source".to_string(), path.to_string_lossy().to_string());
     let vector = HyperVector::random();
     let mut g = graph.lock().unwrap();
@@ -237,7 +246,7 @@ fn process_archive(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), B
     if ext == "zip" {
         let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
         for i in 0..archive.len() {
-             let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+             let file = archive.by_index(i).map_err(|e| e.to_string())?;
              if file.is_dir() { continue; }
              let name = file.name().to_string();
              if name.ends_with(".exe") || name.ends_with(".dll") { continue; }
@@ -256,15 +265,12 @@ fn process_archive(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), B
 
 fn process_json(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let file = File::open(path)?;
-    let val: serde_json::Value = serde_json::from_reader(file)?;
-    let content = serde_json::to_string_pretty(&val)?;
+    let _val: serde_json::Value = serde_json::from_reader(file)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("json:{}", file_hash);
-
     let mut metadata = std::collections::HashMap::new();
     metadata.insert("type".to_string(), "json_data".to_string());
     metadata.insert("source".to_string(), path.to_string_lossy().to_string());
-
     let mut g = graph.lock().unwrap();
     g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
     Ok(())
@@ -276,11 +282,9 @@ fn process_yaml(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
     file.read_to_string(&mut content)?;
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("yaml:{}", file_hash);
-
     let mut metadata = std::collections::HashMap::new();
     metadata.insert("type".to_string(), "yaml_data".to_string());
     metadata.insert("source".to_string(), path.to_string_lossy().to_string());
-
     let mut g = graph.lock().unwrap();
     g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
     Ok(())
@@ -289,11 +293,9 @@ fn process_yaml(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
 fn process_docx(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     use zip::read::ZipArchive;
     use xml::reader::{EventReader, XmlEvent};
-
     let file = File::open(path)?;
     let mut archive = ZipArchive::new(file)?;
     let mut content = String::new();
-
     if let Ok(mut doc_file) = archive.by_name("word/document.xml") {
         let mut xml_content = String::new();
         if doc_file.read_to_string(&mut xml_content).is_ok() {
@@ -306,13 +308,11 @@ fn process_docx(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
             }
         }
     }
-
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("doc:{}", file_hash);
     let mut metadata = std::collections::HashMap::new();
     metadata.insert("type".to_string(), "docx_document".to_string());
     metadata.insert("source".to_string(), path.to_string_lossy().to_string());
-
     let mut g = graph.lock().unwrap();
     g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
     Ok(())
@@ -322,45 +322,67 @@ fn process_code(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<
     let mut file = File::open(path)?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
-
     let file_hash = compute_file_hash(path).unwrap_or_else(|| "none".to_string());
     let node_id = format!("code:{}", file_hash);
-
     let mut metadata = std::collections::HashMap::new();
     metadata.insert("type".to_string(), "source_code".to_string());
     metadata.insert("language".to_string(), path.extension().and_then(|s| s.to_str()).unwrap_or("unknown").to_string());
     metadata.insert("source".to_string(), path.to_string_lossy().to_string());
-
     let mut g = graph.lock().unwrap();
     g.add_node_with_confidence(&node_id, HyperVector::random(), metadata, 1.0);
     Ok(())
 }
 
 fn process_text_generic(path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut file = File::open(path)?;
-    let mut buffer = Vec::new();
+    let file = File::open(path)?;
     let file_meta = file.metadata()?;
-    if file_meta.len() > 10 * 1024 * 1024 { return Ok(()); }
-
-    file.read_to_end(&mut buffer)?;
-    if let Ok(raw_text) = String::from_utf8(buffer) {
-        let text: String = raw_text.nfc().collect();
-        let file_hash = compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
-        let node_id = format!("doc:{}", file_hash);
-        let mut metadata = std::collections::HashMap::new();
-        metadata.insert("type".to_string(), "text_file".to_string());
-        metadata.insert("char_count".to_string(), text.len().to_string());
-        metadata.insert("source".to_string(), path.to_string_lossy().to_string());
-        metadata.insert("timestamp".to_string(), file_meta.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
-
-        if let Some(info) = detect(&text) {
-             metadata.insert("language".to_string(), info.lang().to_string());
-             metadata.insert("script".to_string(), info.script().to_string());
+    let reader = BufReader::new(file);
+    let mut line_count = 0;
+    let mut content_buffer = String::new();
+    for line in reader.lines() {
+        let l = line?;
+        if compute_entropy(&l) < 2.0 { continue; }
+        content_buffer.push_str(&l);
+        content_buffer.push_str("\n");
+        line_count += 1;
+        if line_count >= 100 {
+            ingest_text_chunk(&content_buffer, path, graph, &file_meta)?;
+            content_buffer.clear();
+            line_count = 0;
         }
-
-        let vector = HyperVector::random();
-        let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, vector, metadata, 1.0);
     }
+    if !content_buffer.is_empty() {
+        ingest_text_chunk(&content_buffer, path, graph, &file_meta)?;
+    }
+    Ok(())
+}
+
+fn compute_entropy(s: &str) -> f32 {
+    if s.is_empty() { return 0.0; }
+    let mut counts = [0usize; 256];
+    for &b in s.as_bytes() { counts[b as usize] += 1; }
+    let len = s.len() as f32;
+    counts.iter().filter(|&&c| c > 0).map(|&c| {
+        let p = c as f32 / len;
+        -p * p.log2()
+    }).sum()
+}
+
+fn ingest_text_chunk(text_raw: &str, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, file_meta: &std::fs::Metadata) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let text: String = text_raw.nfc().collect();
+    let chunk_hash = {
+        let mut h = Sha256::new(); h.update(text.as_bytes()); hex::encode(h.finalize())
+    };
+    let node_id = format!("chunk:{}", chunk_hash);
+    let mut metadata = std::collections::HashMap::new();
+    metadata.insert("type".to_string(), "text_chunk".to_string());
+    metadata.insert("source".to_string(), path.to_string_lossy().to_string());
+    metadata.insert("timestamp".to_string(), file_meta.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+    if let Some(info) = detect(&text) {
+         metadata.insert("language".to_string(), info.lang().to_string());
+    }
+    let vector = HyperVector::random();
+    let mut g = graph.lock().unwrap();
+    g.add_node_with_confidence(&node_id, vector, metadata, 1.0);
     Ok(())
 }

@@ -1,8 +1,7 @@
 use core_vsa::{HyperVector, DIMENSION};
 use std::collections::{HashMap, HashSet};
-use rand::prelude::*;
 use rand::seq::SliceRandom;
-use log::{info, debug};
+use log::debug;
 use serde::{Serialize, Deserialize};
 
 const NUM_TABLES: usize = 10;

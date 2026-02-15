@@ -1,5 +1,4 @@
-use core_vsa::HyperVector;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use log::{info, warn};
 
 #[derive(Clone, Debug)]

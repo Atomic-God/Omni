@@ -1,4 +1,3 @@
-use core_vsa::traits::MemoryStore;
 use memory::{MemoryManager, MemoryLayer, HierarchicalMemory};
 use ingestion::UniversalIngestor;
 use core_vsa::traits::Ingestor;

@@ -1,4 +1,4 @@
-use core_vsa::{HyperVector, DIMENSION};
+use core_vsa::HyperVector;
 use std::time::Instant;
 use memory::LSHIndex;
 

@@ -146,6 +146,9 @@ pub struct SymbolNode {
     pub vector: HyperVector,
     pub metadata: HashMap<String, String>,
     pub confidence: f32,
+    pub source_reliability: f32, // Added
+    pub reinforcement_count: u32, // Added
+    pub timestamp: u64, // Added
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +158,9 @@ pub struct SymbolEdge {
     pub relation: String,
     pub weight: f32,
     pub confidence: f32,
+    pub source_reliability: f32, // Added
+    pub reinforcement_count: u32, // Added
+    pub timestamp: u64, // Added
 }
 
 impl SymbolGraph {
@@ -163,40 +169,56 @@ impl SymbolGraph {
     }
 
     pub fn add_node(&mut self, id: &str, vector: HyperVector, metadata: HashMap<String, String>) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         self.nodes.push(SymbolNode {
             id: id.to_string(),
             vector,
             metadata,
             confidence: 1.0,
+            source_reliability: 1.0,
+            reinforcement_count: 1,
+            timestamp: now,
         });
     }
 
     pub fn add_node_with_confidence(&mut self, id: &str, vector: HyperVector, metadata: HashMap<String, String>, confidence: f32) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         self.nodes.push(SymbolNode {
             id: id.to_string(),
             vector,
             metadata,
             confidence,
+            source_reliability: 1.0,
+            reinforcement_count: 1,
+            timestamp: now,
         });
     }
 
     pub fn add_edge(&mut self, source: &str, target: &str, relation: &str, weight: f32) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         self.edges.push(SymbolEdge {
             source: source.to_string(),
             target: target.to_string(),
             relation: relation.to_string(),
             weight,
             confidence: 1.0,
+            source_reliability: 1.0,
+            reinforcement_count: 1,
+            timestamp: now,
         });
     }
 
     pub fn add_edge_with_confidence(&mut self, source: &str, target: &str, relation: &str, weight: f32, confidence: f32) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         self.edges.push(SymbolEdge {
             source: source.to_string(),
             target: target.to_string(),
             relation: relation.to_string(),
             weight,
             confidence,
+            source_reliability: 1.0,
+            reinforcement_count: 1,
+            timestamp: now,
         });
     }
 }

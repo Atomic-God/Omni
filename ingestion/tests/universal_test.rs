@@ -23,7 +23,7 @@ fn test_universal_adapter_binary() {
     std::fs::write(path, &data).unwrap();
 
     let adapter = UniversalAdapter;
-    let chunks = adapter.ingest(path);
+    let _chunks = adapter.ingest(path);
 
     // generic_read_file might fail to read invalid UTF8 as string
     // if it returns empty, that's fine for now as it's a fallback

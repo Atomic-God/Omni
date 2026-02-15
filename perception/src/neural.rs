@@ -1,4 +1,4 @@
-use core_vsa::{HyperVector, DIMENSION};
+use core_vsa::HyperVector;
 use std::path::Path;
 use std::error::Error;
 
@@ -81,7 +81,7 @@ impl NeuralEncoder for SyntaxEncoder {
         Ok(HyperVector::deterministic(seed))
     }
 
-    fn encode_file(&self, path: &Path) -> Result<HyperVector, Box<dyn Error>> {
+    fn encode_file(&self, _path: &Path) -> Result<HyperVector, Box<dyn Error>> {
         let seed = 0xCAFEBABE;
         Ok(HyperVector::deterministic(seed))
     }

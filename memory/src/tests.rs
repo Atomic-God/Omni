@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use core_vsa::HyperVector;
     use crate::{MemoryManager, HierarchicalMemory, MemoryLayer, CorruptionRecovery};
     use std::path::PathBuf;

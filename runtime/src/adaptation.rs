@@ -1,4 +1,4 @@
-use hte::{HardwareProfile, detect};
+use hte::{HardwareProfile, detect, get_current_load};
 use log::{info, warn};
 
 pub struct HardwareAdapter {
@@ -27,6 +27,18 @@ impl HardwareAdapter {
         }
     }
 
+    pub fn suggest_batch_size(&self) -> usize {
+        let load = get_current_load();
+        if load > 90.0 {
+            warn!("System load very high ({:.1}%). Reducing batch size to 1.", load);
+            1
+        } else if load > 60.0 {
+            4
+        } else {
+            16
+        }
+    }
+
     pub fn is_low_memory_mode(&self) -> bool {
         let free_ram_gb = (self.profile.total_memory - self.profile.used_memory) / 1024 / 1024 / 1024;
         free_ram_gb < 1
@@ -37,5 +49,6 @@ impl HardwareAdapter {
         info!("  Cores: {}/{}", self.profile.physical_cores, self.profile.logical_cores);
         info!("  RAM: {}MB / {}MB", self.profile.used_memory / 1024 / 1024, self.profile.total_memory / 1024 / 1024);
         info!("  AVX512: {}, AVX2: {}, NEON: {}", self.profile.avx512, self.profile.avx2, self.profile.neon);
+        info!("  Current Load: {:.1}%", get_current_load());
     }
 }

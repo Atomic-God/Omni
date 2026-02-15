@@ -1,5 +1,5 @@
 use raw_cpuid::CpuId;
-use sysinfo::{System, SystemExt};
+use sysinfo::{System, SystemExt, CpuExt};
 use std::time::Instant;
 
 pub mod isa;
@@ -18,6 +18,8 @@ pub struct HardwareProfile {
     pub amx: bool,
     pub cache_l3_size_kb: Option<usize>,
     pub memory_bandwidth_mbps: f64,
+    pub thermal_limit: f32, // Added
+    pub throttling_active: bool, // Added
 }
 
 pub fn detect() -> HardwareProfile {
@@ -47,10 +49,18 @@ pub fn detect() -> HardwareProfile {
         avx2,
         avx512,
         neon,
-        amx: false, // stub
+        amx: false,
         cache_l3_size_kb: cache_l3,
         memory_bandwidth_mbps: bandwidth,
+        thermal_limit: 80.0,
+        throttling_active: false,
     }
+}
+
+pub fn get_current_load() -> f32 {
+    let mut sys = System::new_all();
+    sys.refresh_cpu();
+    sys.global_cpu_info().cpu_usage()
 }
 
 fn benchmark_memory() -> f64 {

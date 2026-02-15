@@ -1,5 +1,5 @@
 use crate::ShardedStorage;
-use log::{error, warn, info};
+use log::{error, info};
 
 pub struct CorruptionRecovery;
 
@@ -28,7 +28,7 @@ impl CorruptionRecovery {
         true
     }
 
-    pub fn recover(storage: &mut ShardedStorage) {
+    pub fn recover(_storage: &mut ShardedStorage) {
         info!("Starting recovery...");
         // Logic:
         // 1. Identify broken shards.

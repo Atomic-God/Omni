@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use core_vsa::HyperVector;
-use log::{info, warn};
+use log::info;
 use memory::MemoryEntry;
 
 pub struct ConsolidationEngine;

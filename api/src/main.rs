@@ -9,7 +9,6 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use futures_util::stream::{self, Stream};
 use tokio_stream::StreamExt;
 
@@ -118,7 +117,7 @@ async fn load_snapshot(
 }
 
 async fn query_stream(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
     info!("Starting reasoning stream...");
 

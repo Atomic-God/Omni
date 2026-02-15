@@ -1,6 +1,4 @@
 use engine::OmniMind;
-use std::path::PathBuf;
-use core_vsa::HyperVector;
 
 #[test]
 fn test_omnimind_forge_to_runtime() {

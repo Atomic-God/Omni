@@ -1,8 +1,7 @@
 use core_vsa::HyperVector;
-use std::collections::HashMap;
 use std::sync::Arc;
 use log::info;
-use crate::{MemoryManager, MemoryEntry, MemoryStore, HierarchicalMemory, MemoryLayer};
+use crate::{MemoryManager, MemoryStore, HierarchicalMemory, MemoryLayer};
 use std::error::Error;
 
 /// A Layered Memory Store that composes a Read-Only Base with a Read-Write Delta.

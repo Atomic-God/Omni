@@ -1,7 +1,5 @@
-use engine::{OmniMind, LifecycleState};
+use engine::OmniMind;
 use std::sync::{Arc, Mutex};
-use std::fs::File;
-use std::io::Write;
 
 pub struct OmniForge {
     pub mind: Arc<Mutex<OmniMind>>,

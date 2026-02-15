@@ -1,5 +1,4 @@
 use fabricator::facade::OmniForge;
-use engine::LifecycleState;
 
 #[test]
 fn test_lifecycle_states() {

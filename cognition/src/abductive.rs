@@ -1,5 +1,5 @@
-use core_vsa::{HyperVector, DIMENSION};
-use log::{info, debug};
+use core_vsa::HyperVector;
+use log::debug;
 
 pub struct AbductiveReasoner {
     pub min_confidence: f32,

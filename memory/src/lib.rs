@@ -2,9 +2,7 @@ use core_vsa::HyperVector;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::File;
-use serde::{Serialize, Deserialize};
 use std::fs;
-use sha2::{Sha256, Digest};
 use log::info;
 
 pub mod lsh;
@@ -97,6 +95,30 @@ impl MemoryManager {
 
     pub fn verify(&self) -> bool {
         CorruptionRecovery::check_integrity(&self.storage)
+    }
+
+    pub fn apply_aging(&mut self, decay_rate: f32, prune_threshold: f32) {
+        let _now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let mut to_remove = Vec::new();
+
+        for (key, entry) in self.metadata.iter_mut() {
+            entry.decay(decay_rate);
+
+            if entry.importance < prune_threshold && entry.layer == "working" {
+                to_remove.push(key.clone());
+            }
+        }
+
+        for key in to_remove {
+            info!("Aging system pruning low-relevance memory: {}", key);
+            self.metadata.remove(&key);
+            // In a full implementation, we'd also remove from LSH and storage
+        }
+
+        if self.metadata.len() > 10000 {
+            info!("Memory capacity limit reached, triggering compression...");
+            self.consolidate_layers();
+        }
     }
 }
 

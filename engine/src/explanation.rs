@@ -1,4 +1,4 @@
-use cognition::{CognitionCore, RelationType, Relation};
+use cognition::CognitionCore;
 
 pub enum AudienceModel {
     Child,

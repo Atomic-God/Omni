@@ -1,8 +1,7 @@
 use core_vsa::traits::Ingestor;
-use core_vsa::{SymbolGraph, HyperVector};
+use core_vsa::SymbolGraph;
 use std::path::Path;
 use std::error::Error;
-use log::info;
 
 pub mod adapters;
 pub mod adapters_extended;
