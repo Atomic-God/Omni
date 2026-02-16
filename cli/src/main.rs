@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use runtime::{OODAController, Action, Goal};
 use ingestion::ingest_graph;
-use engine::{OmniMind, bench::VSABenchmark};
+use engine::{OmniMind, bench::VSABenchmark, governance::SelfVerificationLoop};
 use memory::MemoryManager;
 use std::path::PathBuf;
 use log::{info, error};
@@ -59,6 +59,8 @@ enum Commands {
     RuntimeDiagnostics,
     /// Continuous Learning Status
     LearningStatus,
+    /// Verify Knowledge Graph Integrity
+    VerifyKnowledge,
 }
 
 #[derive(Subcommand)]
@@ -214,6 +216,12 @@ fn main() {
             println!("  Reinforcement Engine: Active");
             println!("  Decay Cycle: Every 3600s");
             println!("  Belief Revision: Operational");
+        },
+        Commands::VerifyKnowledge => {
+            let mut mind = OmniMind::new_forge("./omniforge_data");
+            println!("Running Global Knowledge Verification...");
+            SelfVerificationLoop::global_verification(&mut mind);
+            println!("Done.");
         }
     }
 }

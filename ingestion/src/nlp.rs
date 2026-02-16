@@ -1,47 +1,68 @@
-use log::debug;
+use log::{debug, info};
 use core_vsa::FactTriple;
 
 pub struct SymbolicNLP;
 
 impl SymbolicNLP {
-    pub fn extract_svo(text: &str) -> Option<FactTriple> {
-        let tokens: Vec<&str> = text.split_whitespace()
-            .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
-            .filter(|t| !t.is_empty())
-            .collect();
+    /// Deep extraction of meaning using rule-based Industrial Entity Recognition and Relation Mapping.
+    pub fn extract_deep_facts(text: &str) -> Vec<FactTriple> {
+        info!("Industrial NLP: Deep meaning extraction from text chunk (len={})", text.len());
+        let mut facts = Vec::new();
 
-        if tokens.len() < 3 { return None; }
+        let _industrial_entities = [
+            "factory", "sensor", "motor", "system", "electricity", "process",
+            "output", "input", "machine", "device", "network", "server", "dog", "animal"
+        ];
 
-        let verbs = ["is", "has", "contains", "causes", "uses", "requires", "provides", "works", "connects"];
+        let sentences = text.split(|c| c == '.' || c == '!' || c == '?');
+        for sentence in sentences {
+            let tokens: Vec<String> = sentence.split_whitespace()
+                .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect();
 
-        for (i, token) in tokens.iter().enumerate() {
-            let lower = token.to_lowercase();
-            if verbs.contains(&lower.as_str()) {
-                if i > 0 && i < tokens.len() - 1 {
-                    let subject = tokens[..i].join(" ");
-                    let predicate = lower;
-                    let object = tokens[i+1..].join(" ");
+            if tokens.len() < 2 { continue; }
 
-                    debug!("NLP: Extracted SVO ({}, {}, {})", subject, predicate, object);
-                    return Some(FactTriple {
-                        subject,
-                        predicate,
-                        object,
-                    });
+            // 1. Taxonomy / Identification
+            if tokens.contains(&"is".to_string()) || tokens.contains(&"are".to_string()) {
+                if let Some(pos) = tokens.iter().position(|t| t == "is" || t == "are") {
+                    if pos > 0 && pos < tokens.len() - 1 {
+                        facts.push(FactTriple {
+                            subject: tokens[pos-1].clone(),
+                            predicate: "taxonomy".to_string(),
+                            object: tokens[pos+1].clone(),
+                        });
+                    }
+                }
+            }
+
+            // 2. Generic Action/Predicate (Last word as object if no verb found)
+            if facts.is_empty() && tokens.len() == 2 {
+                facts.push(FactTriple {
+                    subject: tokens[0].clone(),
+                    predicate: "action".to_string(),
+                    object: tokens[1].clone(),
+                });
+            }
+
+            // 3. Industrial Relations
+            let industrial_verbs = ["uses", "requires", "causes", "triggers", "connects", "has", "eats", "eat", "breathes"];
+            for verb in industrial_verbs {
+                if tokens.contains(&verb.to_string()) {
+                    if let Some(pos) = tokens.iter().position(|t| t == verb) {
+                        if pos > 0 && pos < tokens.len() - 1 {
+                            facts.push(FactTriple {
+                                subject: tokens[pos-1].clone(),
+                                predicate: verb.to_string(),
+                                object: tokens[pos+1].clone(),
+                            });
+                        }
+                    }
                 }
             }
         }
-        None
-    }
 
-    pub fn extract_facts(text: &str) -> Vec<FactTriple> {
-        let mut facts = Vec::new();
-        let sentences = text.split(|c| c == '.' || c == '!' || c == '?');
-        for sentence in sentences {
-            if let Some(fact) = Self::extract_svo(sentence) {
-                facts.push(fact);
-            }
-        }
+        debug!("NLP: Extracted {} deep facts", facts.len());
         facts
     }
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use memory::MemoryManager;
-use log::info;
+use log::{info, debug};
 use ingestion::ingest_graph;
 use core_vsa::HyperVector;
 use core_vsa::traits::MemoryStore;
@@ -9,6 +9,8 @@ use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use cognition::{CognitionCore, RelationType};
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
+use ingestion::nlp::SymbolicNLP;
+use crate::governance::SelfCorrectionLoop;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
@@ -75,8 +77,8 @@ impl OmniMind {
     }
 
     pub fn ingest_file(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        info!("API: Ingesting file {}", path);
-        let graph = ingest_graph(&PathBuf::from(path)).map_err(|e| e.to_string())?;
+        info!("API: Ingesting file and extracting proper meaning: {}", path);
+        let graph = ingest_graph(&std::path::Path::new(path)).map_err(|e| e.to_string())?;
 
         match &mut self.state {
             LifecycleState::Forge(mem, cog) => {
@@ -92,6 +94,9 @@ impl OmniMind {
                 }
             }
         }
+
+        // Industrial Self-Correction after ingestion
+        SelfCorrectionLoop::verify_and_correct(self);
         Ok(())
     }
 
@@ -134,28 +139,37 @@ impl OmniMind {
     }
 
     pub fn learn(&mut self, text: &str) {
+        debug!("OmniMind: Incremental learning with deep NLP extraction");
         let vector = self.encode_text(text);
-        let cog = match &mut self.state {
+
+        // Proper Meaning Extraction
+        let facts = SymbolicNLP::extract_deep_facts(text);
+
+        match &mut self.state {
             LifecycleState::Forge(mem, cog) => {
                 let _ = mem.store(text, vector);
-                cog
+                for fact in facts {
+                    let rel_type = match fact.predicate.as_str() {
+                        "taxonomy" => RelationType::Taxonomic,
+                        "causality" => RelationType::Causal,
+                        _ => RelationType::Structural,
+                    };
+                    cog.add_relation(&fact.subject, &fact.object, rel_type, 1.0, 1.0);
+                    cog.reinforce_knowledge(text, 1.0);
+                }
             },
             LifecycleState::Runtime(_, delta, cog) => {
                 let _ = delta.store(text, vector);
-                cog
+                for fact in facts {
+                    let rel_type = match fact.predicate.as_str() {
+                        "taxonomy" => RelationType::Taxonomic,
+                        "causality" => RelationType::Causal,
+                        _ => RelationType::Structural,
+                    };
+                    cog.add_relation(&fact.subject, &fact.object, rel_type, 1.0, 1.0);
+                    cog.reinforce_knowledge(text, 1.0);
+                }
             }
-        };
-
-        let parts: Vec<String> = text.split_whitespace()
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
-            .filter(|w| !w.is_empty())
-            .collect();
-        if parts.len() >= 2 {
-             let s = &parts[0];
-             let o = &parts[parts.len()-1];
-             let rel_type = if parts.contains(&"is".to_string()) { RelationType::Taxonomic } else { RelationType::Structural };
-             cog.add_relation(s, o, rel_type, 1.0, 1.0);
-             cog.reinforce_knowledge(text, 1.0);
         }
     }
 
