@@ -178,7 +178,7 @@ impl OmniMind {
                         for next_rel in next_rels {
                             if words.contains(&next_rel.target) {
                                 if ReasoningValidator::validate_inference(cog, s_candidate, &next_rel.target) {
-                                    let uncertainty = UncertaintyScorer::calculate_uncertainty(next_rel.confidence, rel.weight);
+                                    let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(next_rel.confidence, rel.weight, 0.1);
                                     return format!("Logic: Yes, {} related to {} (via {}). [Uncertainty: {:.2}]", s_candidate, next_rel.target, intermediate, uncertainty);
                                 } else {
                                     info!("Validation Loop: Blocked contradictory inference {} -> {}", s_candidate, next_rel.target);
@@ -194,7 +194,7 @@ impl OmniMind {
              if let Some(relations) = cog.relation_graph.get(s_candidate) {
                  for rel in relations {
                      if words.contains(&rel.target) || words.contains(&"what".to_string()) || words.contains(&"who".to_string()) {
-                         let uncertainty = UncertaintyScorer::calculate_uncertainty(rel.confidence, 1.0);
+                         let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(rel.confidence, 1.0, 0.05);
                          return format!("Logic: {} is related to {}. [Uncertainty: {:.2}]", s_candidate, rel.target, uncertainty);
                      }
                  }
@@ -205,7 +205,7 @@ impl OmniMind {
         let results = self.query(&vector);
         if let Some((top, sim)) = results.first() {
             if *sim > 0.3 {
-                let uncertainty = UncertaintyScorer::calculate_uncertainty(0.8, *sim);
+                let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(0.8, *sim, 0.2);
                 format!("Logic: Match found. Result: {} (sim: {:.2}) [Uncertainty: {:.2}]", top, sim, uncertainty)
             } else {
                 "No match found.".to_string()

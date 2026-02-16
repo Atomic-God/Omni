@@ -31,6 +31,7 @@ pub struct MindSnapshot {
 pub struct MindPack {
     pub snapshots: Vec<MindSnapshot>,
     pub manifest: HashMap<String, String>,
+    pub integrity_hashes: HashMap<String, String>,
 }
 
 impl MindPack {
@@ -38,6 +39,7 @@ impl MindPack {
         Self {
             snapshots: Vec::new(),
             manifest: HashMap::new(),
+            integrity_hashes: HashMap::new(),
         }
     }
 
@@ -117,7 +119,7 @@ impl SnapshotManager {
         let computed = hex::encode(hasher.finalize());
 
         if computed != container.header.checksum {
-            return Err("Snapshot checksum mismatch! File corrupted.".into());
+            return Err("Snapshot checksum mismatch! Industrial integrity failure.".into());
         }
 
         Ok(MindSnapshot {

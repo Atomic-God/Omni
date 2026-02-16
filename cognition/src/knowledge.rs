@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use serde::{Serialize, Deserialize};
-use log::{info, warn};
+use log::{info, warn, debug};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct FactTriple {
     pub subject: String,
     pub predicate: String,
@@ -23,6 +23,7 @@ pub struct KnowledgeFact {
 pub struct KnowledgeGraph {
     pub facts: HashMap<String, KnowledgeFact>,
     pub contradictions: Vec<(String, String)>,
+    pub subject_index: HashMap<String, Vec<String>>, // subject -> [fact_ids]
 }
 
 impl KnowledgeGraph {
@@ -30,6 +31,7 @@ impl KnowledgeGraph {
         Self {
             facts: HashMap::new(),
             contradictions: Vec::new(),
+            subject_index: HashMap::new(),
         }
     }
 
@@ -37,6 +39,8 @@ impl KnowledgeGraph {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 
         if let Some(ref t) = triple {
+            // Check for immediate contradictions (A is B vs A is not B / A is C where B and C are exclusive)
+            // For now, we use simple predicate-object exclusivity: (s, p, o1) vs (s, p, o2)
             let conflicting: Vec<String> = self.facts.values()
                 .filter(|f| f.triple.as_ref().map_or(false, |ft|
                     ft.subject == t.subject && ft.predicate == t.predicate && ft.object != t.object
@@ -48,6 +52,8 @@ impl KnowledgeGraph {
                 warn!("Conflict detected during ingestion: {} contradicts existing {}", id, conflict_id);
                 self.contradictions.push((id.to_string(), conflict_id));
             }
+
+            self.subject_index.entry(t.subject.clone()).or_insert_with(Vec::new).push(id.to_string());
         }
 
         let fact = self.facts.entry(id.to_string()).or_insert(KnowledgeFact {
@@ -59,8 +65,10 @@ impl KnowledgeGraph {
             timestamp: now,
         });
 
+        // Bayesian Update: P(Fact|Evidence)
         let prior = fact.confidence;
         let n = fact.reinforcement_count as f32;
+        // Simple Bayesian-like reinforcement: (OldConf * weight + NewEvidence) / (weight + 1)
         fact.confidence = (prior * n + reliability) / (n + 1.0);
         fact.reinforcement_count += 1;
         fact.timestamp = now;
@@ -73,7 +81,7 @@ impl KnowledgeGraph {
             fact.confidence = (prior * n + evidence_reliability) / (n + 1.0);
             fact.reinforcement_count += 1;
             fact.timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-            info!("Fact {} reinforced to confidence {:.2}", id, fact.confidence);
+            debug!("Fact {} reinforced to confidence {:.2}", id, fact.confidence);
         }
     }
 
@@ -93,17 +101,68 @@ impl KnowledgeGraph {
             let conf_a = self.facts.get(&a_id).map(|f| f.confidence).unwrap_or(0.0);
             let conf_b = self.facts.get(&b_id).map(|f| f.confidence).unwrap_or(0.0);
 
-            if conf_a > conf_b + 0.1 {
+            if conf_a > conf_b + 0.05 {
                 info!("Resolving conflict: Favoring {} over {}", a_id, b_id);
-                if let Some(f) = self.facts.get_mut(&b_id) { f.confidence *= 0.5; }
-            } else if conf_b > conf_a + 0.1 {
+                if let Some(f) = self.facts.get_mut(&b_id) { f.confidence *= 0.2; }
+            } else if conf_b > conf_a + 0.05 {
                 info!("Resolving conflict: Favoring {} over {}", b_id, a_id);
-                if let Some(f) = self.facts.get_mut(&a_id) { f.confidence *= 0.5; }
+                if let Some(f) = self.facts.get_mut(&a_id) { f.confidence *= 0.2; }
             }
         }
     }
+}
 
-    pub fn get_uncertainty(&self, id: &str) -> f32 {
-        self.facts.get(id).map(|f| 1.0 - f.confidence).unwrap_or(1.0)
+pub struct ReasoningEngine;
+
+impl ReasoningEngine {
+    /// Performs a multi-step inference to see if `target_object` is reachable from `start_subject` via a specific relation type (e.g. "is_a")
+    pub fn infer_transitive(graph: &KnowledgeGraph, start: &str, predicate: &str, max_depth: usize) -> Option<(String, f32)> {
+        let mut queue = VecDeque::new();
+        queue.push_back((start.to_string(), 1.0, 0)); // current_subject, current_confidence, depth
+
+        let mut visited = HashMap::new();
+        visited.insert(start.to_string(), 1.0);
+
+        while let Some((curr, conf, depth)) = queue.pop_front() {
+            if depth >= max_depth { continue; }
+
+            if let Some(fact_ids) = graph.subject_index.get(&curr) {
+                for id in fact_ids {
+                    if let Some(fact) = graph.facts.get(id) {
+                        if let Some(ref triple) = fact.triple {
+                            if triple.predicate == predicate {
+                                let new_conf = conf * fact.confidence;
+                                if !visited.contains_key(&triple.object) || visited[&triple.object] < new_conf {
+                                    visited.insert(triple.object.clone(), new_conf);
+                                    queue.push_back((triple.object.clone(), new_conf, depth + 1));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Return the best match (highest confidence) that isn't the start itself
+        visited.into_iter()
+            .filter(|(k, _)| k != start)
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    /// Self-Verification Loop: Given a potential fact, tries to find counter-evidence in the graph.
+    pub fn verify_fact(graph: &KnowledgeGraph, triple: &FactTriple) -> (bool, f32) {
+        // 1. Check for direct contradiction
+        for fact in graph.facts.values() {
+            if let Some(ref ft) = fact.triple {
+                if ft.subject == triple.subject && ft.predicate == triple.predicate && ft.object != triple.object {
+                    return (false, fact.confidence); // Found contradiction
+                }
+            }
+        }
+
+        // 2. Check for transitive contradiction
+        // If we infer A is C, but the graph has a fact A is B and we know B is incompatible with C (stub for incompatibility logic)
+
+        (true, 1.0) // No contradiction found
     }
 }

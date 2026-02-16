@@ -12,6 +12,7 @@ pub mod recovery;
 pub mod hierarchy;
 pub mod tests;
 pub mod layered;
+pub mod evolution;
 
 pub use lsh::LSHIndex;
 pub use storage::ShardedStorage;
@@ -19,6 +20,7 @@ pub use snapshot::{SnapshotManager, MindSnapshot, SnapshotHeader, MindPack};
 pub use recovery::CorruptionRecovery;
 pub use hierarchy::{MemoryLayer, MemoryEntry, HierarchicalMemory};
 pub use layered::LayeredMemory;
+pub use evolution::{LifecycleManager, EpisodicEncoder};
 
 use std::error::Error;
 use core_vsa::traits::MemoryStore;
@@ -32,6 +34,7 @@ pub struct MemoryManager {
     pub root_dir: PathBuf,
     pub metadata: HashMap<String, MemoryEntry>,
     pub low_memory_mode: bool,
+    pub encoder: EpisodicEncoder,
 }
 
 impl MemoryManager {
@@ -44,6 +47,7 @@ impl MemoryManager {
             root_dir: root_dir.to_path_buf(),
             metadata: HashMap::new(),
             low_memory_mode: false,
+            encoder: EpisodicEncoder::new(),
         }
     }
 
@@ -79,6 +83,7 @@ impl MemoryManager {
             manifest: HashMap::from([
                 ("engine_version".to_string(), "1.0".to_string()),
             ]),
+            integrity_hashes: HashMap::new(),
         };
         let file = File::create(path)?;
         bincode::serialize_into(file, &pack)?;
@@ -89,7 +94,7 @@ impl MemoryManager {
         let mut to_remove = Vec::new();
         for (key, entry) in self.metadata.iter_mut() {
             entry.decay(decay_rate);
-            if entry.importance < prune_threshold && entry.layer == "working" {
+            if LifecycleManager::evaluate_eviction(entry, prune_threshold) {
                 to_remove.push(key.clone());
             }
         }
@@ -101,9 +106,7 @@ impl MemoryManager {
             self.semantic_index.remove(&key);
         }
 
-        if self.metadata.len() > 10000 {
-            self.consolidate_layers();
-        }
+        self.consolidate_layers();
     }
 }
 
@@ -127,12 +130,18 @@ impl MemoryStore for MemoryManager {
 
 impl HierarchicalMemory for MemoryManager {
     fn store_in_layer(&mut self, key: &str, vector: HyperVector, layer: MemoryLayer) -> Result<(), Box<dyn Error>> {
-        let entry = MemoryEntry::new(vector.clone(), layer);
-        match layer {
-            MemoryLayer::Semantic => self.semantic_index.insert(key, vector.clone()),
-            _ => self.episodic_index.insert(key, vector.clone()),
+        let mut final_vec = vector;
+        if layer == MemoryLayer::Episodic {
+             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+             final_vec = self.encoder.encode_event(&final_vec, now);
         }
-        self.storage.insert(key, vector);
+
+        let entry = MemoryEntry::new(final_vec.clone(), layer);
+        match layer {
+            MemoryLayer::Semantic => self.semantic_index.insert(key, final_vec.clone()),
+            _ => self.episodic_index.insert(key, final_vec.clone()),
+        }
+        self.storage.insert(key, final_vec);
         self.metadata.insert(key.to_string(), entry);
         Ok(())
     }
@@ -146,16 +155,14 @@ impl HierarchicalMemory for MemoryManager {
     }
 
     fn consolidate_layers(&mut self) {
-        let mut to_promote = Vec::new();
+        let mut changes = Vec::new();
         for (key, entry) in &self.metadata {
-            if entry.layer == "working" && entry.importance > 5.0 {
-                to_promote.push((key.clone(), MemoryLayer::Episodic));
-            } else if entry.layer == "episodic" && entry.importance > 20.0 {
-                to_promote.push((key.clone(), MemoryLayer::Semantic));
+            if let Some(new_layer) = LifecycleManager::evaluate_promotion(entry) {
+                changes.push((key.clone(), new_layer));
             }
         }
 
-        for (key, layer) in to_promote {
+        for (key, layer) in changes {
             if let Some(entry) = self.metadata.get_mut(&key) {
                 let old_layer = entry.layer.clone();
                 entry.layer = match layer {
@@ -164,14 +171,13 @@ impl HierarchicalMemory for MemoryManager {
                     MemoryLayer::Semantic => "semantic",
                 }.to_string();
 
-                if old_layer == "semantic" && entry.layer != "semantic" {
-                    self.semantic_index.remove(&key);
-                    self.episodic_index.insert(&key, entry.vector.clone());
-                } else if old_layer != "semantic" && entry.layer == "semantic" {
+                if old_layer != "semantic" && entry.layer == "semantic" {
                     self.episodic_index.remove(&key);
                     self.semantic_index.insert(&key, entry.vector.clone());
+                    info!("Memory promoted to Semantic: {}", key);
+                } else if old_layer == "working" && entry.layer == "episodic" {
+                    info!("Memory promoted to Episodic: {}", key);
                 }
-                info!("Memory consolidated: {} -> {}", key, entry.layer);
             }
         }
     }

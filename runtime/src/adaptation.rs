@@ -32,7 +32,7 @@ impl HardwareAdapter {
     }
 
     pub fn set_mode(&mut self, mode: PowerMode) {
-        info!("Switching to PowerMode: {:?}", mode);
+        info!("Industrial Adaptation: Switching to PowerMode: {:?}", mode);
         self.current_mode = mode;
     }
 
@@ -52,11 +52,15 @@ impl HardwareAdapter {
     }
 
     pub fn get_concurrency_limit(&self) -> usize {
-        match self.current_mode {
+        let base = match self.current_mode {
             PowerMode::LowPower => 1,
             PowerMode::Balanced => (self.profile.physical_cores / 2).max(1),
             PowerMode::HighPerformance => self.profile.logical_cores,
-        }
+        };
+
+        // Throttling based on load
+        let load = get_current_load();
+        if load > 95.0 { 1 } else { base }
     }
 
     pub fn suggest_dimension(&self) -> usize {
@@ -70,18 +74,9 @@ impl HardwareAdapter {
             20000
         };
 
-        // Scale based on power mode
         match self.current_mode {
             PowerMode::LowPower => base / 2,
             _ => base,
-        }
-    }
-
-    pub fn suggest_batch_size(&self) -> usize {
-        match self.current_mode {
-            PowerMode::LowPower => 1,
-            PowerMode::Balanced => 4,
-            PowerMode::HighPerformance => 32,
         }
     }
 
@@ -91,10 +86,10 @@ impl HardwareAdapter {
     }
 
     pub fn report(&self) {
-        info!("Hardware Adaptation Report [Mode: {:?}]:", self.current_mode);
+        info!("Industrial Hardware Report [Mode: {:?}]:", self.current_mode);
         info!("  Cores: {}/{}", self.profile.physical_cores, self.profile.logical_cores);
         info!("  RAM: {}MB / {}MB", self.profile.used_memory / 1024 / 1024, self.profile.total_memory / 1024 / 1024);
-        info!("  Current Load: {:.1}%", get_current_load());
-        info!("  Concurrency Limit: {}", self.get_concurrency_limit());
+        info!("  Load: {:.1}%", get_current_load());
+        info!("  Threads: {}", self.get_concurrency_limit());
     }
 }

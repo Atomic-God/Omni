@@ -132,6 +132,23 @@ impl HyperVector {
         let total_bits = self.dim as f32;
         1.0 - 2.0 * (hamming as f32 / total_bits)
     }
+
+    /// Truncates the vector to a lower dimension for hardware adaptation.
+    pub fn truncate(&self, new_dim: usize) -> Self {
+        assert!(new_dim <= self.dim);
+        let num_words = (new_dim + 63) / 64;
+        let mut words = self.words[..num_words].to_vec();
+
+        // Zero out bits beyond new_dim in the last word
+        if new_dim % 64 != 0 {
+            let mask = (1 << (new_dim % 64)) - 1;
+            if let Some(last) = words.last_mut() {
+                *last &= mask;
+            }
+        }
+
+        Self { words, dim: new_dim }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,9 +163,9 @@ pub struct SymbolNode {
     pub vector: HyperVector,
     pub metadata: HashMap<String, String>,
     pub confidence: f32,
-    pub source_reliability: f32, // Added
-    pub reinforcement_count: u32, // Added
-    pub timestamp: u64, // Added
+    pub source_reliability: f32,
+    pub reinforcement_count: u32,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,9 +175,9 @@ pub struct SymbolEdge {
     pub relation: String,
     pub weight: f32,
     pub confidence: f32,
-    pub source_reliability: f32, // Added
-    pub reinforcement_count: u32, // Added
-    pub timestamp: u64, // Added
+    pub source_reliability: f32,
+    pub reinforcement_count: u32,
+    pub timestamp: u64,
 }
 
 impl SymbolGraph {

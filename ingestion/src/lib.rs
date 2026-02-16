@@ -23,7 +23,7 @@ pub use fallback::SymbolExtractor;
 
 // Main entry point for Universal Ingestion
 pub fn ingest_graph(path: &Path) -> Result<SymbolGraph, Box<dyn Error + Send + Sync>> {
-    let ingestor = UniversalIngestor;
+    let ingestor = UniversalIngestor::new();
     ingestor.ingest(path)
 }
 

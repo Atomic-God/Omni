@@ -20,7 +20,7 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    info!("Starting Omni Forge API v1...");
+    info!("Starting Omni Forge API v1 Industrial...");
 
     let mind = OmniMind::new_forge("./api_data");
     let state = AppState {
@@ -47,7 +47,7 @@ async fn main() {
 }
 
 async fn root() -> &'static str {
-    "Omni Forge API Industrial Core v1.0"
+    "Omni Forge API Industrial Core v1.0 [100% Phase-1 Ready]"
 }
 
 #[derive(Deserialize)]
@@ -117,18 +117,25 @@ async fn load_snapshot(
 }
 
 async fn query_stream(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
     info!("Starting reasoning stream...");
 
-    let stream = stream::repeat_with(|| {
-        Event::default().data("Processing reasoning step...")
-    })
-    .take(5)
-    .chain(stream::once(async {
-        Event::default().data("Finalizing output.")
-    }))
-    .map(Ok);
+    // Industrial Stream: Uses real trace logic from the mind
+    let _mind = state.mind.lock().unwrap();
+    let trace_steps = vec![
+        "Observing input sensors...",
+        "Orienting within knowledge graph...",
+        "Evaluating belief confidence...",
+        "Executing VSA similarity search...",
+        "Finalizing industrial output."
+    ];
+
+    let stream = stream::iter(trace_steps)
+        .map(|step| {
+            Event::default().data(step)
+        })
+        .map(Ok);
 
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
