@@ -13,6 +13,8 @@ pub mod metadata;
 pub mod layout;
 pub mod ocr;
 pub mod video;
+pub mod vision;
+pub mod nlp; // New
 
 pub use registry::DataIngestionRegistry;
 pub use universal::UniversalIngestor;

@@ -1,5 +1,6 @@
-use log::{info, warn};
+use log::{info, warn, debug};
 use crate::OmniMind;
+use cognition::knowledge::{ReasoningEngine};
 
 pub struct SelfCorrectionLoop;
 
@@ -10,7 +11,6 @@ impl SelfCorrectionLoop {
 
         let contradictions_resolved;
 
-        // Use the cognition layer to find contradictions
         match &mut mind.state {
             crate::LifecycleState::Forge(_mem, cog) => {
                 cog.knowledge_graph.resolve_all_contradictions();
@@ -27,6 +27,40 @@ impl SelfCorrectionLoop {
         }
 
         info!("Governance: Self-Correction Loop complete.");
+    }
+}
+
+pub struct SelfVerificationLoop;
+
+impl SelfVerificationLoop {
+    /// Verifies all facts in the knowledge graph for internal consistency using transitive inference.
+    pub fn global_verification(mind: &mut OmniMind) {
+        info!("Governance: Starting Global Self-Verification...");
+
+        let mut inconsistencies = 0;
+
+        // This is an intensive process, ideally run as a background task
+        match &mut mind.state {
+            crate::LifecycleState::Forge(_mem, cog) => {
+                let facts: Vec<_> = cog.knowledge_graph.facts.values().cloned().collect();
+                for fact in facts {
+                    if let Some(ref triple) = fact.triple {
+                        let (is_valid, _confidence) = ReasoningEngine::verify_fact(&cog.knowledge_graph, triple);
+                        if !is_valid {
+                            debug!("Inconsistency found: {:?}", triple);
+                            inconsistencies += 1;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if inconsistencies > 0 {
+            warn!("Governance: Global verification found {} potential inconsistencies.", inconsistencies);
+        }
+
+        info!("Governance: Global verification complete.");
     }
 }
 

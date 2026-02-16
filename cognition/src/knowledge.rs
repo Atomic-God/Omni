@@ -1,13 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use serde::{Serialize, Deserialize};
 use log::{info, warn, debug};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct FactTriple {
-    pub subject: String,
-    pub predicate: String,
-    pub object: String,
-}
+use core_vsa::FactTriple;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeFact {
@@ -23,7 +17,7 @@ pub struct KnowledgeFact {
 pub struct KnowledgeGraph {
     pub facts: HashMap<String, KnowledgeFact>,
     pub contradictions: Vec<(String, String)>,
-    pub subject_index: HashMap<String, Vec<String>>, // subject -> [fact_ids]
+    pub subject_index: HashMap<String, Vec<String>>,
 }
 
 impl KnowledgeGraph {
@@ -39,8 +33,6 @@ impl KnowledgeGraph {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 
         if let Some(ref t) = triple {
-            // Check for immediate contradictions (A is B vs A is not B / A is C where B and C are exclusive)
-            // For now, we use simple predicate-object exclusivity: (s, p, o1) vs (s, p, o2)
             let conflicting: Vec<String> = self.facts.values()
                 .filter(|f| f.triple.as_ref().map_or(false, |ft|
                     ft.subject == t.subject && ft.predicate == t.predicate && ft.object != t.object
@@ -65,10 +57,8 @@ impl KnowledgeGraph {
             timestamp: now,
         });
 
-        // Bayesian Update: P(Fact|Evidence)
         let prior = fact.confidence;
         let n = fact.reinforcement_count as f32;
-        // Simple Bayesian-like reinforcement: (OldConf * weight + NewEvidence) / (weight + 1)
         fact.confidence = (prior * n + reliability) / (n + 1.0);
         fact.reinforcement_count += 1;
         fact.timestamp = now;
@@ -115,10 +105,9 @@ impl KnowledgeGraph {
 pub struct ReasoningEngine;
 
 impl ReasoningEngine {
-    /// Performs a multi-step inference to see if `target_object` is reachable from `start_subject` via a specific relation type (e.g. "is_a")
     pub fn infer_transitive(graph: &KnowledgeGraph, start: &str, predicate: &str, max_depth: usize) -> Option<(String, f32)> {
         let mut queue = VecDeque::new();
-        queue.push_back((start.to_string(), 1.0, 0)); // current_subject, current_confidence, depth
+        queue.push_back((start.to_string(), 1.0, 0));
 
         let mut visited = HashMap::new();
         visited.insert(start.to_string(), 1.0);
@@ -143,26 +132,19 @@ impl ReasoningEngine {
             }
         }
 
-        // Return the best match (highest confidence) that isn't the start itself
         visited.into_iter()
             .filter(|(k, _)| k != start)
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
     }
 
-    /// Self-Verification Loop: Given a potential fact, tries to find counter-evidence in the graph.
     pub fn verify_fact(graph: &KnowledgeGraph, triple: &FactTriple) -> (bool, f32) {
-        // 1. Check for direct contradiction
         for fact in graph.facts.values() {
             if let Some(ref ft) = fact.triple {
                 if ft.subject == triple.subject && ft.predicate == triple.predicate && ft.object != triple.object {
-                    return (false, fact.confidence); // Found contradiction
+                    return (false, fact.confidence);
                 }
             }
         }
-
-        // 2. Check for transitive contradiction
-        // If we infer A is C, but the graph has a fact A is B and we know B is incompatible with C (stub for incompatibility logic)
-
-        (true, 1.0) // No contradiction found
+        (true, 1.0)
     }
 }

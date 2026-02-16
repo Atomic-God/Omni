@@ -19,6 +19,8 @@ use crate::metadata::NormalizedMetadata;
 use crate::layout::SemanticLayoutExtractor;
 use crate::ocr::SymbolicOCR;
 use crate::video::VideoIngestor;
+use crate::vision::VisionSemanticExtractor;
+use crate::nlp::SymbolicNLP;
 
 pub struct UniversalIngestor {
     pub ocr: SymbolicOCR,
@@ -37,7 +39,10 @@ impl Ingestor for UniversalIngestor {
         info!("Industrial Ingestion Pipeline active: {:?}", path);
         let graph = Arc::new(Mutex::new(SymbolGraph::new()));
         let seen_hashes = Arc::new(Mutex::new(HashSet::new()));
-        let seen_semantic = Arc::new(Mutex::new(Vec::new())); // For Near-Duplicate detection
+        let seen_semantic = Arc::new(Mutex::new(Vec::new()));
+
+        // Hardware Adaptation: Throttle Rayon threadpool if needed
+        // For Phase 1 we use default, but the architecture allows global config.
 
         if path.is_file() {
             if let Err(e) = self.process_single_file(path, &graph, &seen_hashes, &seen_semantic) {
@@ -170,6 +175,8 @@ impl UniversalIngestor {
         }
 
         let layout = SemanticLayoutExtractor::extract_from_text(&full_text);
+        let facts = SymbolicNLP::extract_facts(&full_text);
+
         let file_hash = self.compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
         let node_id = format!("doc:{}", file_hash);
 
@@ -177,6 +184,7 @@ impl UniversalIngestor {
         meta.file_type = "pdf_document".to_string();
         meta.hash = file_hash;
         meta.insert("layout_elements", layout.len().to_string());
+        meta.insert("extracted_facts", facts.len().to_string());
 
         if let Some(info) = detect(&full_text) {
             meta.language = info.lang().to_string();
@@ -184,6 +192,9 @@ impl UniversalIngestor {
 
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        for fact in facts {
+             g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
+        }
         Ok(())
     }
 
@@ -229,14 +240,13 @@ impl UniversalIngestor {
     fn process_image(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen_semantic: &Arc<Mutex<Vec<HyperVector>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let img = image::open(path).map_err(|e| e.to_string())?;
         let ocr_text = self.ocr.extract_text(&img);
-
-        let semantic_vec = HyperVector::deterministic(ocr_text.len() as u64); // Simple semantic hash
+        let (semantic_vec, meaning_desc, vision_meta) = VisionSemanticExtractor::extract_meaning(&img);
 
         {
             let s = seen_semantic.lock().unwrap();
             for prev in s.iter() {
-                if semantic_vec.similarity(prev) > 0.99 {
-                    info!("Near-duplicate image detected: {:?}", path);
+                if semantic_vec.similarity(prev) > 0.95 {
+                    info!("Near-duplicate visual detected: {:?}", path);
                     return Ok(());
                 }
             }
@@ -250,6 +260,8 @@ impl UniversalIngestor {
         meta.file_type = "image".to_string();
         meta.hash = file_hash;
         meta.insert("ocr_content", ocr_text);
+        meta.insert("semantic_meaning", meaning_desc);
+        for (k, v) in vision_meta { meta.insert(&k, v); }
 
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, semantic_vec, meta.to_map(), 1.0);
@@ -428,8 +440,15 @@ impl UniversalIngestor {
         if let Some(info) = detect(&text) {
              meta.language = info.lang().to_string();
         }
+
+        let facts = SymbolicNLP::extract_facts(&text);
+        meta.insert("extracted_facts", facts.len().to_string());
+
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        for fact in facts {
+            g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
+        }
         Ok(())
     }
 }

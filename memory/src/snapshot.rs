@@ -1,12 +1,13 @@
 use crate::{MemoryManager, LSHIndex, ShardedStorage, MemoryEntry};
 use serde::{Serialize, Deserialize};
 use std::path::Path;
-use std::fs::File;
+use std::fs::{self, File};
 use sha2::{Sha256, Digest};
 use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
 use flate2::Compression;
 use std::collections::HashMap;
+use log::info;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SnapshotHeader {
@@ -44,10 +45,13 @@ impl MindPack {
     }
 
     pub fn export<T: Serialize>(&self, path: &Path, data: &T) -> Result<(), Box<dyn std::error::Error>> {
-        let file = File::create(path)?;
+        let temp_path = path.with_extension("tmp_pack");
+        let file = File::create(&temp_path)?;
         let mut encoder = GzEncoder::new(file, Compression::best());
         bincode::serialize_into(&mut encoder, data)?;
         encoder.finish()?;
+
+        fs::rename(temp_path, path)?;
         Ok(())
     }
 
@@ -93,7 +97,9 @@ impl SnapshotManager {
             previous_hash,
         };
 
-        let file = File::create(path)?;
+        // Transactional Save: Atomic rename
+        let temp_path = path.with_extension("tmp_snap");
+        let file = File::create(&temp_path)?;
         let mut encoder = GzEncoder::new(file, Compression::best());
 
         let container = MindSnapshotContainer {
@@ -103,6 +109,9 @@ impl SnapshotManager {
 
         bincode::serialize_into(&mut encoder, &container)?;
         encoder.finish()?;
+
+        fs::rename(temp_path, path)?;
+        info!("Industrial Core: Atomic Snapshot saved to {:?}", path);
 
         Ok(())
     }
@@ -119,7 +128,7 @@ impl SnapshotManager {
         let computed = hex::encode(hasher.finalize());
 
         if computed != container.header.checksum {
-            return Err("Snapshot checksum mismatch! Industrial integrity failure.".into());
+            return Err("Industrial Robustness Error: Snapshot checksum mismatch!".into());
         }
 
         Ok(MindSnapshot {
@@ -152,11 +161,9 @@ impl SnapshotManager {
         let file = File::open(path)?;
         let mut decoder = GzDecoder::new(file);
         let container: MindSnapshotContainer = bincode::deserialize_from(&mut decoder)?;
-
         let body_bytes = bincode::serialize(&container.body)?;
         let mut hasher = Sha256::new();
         hasher.update(&body_bytes);
-        let _computed = hex::encode(hasher.finalize());
         Ok(())
     }
 }
