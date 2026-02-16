@@ -102,15 +102,27 @@ impl CognitionCore {
         self.knowledge_graph.apply_temporal_decay(decay_rate, now);
     }
 
+    pub fn add_fact_triple(&mut self, triple: core_vsa::FactTriple, confidence: f32) {
+        let rel_type = match triple.predicate.as_str() {
+            "taxonomy" | "is_a" => RelationType::Taxonomic,
+            "causality" | "causes" | "triggers" => RelationType::Causal,
+            "contradicts" => RelationType::Contradictory,
+            _ => RelationType::Structural,
+        };
+        self.add_relation(&triple.subject, &triple.object, rel_type, 1.0, confidence);
+
+        let fact_id = format!("{}-{}-{}", triple.subject, triple.predicate, triple.object);
+        self.knowledge_graph.add_fact(&fact_id, Some(triple), confidence);
+    }
+
     pub fn ingest_from_graph(&mut self, graph: &SymbolGraph) {
         for edge in &graph.edges {
-            let rel_type = match edge.relation.as_str() {
-                "is_a" | "has_field" => RelationType::Taxonomic,
-                "causes" => RelationType::Causal,
-                "contradicts" => RelationType::Contradictory,
-                _ => RelationType::Structural,
+            let triple = core_vsa::FactTriple {
+                subject: edge.source.clone(),
+                predicate: edge.relation.clone(),
+                object: edge.target.clone(),
             };
-            self.add_relation(&edge.source, &edge.target, rel_type, edge.weight, edge.confidence);
+            self.add_fact_triple(triple, edge.confidence);
         }
     }
 }

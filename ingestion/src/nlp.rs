@@ -46,7 +46,7 @@ impl SymbolicNLP {
             }
 
             // 3. Industrial Relations
-            let industrial_verbs = ["uses", "requires", "causes", "triggers", "connects", "has", "eats", "eat", "breathes"];
+            let industrial_verbs = ["uses", "requires", "causes", "triggers", "connects", "has", "eats", "eat", "breathes", "means"];
             for verb in industrial_verbs {
                 if tokens.contains(&verb.to_string()) {
                     if let Some(pos) = tokens.iter().position(|t| t == verb) {

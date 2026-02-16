@@ -11,6 +11,13 @@ pub struct VisualRegion {
     pub brightness: f32,
 }
 
+#[derive(Debug, Clone)]
+pub struct VisualAtom {
+    pub kind: String, // "Line", "Region"
+    pub intensity: f32,
+    pub spatial_hv: HyperVector,
+}
+
 pub struct VisionSemanticExtractor;
 
 impl VisionSemanticExtractor {
@@ -18,47 +25,104 @@ impl VisionSemanticExtractor {
         info!("Vision Core: Deep structural analysis of {}x{} image", img.width(), img.height());
 
         let mut metadata = HashMap::new();
-        let (_width, _height) = img.dimensions();
 
         // 1. Spatial Quadrant Analysis
         let quadrants = Self::analyze_quadrants(img);
-        let mut scene_vector = HyperVector::random(); // Base scene HV
+        let mut scene_vector = HyperVector::deterministic(0x5CE11E);
 
         for (i, region) in quadrants.iter().enumerate() {
             let region_hv = HyperVector::deterministic_dim(
-                ((region.edge_density * 100.0) as u64) ^ ((region.brightness * 100.0) as u64),
+                ((region.edge_density * 1000.0) as u64) ^ ((region.brightness * 1000.0) as u64),
                 core_vsa::DIMENSION
             );
-            // Bind region HV with a position HV
             let pos_hv = HyperVector::deterministic(i as u64);
             scene_vector = scene_vector.bundle(&region_hv.bind(&pos_hv));
 
             metadata.insert(format!("q{}_density", i), format!("{:.2}", region.edge_density));
-            metadata.insert(format!("q{}_brightness", i), format!("{:.2}", region.brightness));
+            metadata.insert(format!("q{}_complexity", i), format!("{:.2}", region.entropy));
         }
 
-        // 2. Global Symmetry Detection
+        // 2. Visual Grammar: Extract "Atoms"
+        let atoms = Self::extract_visual_grammar(img);
+        metadata.insert("visual_atom_count".to_string(), atoms.len().to_string());
+
+        for atom in &atoms {
+            let atom_hv = HyperVector::deterministic_dim(
+                ((atom.intensity * 100.0) as u64) ^ atom.kind.len() as u64,
+                core_vsa::DIMENSION
+            );
+            scene_vector = scene_vector.bundle(&atom_hv.bind(&atom.spatial_hv));
+        }
+
+        // 3. Global Symmetry & Balance
         let horiz_symmetry = Self::calculate_symmetry(img, true);
         let vert_symmetry = Self::calculate_symmetry(img, false);
         metadata.insert("horiz_symmetry".to_string(), format!("{:.2}", horiz_symmetry));
         metadata.insert("vert_symmetry".to_string(), format!("{:.2}", vert_symmetry));
 
-        // 3. Meaning Construction
+        // 4. Meaning Construction
         let mut meaning = String::new();
         if horiz_symmetry > 0.8 && vert_symmetry > 0.8 {
-            meaning.push_str("Highly symmetric/centered object detected. ");
-        } else if horiz_symmetry > 0.8 {
-            meaning.push_str("Horizontal symmetry detected (potential landscape or balanced scene). ");
+            meaning.push_str("Centrally balanced industrial subject. ");
         }
 
-        let avg_density: f32 = quadrants.iter().map(|q| q.edge_density).sum::<f32>() / 4.0;
-        if avg_density > 0.2 {
-            meaning.push_str("Detailed/High-information industrial visual. ");
-        } else {
-            meaning.push_str("Low-detail or clean visual region. ");
+        let high_detail = atoms.iter().filter(|a| a.kind == "Line").count();
+        if high_detail > 20 {
+            meaning.push_str("Highly structured technical schematic or architectural form. ");
+        } else if atoms.iter().any(|a| a.kind == "Region") && high_detail < 5 {
+            meaning.push_str("Organic or uniform industrial material profile. ");
         }
+
+        let conceptual_entropy = Self::calculate_conceptual_entropy(&quadrants, &atoms);
+        metadata.insert("conceptual_entropy".to_string(), format!("{:.4}", conceptual_entropy));
 
         (scene_vector, meaning, metadata)
+    }
+
+    fn extract_visual_grammar(img: &DynamicImage) -> Vec<VisualAtom> {
+        let mut atoms = Vec::new();
+        let gray = img.to_luma8();
+        let (w, h) = img.dimensions();
+
+        for y in (4..h-4).step_by((h / 10).max(1) as usize) {
+            for x in (4..w-4).step_by((w / 10).max(1) as usize) {
+                let mut p = [0u8; 9];
+                let mut i = 0;
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        p[i] = gray.get_pixel((x as i32 + dx) as u32, (y as i32 + dy) as u32).0[0];
+                        i += 1;
+                    }
+                }
+
+                if (p[0] as i16 - p[2] as i16).abs() > 50 || (p[0] as i16 - p[6] as i16).abs() > 50 {
+                    atoms.push(VisualAtom {
+                        kind: "Line".to_string(),
+                        intensity: p[4] as f32 / 255.0,
+                        spatial_hv: HyperVector::deterministic((x ^ y) as u64),
+                    });
+                } else if p.iter().all(|&v| (v as i16 - p[4] as i16).abs() < 10) {
+                    if p[4] > 10 {
+                        atoms.push(VisualAtom {
+                            kind: "Region".to_string(),
+                            intensity: p[4] as f32 / 255.0,
+                            spatial_hv: HyperVector::deterministic((x ^ y) as u64),
+                        });
+                    }
+                }
+            }
+        }
+        atoms
+    }
+
+    fn calculate_conceptual_entropy(quads: &[VisualRegion], atoms: &[VisualAtom]) -> f32 {
+        let mut detail_dist = quads.iter().map(|q| q.edge_density).collect::<Vec<_>>();
+        detail_dist.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let variance = detail_dist.last().unwrap_or(&0.0) - detail_dist.first().unwrap_or(&0.0);
+        let atom_complexity = (atoms.len() as f32 / 100.0).min(1.0);
+
+        variance * 0.5 + atom_complexity * 0.5
     }
 
     fn analyze_quadrants(img: &DynamicImage) -> Vec<VisualRegion> {
@@ -85,6 +149,7 @@ impl VisionSemanticExtractor {
         let gray = img.to_luma8();
         let mut edges = 0;
         let total = img.width() * img.height();
+        if total == 0 { return 0.0; }
         for y in 1..(img.height() - 1) {
             for x in 1..(img.width() - 1) {
                 let p = gray.get_pixel(x, y).0[0];
@@ -103,6 +168,7 @@ impl VisionSemanticExtractor {
         let mut counts = [0u32; 256];
         for p in gray.pixels() { counts[p.0[0] as usize] += 1; }
         let total = (img.width() * img.height()) as f32;
+        if total == 0.0 { return 0.0; }
         counts.iter().filter(|&&c| c > 0).map(|&c| {
             let p = c as f32 / total;
             -p * p.log2()
@@ -112,7 +178,9 @@ impl VisionSemanticExtractor {
     fn calculate_brightness(img: &DynamicImage) -> f32 {
         let gray = img.to_luma8();
         let sum: u64 = gray.pixels().map(|p| p.0[0] as u64).sum();
-        (sum as f32 / (img.width() * img.height()) as f32) / 255.0
+        let total = (img.width() * img.height()) as f32;
+        if total == 0.0 { return 0.0; }
+        (sum as f32 / total) / 255.0
     }
 
     fn calculate_symmetry(img: &DynamicImage, horizontal: bool) -> f32 {
@@ -123,6 +191,7 @@ impl VisionSemanticExtractor {
 
         if horizontal {
             total_comparisons = (w / 2) * h;
+            if total_comparisons == 0 { return 1.0; }
             for y in 0..h {
                 for x in 0..(w / 2) {
                     let p1 = gray.get_pixel(x, y).0[0];
@@ -132,6 +201,7 @@ impl VisionSemanticExtractor {
             }
         } else {
             total_comparisons = w * (h / 2);
+            if total_comparisons == 0 { return 1.0; }
             for y in 0..(h / 2) {
                 for x in 0..w {
                     let p1 = gray.get_pixel(x, y).0[0];
@@ -140,6 +210,6 @@ impl VisionSemanticExtractor {
                 }
             }
         }
-        1.0 - (diff as f32 / (total_comparisons as f32 * 255.0))
+        (1.0 - (diff as f32 / (total_comparisons as f32 * 255.0))).max(0.0)
     }
 }

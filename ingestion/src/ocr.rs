@@ -1,4 +1,4 @@
-use image::{DynamicImage, GenericImageView};
+use image::DynamicImage;
 use log::info;
 use core_vsa::HyperVector;
 use std::collections::HashMap;

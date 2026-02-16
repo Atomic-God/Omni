@@ -32,13 +32,18 @@ impl HardwareAdapter {
     }
 
     pub fn set_mode(&mut self, mode: PowerMode) {
-        info!("Industrial Adaptation: Switching to PowerMode: {:?}", mode);
-        self.current_mode = mode;
+        if mode != self.current_mode {
+            info!("Industrial Adaptation: Switching to PowerMode: {:?}", mode);
+            self.current_mode = mode;
+        }
     }
 
-    pub fn auto_adjust_mode(&mut self) {
+    /// Dynamically adjusts the power mode based on live telemetry (thermal/load).
+    pub fn live_adjust(&mut self) {
         let load = get_current_load();
-        let new_mode = if load > 85.0 {
+        let thermal = self.profile.thermal_limit;
+
+        let new_mode = if load > 85.0 || thermal > 80.0 {
             PowerMode::LowPower
         } else if load < 30.0 {
             PowerMode::HighPerformance
@@ -46,9 +51,7 @@ impl HardwareAdapter {
             PowerMode::Balanced
         };
 
-        if new_mode != self.current_mode {
-            self.set_mode(new_mode);
-        }
+        self.set_mode(new_mode);
     }
 
     pub fn get_concurrency_limit(&self) -> usize {
@@ -58,7 +61,6 @@ impl HardwareAdapter {
             PowerMode::HighPerformance => self.profile.logical_cores,
         };
 
-        // Throttling based on load
         let load = get_current_load();
         if load > 95.0 { 1 } else { base }
     }
@@ -75,7 +77,7 @@ impl HardwareAdapter {
         };
 
         match self.current_mode {
-            PowerMode::LowPower => base / 2,
+            PowerMode::LowPower => base / 5,
             _ => base,
         }
     }
@@ -87,9 +89,7 @@ impl HardwareAdapter {
 
     pub fn report(&self) {
         info!("Industrial Hardware Report [Mode: {:?}]:", self.current_mode);
-        info!("  Cores: {}/{}", self.profile.physical_cores, self.profile.logical_cores);
-        info!("  RAM: {}MB / {}MB", self.profile.used_memory / 1024 / 1024, self.profile.total_memory / 1024 / 1024);
         info!("  Load: {:.1}%", get_current_load());
-        info!("  Threads: {}", self.get_concurrency_limit());
+        info!("  Suggested VSA Dim: {}", self.suggest_dimension());
     }
 }

@@ -15,7 +15,8 @@ pub mod ocr;
 pub mod video;
 pub mod vision;
 pub mod nlp;
-pub mod code_analysis; // New
+pub mod code_analysis;
+pub mod data_meaning; // New
 
 pub use registry::DataIngestionRegistry;
 pub use universal::UniversalIngestor;

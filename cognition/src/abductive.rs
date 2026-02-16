@@ -1,83 +1,81 @@
-use core_vsa::HyperVector;
-use log::debug;
+use crate::knowledge::{KnowledgeGraph, KnowledgeFact};
+use log::info;
 
-pub struct AbductiveReasoner {
-    pub min_confidence: f32,
+pub struct AbductiveExplanation {
+    pub hypothesis: String,
+    pub confidence: f32,
+    pub evidence_links: Vec<String>,
 }
 
+#[derive(Default)]
+pub struct AbductiveReasoner;
+
 impl AbductiveReasoner {
-    pub fn new(min_confidence: f32) -> Self {
-        Self { min_confidence }
+    pub fn new(_threshold: f32) -> Self {
+        Self {}
     }
 
-    pub fn induce_hypothesis(&self, consequent: &HyperVector, rule_memory: &HyperVector) -> HyperVector {
-        let hypothesis = rule_memory.bind(consequent);
-        debug!("Inducing hypothesis from consequent.");
-        hypothesis
-    }
+    pub fn explain(&self, graph: &KnowledgeGraph, observation: &str) -> Option<AbductiveExplanation> {
+        info!("Abduction: Seeking explanation for '{}'", observation);
 
-    pub fn mine_pattern(&self, observations: &[HyperVector]) -> Option<HyperVector> {
-        if observations.is_empty() {
+        let relevant: Vec<&KnowledgeFact> = graph.facts.values()
+            .filter(|f| {
+                if let Some(ref t) = f.triple {
+                    t.subject.contains(observation) || t.object.contains(observation)
+                } else {
+                    false
+                }
+            })
+            .collect();
+
+        if relevant.is_empty() {
             return None;
         }
 
-        let mut centroid = observations[0].clone();
-        for i in 1..observations.len() {
-            centroid = centroid.bundle(&observations[i]);
-        }
-
-        Some(centroid)
-    }
-
-    pub fn learn_rules(&self, sequence: &[(HyperVector, HyperVector)]) -> HyperVector {
-        if sequence.is_empty() {
-            return HyperVector::random();
-        }
-
-        let mut rule_memory = sequence[0].0.bind(&sequence[0].1);
-
-        for i in 1..sequence.len() {
-            let pair_vector = sequence[i].0.bind(&sequence[i].1);
-            rule_memory = rule_memory.bundle(&pair_vector);
-        }
-
-        rule_memory
-    }
-
-    pub fn validate(&self, hypothesis: &HyperVector, constraints: &[(HyperVector, bool)]) -> bool {
-        for (constraint, required) in constraints {
-            let sim = hypothesis.similarity(constraint);
-            if *required {
-                if sim < self.min_confidence {
-                    debug!("Validation Failed: Required similarity {}, got {}", self.min_confidence, sim);
-                    return false;
-                }
-            } else {
-                if sim.abs() > self.min_confidence {
-                    debug!("Validation Failed: Forbidden similarity > {}, got {}", self.min_confidence, sim);
-                    return false;
+        for fact in &relevant {
+            if let Some(ref t) = fact.triple {
+                let is_causal = ["causality", "causes", "triggers", "leads to"].contains(&t.predicate.as_str());
+                if is_causal {
+                    if t.object.contains(observation) {
+                        return Some(AbductiveExplanation {
+                            hypothesis: t.subject.clone(),
+                            confidence: fact.confidence * 0.9,
+                            evidence_links: vec![fact.id.clone()],
+                        });
+                    }
                 }
             }
         }
-        true
+
+        if let Some(fact) = relevant.first() {
+             if let Some(ref t) = fact.triple {
+                 return Some(AbductiveExplanation {
+                     hypothesis: format!("Related to {}", t.subject),
+                     confidence: fact.confidence * 0.5,
+                     evidence_links: vec![fact.id.clone()],
+                 });
+             }
+        }
+
+        None
     }
 
-    pub fn detect_vsa_contradiction(&self, a: &HyperVector, b: &HyperVector) -> bool {
-        // In VSA, contradiction can be seen as very high similarity to an inverse or very low similarity where it should be high.
-        // Or if we define contradiction as A and Not A.
-        // If B is expected to be A but is orthogonal, it's a contradiction in some contexts.
-        // For Phase 1, let's say if similarity < -0.5, it's a contradiction (Opposite in bipolar, but here we use BSC 0/1).
-        // In BSC, similarity ranges from -1 to 1?
-        // similarity = 1 - 2 * (hamming / total)
-        // hamming = 0 => sim = 1
-        // hamming = total/2 => sim = 0 (Orthogonal)
-        // hamming = total => sim = -1 (Opposite/Inverse)
+    pub fn find_analogy(&self, graph: &KnowledgeGraph, a: &str, b: &str) -> f32 {
+        let preds_a: std::collections::HashSet<_> = graph.facts.values()
+            .filter(|f| f.triple.as_ref().map_or(false, |t| t.subject == a))
+            .filter_map(|f| f.triple.as_ref().map(|t| t.predicate.clone()))
+            .collect();
 
-        let sim = a.similarity(b);
-        sim < -0.7 // High degree of inversion
-    }
+        let preds_b: std::collections::HashSet<_> = graph.facts.values()
+            .filter(|f| f.triple.as_ref().map_or(false, |t| t.subject == b))
+            .filter_map(|f| f.triple.as_ref().map(|t| t.predicate.clone()))
+            .collect();
 
-    pub fn score_similarity(&self, hypothesis: &HyperVector, prototype: &HyperVector) -> f32 {
-        hypothesis.similarity(prototype)
+        if preds_a.is_empty() || preds_b.is_empty() { return 0.0; }
+
+        let intersection = preds_a.intersection(&preds_b).count();
+        let union = preds_a.union(&preds_b).count();
+
+        intersection as f32 / union as f32
     }
 }

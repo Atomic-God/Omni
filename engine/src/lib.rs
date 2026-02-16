@@ -7,7 +7,7 @@ use core_vsa::traits::MemoryStore;
 use runtime::HardwareAdapter;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
-use cognition::{CognitionCore, RelationType};
+use cognition::CognitionCore;
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use ingestion::nlp::SymbolicNLP;
 use crate::governance::SelfCorrectionLoop;
@@ -149,26 +149,16 @@ impl OmniMind {
             LifecycleState::Forge(mem, cog) => {
                 let _ = mem.store(text, vector);
                 for fact in facts {
-                    let rel_type = match fact.predicate.as_str() {
-                        "taxonomy" => RelationType::Taxonomic,
-                        "causality" => RelationType::Causal,
-                        _ => RelationType::Structural,
-                    };
-                    cog.add_relation(&fact.subject, &fact.object, rel_type, 1.0, 1.0);
-                    cog.reinforce_knowledge(text, 1.0);
+                    cog.add_fact_triple(fact, 1.0);
                 }
+                cog.reinforce_knowledge(text, 1.0);
             },
             LifecycleState::Runtime(_, delta, cog) => {
                 let _ = delta.store(text, vector);
                 for fact in facts {
-                    let rel_type = match fact.predicate.as_str() {
-                        "taxonomy" => RelationType::Taxonomic,
-                        "causality" => RelationType::Causal,
-                        _ => RelationType::Structural,
-                    };
-                    cog.add_relation(&fact.subject, &fact.object, rel_type, 1.0, 1.0);
-                    cog.reinforce_knowledge(text, 1.0);
+                    cog.add_fact_triple(fact, 1.0);
                 }
+                cog.reinforce_knowledge(text, 1.0);
             }
         }
     }

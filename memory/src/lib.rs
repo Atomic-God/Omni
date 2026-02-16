@@ -13,6 +13,7 @@ pub mod hierarchy;
 pub mod tests;
 pub mod layered;
 pub mod evolution;
+pub mod consolidation; // New
 
 pub use lsh::LSHIndex;
 pub use storage::ShardedStorage;
@@ -21,6 +22,7 @@ pub use recovery::CorruptionRecovery;
 pub use hierarchy::{MemoryLayer, MemoryEntry, HierarchicalMemory};
 pub use layered::LayeredMemory;
 pub use evolution::{LifecycleManager, EpisodicEncoder};
+pub use consolidation::PrototypeConsolidator;
 
 use std::error::Error;
 use core_vsa::traits::MemoryStore;
@@ -35,7 +37,7 @@ pub struct MemoryManager {
     pub metadata: HashMap<String, MemoryEntry>,
     pub low_memory_mode: bool,
     pub encoder: EpisodicEncoder,
-    pub vsa_precision: usize, // New: for truncation
+    pub vsa_precision: usize,
 }
 
 impl MemoryManager {
@@ -57,7 +59,7 @@ impl MemoryManager {
         self.low_memory_mode = enabled;
         if enabled {
             info!("Industrial Adaptation: Reducing VSA precision for low-RAM environment.");
-            self.vsa_precision = 2048; // Scale down from 10k
+            self.vsa_precision = 2048;
             self.storage.shard_capacity = 100;
         } else {
             self.vsa_precision = core_vsa::DIMENSION;
@@ -129,12 +131,6 @@ impl MemoryStore for MemoryManager {
         results.extend(self.semantic_index.query(query, k));
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         results.truncate(k);
-
-        // Reinforcement Pressure: Increase importance of matched items
-        // Since this is a &self method, we use internal debug logs for phase 1,
-        // or we need to pass a mutable reference.
-        // In Industrial Core, we prefer explicit feedback loops in the Learner.
-
         results
     }
 }
@@ -143,7 +139,6 @@ impl HierarchicalMemory for MemoryManager {
     fn store_in_layer(&mut self, key: &str, vector: HyperVector, layer: MemoryLayer) -> Result<(), Box<dyn Error>> {
         let mut final_vec = vector;
 
-        // Truncation Adaptation
         if self.vsa_precision < final_vec.dim {
             final_vec = final_vec.truncate(self.vsa_precision);
         }
@@ -165,13 +160,26 @@ impl HierarchicalMemory for MemoryManager {
 
     fn retrieve_with_metrics(&mut self, key: &str) -> Option<HyperVector> {
         if let Some(entry) = self.metadata.get_mut(key) {
-            entry.update_access(); // Reinforcement Pressure: boosts importance
+            entry.update_access();
             return Some(entry.vector.clone());
         }
         None
     }
 
     fn consolidate_layers(&mut self) {
+        // 1. Prototype Generation (Industrial Compression)
+        let prototypes = PrototypeConsolidator::generate_prototypes(&self.metadata, 0.90);
+        for (key, proto_vec) in prototypes {
+             if let Some(entry) = self.metadata.get_mut(&key) {
+                 entry.vector = proto_vec;
+                 entry.layer = "semantic".to_string();
+                 entry.confidence = 0.95;
+                 self.semantic_index.insert(&key, entry.vector.clone());
+                 self.episodic_index.remove(&key);
+             }
+        }
+
+        // 2. Lifecycle Promotion
         let mut changes = Vec::new();
         for (key, entry) in &self.metadata {
             if let Some(new_layer) = LifecycleManager::evaluate_promotion(entry) {

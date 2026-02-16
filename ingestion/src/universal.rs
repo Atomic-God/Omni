@@ -3,7 +3,7 @@ use core_vsa::traits::Ingestor;
 use std::path::Path;
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, Read, BufRead};
+use std::io::{BufReader, BufRead};
 use log::{info, warn, debug};
 use calamine::{Reader, open_workbook_auto};
 use lopdf::Document;
@@ -22,6 +22,7 @@ use crate::video::VideoIngestor;
 use crate::vision::VisionSemanticExtractor;
 use crate::nlp::SymbolicNLP;
 use crate::code_analysis::CodeAnalyzer;
+use crate::data_meaning::DataMeaningExtractor;
 
 pub struct UniversalIngestor {
     pub ocr: SymbolicOCR,
@@ -117,12 +118,17 @@ impl UniversalIngestor {
         for sheet_name in sheet_names {
             if let Ok(range) = workbook.worksheet_range(&sheet_name) {
                 let mut headers: Vec<String> = Vec::new();
+                let mut all_rows: Vec<Vec<String>> = Vec::new();
+
                 for (i, row) in range.rows().enumerate() {
+                    let row_vals: Vec<String> = row.iter().map(|c| c.to_string()).collect();
                     if i == 0 {
-                        for cell in row.iter() { headers.push(cell.to_string()); }
+                        headers = row_vals;
                         continue;
                     }
-                    let row_str = row.iter().map(|c| c.to_string()).collect::<Vec<String>>().join(",");
+                    all_rows.push(row_vals.clone());
+
+                    let row_str = row_vals.join(",");
                     let row_hash = {
                         let mut h = Sha256::new(); h.update(row_str.as_bytes()); hex::encode(h.finalize())
                     };
@@ -135,15 +141,13 @@ impl UniversalIngestor {
                     meta.insert("sheet", sheet_name.clone());
 
                     let mut edges = Vec::new();
-                    for (j, cell) in row.iter().enumerate() {
+                    for (j, val) in row_vals.iter().enumerate() {
                         if j < headers.len() {
                             let header = &headers[j];
-                            let val = cell.to_string();
                             meta.insert(header, val.clone());
-                            let col_id = format!("col:{}", header);
                             edges.push(SymbolEdge {
                                 source: row_id.clone(),
-                                target: col_id,
+                                target: format!("col:{}", header),
                                 relation: "has_field".to_string(),
                                 weight: 1.0,
                                 confidence: 1.0,
@@ -156,6 +160,12 @@ impl UniversalIngestor {
                     let mut g = graph.lock().unwrap();
                     g.add_node_with_confidence(&row_id, HyperVector::random(), meta.to_map(), 1.0);
                     for edge in edges { g.edges.push(edge); }
+                }
+
+                let data_facts = DataMeaningExtractor::extract_spreadsheet_meaning(&headers, &all_rows);
+                let mut g = graph.lock().unwrap();
+                for fact in data_facts {
+                    g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
                 }
             }
         }
@@ -200,10 +210,17 @@ impl UniversalIngestor {
         let mut rdr = csv::Reader::from_path(path).map_err(|e| e.to_string())?;
         let headers = rdr.headers().map_err(|e| e.to_string())?.clone();
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+        let mut all_rows = Vec::new();
+        let header_vec: Vec<String> = headers.iter().map(|s| s.to_string()).collect();
+
         for result in rdr.records() {
             let record = result.map_err(|e| e.to_string())?;
+            let row_vals: Vec<String> = record.iter().map(|s| s.to_string()).collect();
+            all_rows.push(row_vals.clone());
+
             let mut h = Sha256::new();
-            for field in &record { h.update(field.as_bytes()); }
+            for field in &row_vals { h.update(field.as_bytes()); }
             let row_hash = hex::encode(h.finalize());
             let row_id = format!("row:{}", row_hash);
 
@@ -213,9 +230,9 @@ impl UniversalIngestor {
             meta.timestamp = now;
 
             let mut edges = Vec::new();
-            for (j, field) in record.iter().enumerate() {
+            for (j, val) in row_vals.iter().enumerate() {
                 if j < headers.len() {
-                    meta.insert(&headers[j], field.to_string());
+                    meta.insert(&headers[j], val.to_string());
                     edges.push(SymbolEdge {
                         source: row_id.clone(),
                         target: format!("col:{}", &headers[j]),
@@ -232,20 +249,23 @@ impl UniversalIngestor {
             g.add_node_with_confidence(&row_id, HyperVector::random(), meta.to_map(), 1.0);
             g.edges.extend(edges);
         }
+
+        let data_facts = DataMeaningExtractor::extract_spreadsheet_meaning(&header_vec, &all_rows);
+        let mut g = graph.lock().unwrap();
+        for fact in data_facts {
+            g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
+        }
+
         Ok(())
     }
 
-    fn process_image(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen_semantic: &Arc<Mutex<Vec<HyperVector>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn process_image(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen_semantic_vecs: &Arc<Mutex<Vec<HyperVector>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let img = image::open(path).map_err(|e| e.to_string())?;
-
-        // 1. OCR (Meaning from symbols)
         let ocr_text = self.ocr.extract_text(&img);
-
-        // 2. Deep Structural Meaning (Meaning from geometry/visuals)
         let (semantic_vec, meaning_desc, vision_meta) = VisionSemanticExtractor::extract_deep_meaning(&img);
 
         {
-            let s = seen_semantic.lock().unwrap();
+            let s = seen_semantic_vecs.lock().unwrap();
             for prev in s.iter() {
                 if semantic_vec.similarity(prev) > 0.95 {
                     info!("Near-duplicate visual detected: {:?}", path);
@@ -253,7 +273,7 @@ impl UniversalIngestor {
                 }
             }
         }
-        seen_semantic.lock().unwrap().push(semantic_vec.clone());
+        seen_semantic_vecs.lock().unwrap().push(semantic_vec.clone());
 
         let file_hash = self.compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
         let node_id = format!("img:{}", file_hash);
@@ -341,6 +361,11 @@ impl UniversalIngestor {
     }
 
     fn process_json(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let file = File::open(path)?;
+        let val: serde_json::Value = serde_json::from_reader(file)?;
+
+        let schema_facts = DataMeaningExtractor::extract_schema_meaning("root", &val);
+
         let file_hash = self.compute_file_hash(path).unwrap_or_else(|| "none".to_string());
         let node_id = format!("json:{}", file_hash);
         let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
@@ -349,10 +374,17 @@ impl UniversalIngestor {
 
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        for fact in schema_facts {
+            g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
+        }
         Ok(())
     }
 
     fn process_yaml(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let file = File::open(path)?;
+        let val: serde_json::Value = serde_yaml::from_reader(file).map_err(|e: serde_yaml::Error| e.to_string())?;
+        let schema_facts = DataMeaningExtractor::extract_schema_meaning("root", &val);
+
         let file_hash = self.compute_file_hash(path).unwrap_or_else(|| "none".to_string());
         let node_id = format!("yaml:{}", file_hash);
         let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
@@ -361,6 +393,9 @@ impl UniversalIngestor {
 
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        for fact in schema_facts {
+            g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
+        }
         Ok(())
     }
 
