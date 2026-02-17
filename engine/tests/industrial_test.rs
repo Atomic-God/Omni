@@ -79,3 +79,33 @@ fn test_hardware_adaptation_and_multilingual() {
 
     let _ = std::fs::remove_dir_all("./test_industrial_final");
 }
+
+#[test]
+fn test_delta_snapshots_and_forgetting() {
+    let mut mind = OmniMind::new_forge("./test_delta_industrial");
+
+    // 1. Initial State
+    mind.learn("Knowledge Alpha is stable.");
+    mind.save("base").expect("Save base failed");
+
+    // 2. Add new knowledge
+    mind.learn("Knowledge Beta is dynamic.");
+
+    // 3. Save Delta
+    match &mut mind.state {
+        engine::LifecycleState::Forge(mem, _) => {
+            mem.save_delta("delta", "base").expect("Save delta failed");
+        }
+        _ => {}
+    }
+
+    // 4. Test Forgetting (Aging)
+    match &mut mind.state {
+        engine::LifecycleState::Forge(mem, _) => {
+            mem.apply_aging(0.1, 0.01);
+        }
+        _ => {}
+    }
+
+    let _ = std::fs::remove_dir_all("./test_delta_industrial");
+}

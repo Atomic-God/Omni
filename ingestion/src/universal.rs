@@ -23,6 +23,7 @@ use crate::vision::VisionSemanticExtractor;
 use crate::nlp::SymbolicNLP;
 use crate::code_analysis::CodeAnalyzer;
 use crate::data_meaning::DataMeaningExtractor;
+use crate::audio_meaning::AudioMeaningExtractor;
 
 pub struct UniversalIngestor {
     pub ocr: SymbolicOCR,
@@ -323,8 +324,12 @@ impl UniversalIngestor {
         let properties = tagged_file.properties();
         meta.insert("duration_seconds", properties.duration().as_secs().to_string());
 
+        // Extract deep symbolic meaning from audio
+        let (content_vec, content_desc) = AudioMeaningExtractor::extract_signature(path);
+        meta.insert("acoustic_signature", content_desc);
+
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, content_vec, meta.to_map(), 1.0);
         Ok(())
     }
 

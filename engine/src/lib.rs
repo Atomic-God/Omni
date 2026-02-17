@@ -11,7 +11,7 @@ pub use cognition::{CognitionCore, ReasoningTrace};
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use ingestion::nlp::SymbolicNLP;
 use serde::{Serialize, Deserialize};
-use crate::governance::SelfCorrectionLoop;
+use crate::governance::{SelfCorrectionLoop, SecuritySandbox};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
@@ -84,8 +84,13 @@ impl OmniMind {
     }
 
     pub fn ingest_file(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let p = std::path::Path::new(path);
+        if !SecuritySandbox::validate_ingestion_path(p) {
+             return Err("Security Violation: Path outside allowed boundary".into());
+        }
+
         info!("API: Ingesting file and extracting proper meaning: {}", path);
-        let graph = ingest_graph(&std::path::Path::new(path)).map_err(|e| e.to_string())?;
+        let graph = ingest_graph(p).map_err(|e| e.to_string())?;
 
         match &mut self.state {
             LifecycleState::Forge(mem, cog) => {

@@ -16,7 +16,8 @@ pub mod video;
 pub mod vision;
 pub mod nlp;
 pub mod code_analysis;
-pub mod data_meaning; // New
+pub mod data_meaning;
+pub mod audio_meaning;
 
 pub use registry::DataIngestionRegistry;
 pub use universal::UniversalIngestor;

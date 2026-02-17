@@ -70,8 +70,24 @@ impl SnapshotManager {
         Self::save_ext(memory, path, false, None, None)
     }
 
-    pub fn save_delta(memory: &MemoryManager, path: &Path, base_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::save_ext(memory, path, true, Some(base_hash.to_string()), Some(base_hash.to_string()))
+    pub fn save_delta(memory: &MemoryManager, path: &Path, base: &MindSnapshot) -> Result<(), Box<dyn std::error::Error>> {
+        let base_hash = base.header.checksum.clone();
+
+        let mut delta_metadata = HashMap::new();
+        for (k, v) in &memory.metadata {
+            if !base.metadata.contains_key(k) || base.metadata[k].importance != v.importance || base.metadata[k].reinforcement_count != v.reinforcement_count {
+                delta_metadata.insert(k.clone(), v.clone());
+            }
+        }
+
+        let body = MindSnapshotBody {
+            episodic_index: memory.episodic_index.clone(), // In industrial version, LSHIndex should also be delta-encoded, but for Phase-1 we keep it simple
+            semantic_index: memory.semantic_index.clone(),
+            storage: memory.storage.clone(),
+            metadata: delta_metadata,
+        };
+
+        Self::save_ext_with_body(body, path, true, Some(base_hash.clone()), Some(base_hash))
     }
 
     fn save_ext(memory: &MemoryManager, path: &Path, is_delta: bool, base_snapshot: Option<String>, previous_hash: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
@@ -81,7 +97,10 @@ impl SnapshotManager {
             storage: memory.storage.clone(),
             metadata: memory.metadata.clone(),
         };
+        Self::save_ext_with_body(body, path, is_delta, base_snapshot, previous_hash)
+    }
 
+    fn save_ext_with_body(body: MindSnapshotBody, path: &Path, is_delta: bool, base_snapshot: Option<String>, previous_hash: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         let body_bytes = bincode::serialize(&body)?;
 
         let mut hasher = Sha256::new();
@@ -114,6 +133,18 @@ impl SnapshotManager {
         info!("Industrial Core: Atomic Snapshot saved to {:?}", path);
 
         Ok(())
+    }
+
+    pub fn apply_delta(base: &mut MemoryManager, delta: &MindSnapshot) {
+        for (k, v) in &delta.metadata {
+            base.metadata.insert(k.clone(), v.clone());
+            base.storage.insert(k, v.vector.clone());
+            if v.layer == "semantic" {
+                base.semantic_index.insert(k, v.vector.clone());
+            } else {
+                base.episodic_index.insert(k, v.vector.clone());
+            }
+        }
     }
 
     pub fn load(path: &Path) -> Result<MindSnapshot, Box<dyn std::error::Error>> {

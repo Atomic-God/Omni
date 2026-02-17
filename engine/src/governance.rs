@@ -64,6 +64,41 @@ impl SelfVerificationLoop {
     }
 }
 
+pub struct SecuritySandbox;
+
+impl SecuritySandbox {
+    /// Validates a path to ensure it's within the allowed ingestion boundaries.
+    pub fn validate_ingestion_path(path: &std::path::Path) -> bool {
+        let path_str = path.to_string_lossy();
+
+        // Prevent path traversal
+        if path_str.contains("..") {
+            warn!("Security: Path traversal attempt blocked: {}", path_str);
+            return false;
+        }
+
+        // Industrial execution boundary: No system-critical directories
+        let critical_dirs = ["/etc", "/var", "/bin", "/sbin", "/usr/bin"];
+        for dir in critical_dirs {
+            if path_str.starts_with(dir) {
+                warn!("Security: Access to critical system directory blocked: {}", path_str);
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Checks if a memory store operation exceeds industrial safety limits.
+    pub fn validate_memory_load(current_entries: usize, limit: usize) -> bool {
+        if current_entries >= limit {
+            warn!("Security: Memory capacity limit reached ({}). Ingestion paused.", limit);
+            return false;
+        }
+        true
+    }
+}
+
 pub struct AuditLog {
     pub entries: Vec<String>,
 }

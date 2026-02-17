@@ -74,11 +74,23 @@ impl MemoryManager {
     pub fn load_snapshot(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
         let snapshot_path = self.root_dir.join(format!("{}.snap", name));
         let snapshot = SnapshotManager::load(&snapshot_path)?;
-        self.storage = snapshot.storage;
-        self.episodic_index = snapshot.episodic_index;
-        self.semantic_index = snapshot.semantic_index;
-        self.metadata = snapshot.metadata;
+
+        if snapshot.header.is_delta {
+            SnapshotManager::apply_delta(self, &snapshot);
+        } else {
+            self.storage = snapshot.storage;
+            self.episodic_index = snapshot.episodic_index;
+            self.semantic_index = snapshot.semantic_index;
+            self.metadata = snapshot.metadata;
+        }
         Ok(())
+    }
+
+    pub fn save_delta(&self, name: &str, base_name: &str) -> Result<(), Box<dyn Error>> {
+        let base_path = self.root_dir.join(format!("{}.snap", base_name));
+        let base_snapshot = SnapshotManager::load(&base_path)?;
+        let delta_path = self.root_dir.join(format!("{}.snap", name));
+        SnapshotManager::save_delta(self, &delta_path, &base_snapshot)
     }
 
     pub fn export_mindpack(&self, path: &Path) -> Result<(), Box<dyn Error>> {
