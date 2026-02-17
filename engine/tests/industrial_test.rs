@@ -13,8 +13,9 @@ fn test_industrial_meaning_extraction() {
 
     // 2. Transitive Industrial Logic
     let response = mind.ask("What does failure cause?");
-    println!("Response: {}", response);
-    assert!(response.contains("downtime") || response.contains("Logic:"));
+    println!("Response: {}", response.answer);
+    assert!(response.answer.contains("downtime") || response.answer.contains("Logic:"));
+    assert!(response.trace.is_some());
 
     // 3. Abductive Reasoning Test
     let cog = match &mind.state {
@@ -68,8 +69,8 @@ fn test_hardware_adaptation_and_multilingual() {
     // 1. Multilingual
     mind.learn("Gato means cat.");
     let response = mind.ask("What is a gato?");
-    println!("Multilingual Response: {}", response);
-    assert!(response.to_lowercase().contains("cat"));
+    println!("Multilingual Response: {}", response.answer);
+    assert!(response.answer.to_lowercase().contains("cat"));
 
     // 2. Hardware Mode check
     let mut adapter = runtime::adaptation::HardwareAdapter::new();

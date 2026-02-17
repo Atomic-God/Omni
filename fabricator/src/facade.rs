@@ -26,7 +26,7 @@ impl OmniForge {
 
     pub fn run_query(&self, query: &str) -> String {
         let mut mind = self.mind.lock().unwrap();
-        mind.ask(query)
+        mind.ask(query).answer
     }
 
     pub fn learn(&self, text: &str) {

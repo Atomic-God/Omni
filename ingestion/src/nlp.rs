@@ -1,12 +1,21 @@
 use log::{debug, info};
 use core_vsa::FactTriple;
+use unicode_normalization::UnicodeNormalization;
+use whatlang::{detect, Lang};
 
 pub struct SymbolicNLP;
 
 impl SymbolicNLP {
     /// Deep extraction of meaning using rule-based Industrial Entity Recognition and Relation Mapping.
     pub fn extract_deep_facts(text: &str) -> Vec<FactTriple> {
-        info!("Industrial NLP: Deep meaning extraction from text chunk (len={})", text.len());
+        // 1. Unicode Normalization (NFC)
+        let normalized: String = text.nfc().collect();
+
+        // 2. Language Detection
+        let lang_info = detect(&normalized);
+        let lang = lang_info.map(|info| info.lang()).unwrap_or(Lang::Eng);
+        info!("Industrial NLP: Deep meaning extraction [Lang: {:?}] (len={})", lang, normalized.len());
+
         let mut facts = Vec::new();
 
         let _industrial_entities = [
@@ -14,7 +23,7 @@ impl SymbolicNLP {
             "output", "input", "machine", "device", "network", "server", "dog", "animal"
         ];
 
-        let sentences = text.split(|c| c == '.' || c == '!' || c == '?');
+        let sentences = normalized.split(|c| c == '.' || c == '!' || c == '?');
         for sentence in sentences {
             let tokens: Vec<String> = sentence.split_whitespace()
                 .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())

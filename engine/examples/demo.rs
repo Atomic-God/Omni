@@ -11,10 +11,10 @@ fn main() {
 
     // 2. Query
     let query = "The sun is hot";
-    let answer = mind.ask(query);
-    println!("Query: '{}' -> Answer: '{}'", query, answer);
+    let response = mind.ask(query);
+    println!("Query: '{}' -> Answer: '{}'", query, response.answer);
 
-    assert!(answer.contains("Closest match"));
+    assert!(response.answer.contains("Match found"));
     println!("Demo successful!");
 
     std::fs::remove_dir_all("./demo_data").unwrap_or(());

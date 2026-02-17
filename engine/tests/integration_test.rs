@@ -11,13 +11,13 @@ mod tests {
 
         // "Is dog animal?" -> Yes
         let response = mind.ask("Is dog animal?");
-        println!("Response: {}", response);
-        assert!(response.contains("Yes") || response.contains("Logic:") || response.contains("related"));
+        println!("Response: {}", response.answer);
+        assert!(response.answer.contains("Yes") || response.answer.contains("Logic:") || response.answer.contains("related"));
 
         // "Does dog breathes?" -> Yes (Transitive)
         let response_transitive = mind.ask("Does dog breathes?");
-        println!("Transitive: {}", response_transitive);
-        assert!(response_transitive.contains("Yes") || response_transitive.contains("Logic:") || response_transitive.contains("related"));
+        println!("Transitive: {}", response_transitive.answer);
+        assert!(response_transitive.answer.contains("Yes") || response_transitive.answer.contains("Logic:") || response_transitive.answer.contains("related"));
     }
 
     #[test]
@@ -26,7 +26,7 @@ mod tests {
         mind.learn("cat eats fish");
         mind.learn("cat eat fish");
         let response = mind.ask("What does cat eat?");
-        assert!(response.contains("fish"));
+        assert!(response.answer.contains("fish"));
     }
 
     #[test]
@@ -64,8 +64,8 @@ mod tests {
             let mut mind = OmniMind::new_forge("./test_data");
             mind.load(path).expect("Failed to load memory");
             let response = mind.ask("Does birds fly?");
-            println!("Response: {}", response);
-            assert!(response.contains("Yes") || response.contains("Logic:") || response.contains("related"));
+            println!("Response: {}", response.answer);
+            assert!(response.answer.contains("Yes") || response.answer.contains("Logic:") || response.answer.contains("related"));
         }
         std::fs::remove_file(path).unwrap_or(());
     }

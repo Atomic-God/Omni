@@ -7,9 +7,10 @@ use core_vsa::traits::MemoryStore;
 use runtime::HardwareAdapter;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
-use cognition::CognitionCore;
+pub use cognition::{CognitionCore, ReasoningTrace};
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use ingestion::nlp::SymbolicNLP;
+use serde::{Serialize, Deserialize};
 use crate::governance::SelfCorrectionLoop;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -26,6 +27,12 @@ pub mod learning;
 pub enum LifecycleState {
     Forge(MemoryManager, CognitionCore),
     Runtime(MemoryManager, MemoryManager, CognitionCore),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryResponse {
+    pub answer: String,
+    pub trace: Option<ReasoningTrace>,
 }
 
 pub struct OmniMind {
@@ -163,7 +170,7 @@ impl OmniMind {
         }
     }
 
-    pub fn ask(&mut self, text: &str) -> String {
+    pub fn ask(&mut self, text: &str) -> QueryResponse {
         let words: Vec<String> = text.split_whitespace()
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
             .filter(|w| !w.is_empty())
@@ -182,8 +189,12 @@ impl OmniMind {
                         for next_rel in next_rels {
                             if words.contains(&next_rel.target) {
                                 if ReasoningValidator::validate_inference(cog, s_candidate, &next_rel.target) {
+                                    let trace = cog.find_path(s_candidate, &next_rel.target, 3);
                                     let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(next_rel.confidence, rel.weight, 0.1);
-                                    return format!("Logic: Yes, {} related to {} (via {}). [Uncertainty: {:.2}]", s_candidate, next_rel.target, intermediate, uncertainty);
+                                    return QueryResponse {
+                                        answer: format!("Logic: Yes, {} related to {} (via {}). [Uncertainty: {:.2}]", s_candidate, next_rel.target, intermediate, uncertainty),
+                                        trace,
+                                    };
                                 } else {
                                     info!("Validation Loop: Blocked contradictory inference {} -> {}", s_candidate, next_rel.target);
                                 }
@@ -198,8 +209,12 @@ impl OmniMind {
              if let Some(relations) = cog.relation_graph.get(s_candidate) {
                  for rel in relations {
                      if words.contains(&rel.target) || words.contains(&"what".to_string()) || words.contains(&"who".to_string()) {
+                         let trace = cog.find_path(s_candidate, &rel.target, 2);
                          let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(rel.confidence, 1.0, 0.05);
-                         return format!("Logic: {} is related to {}. [Uncertainty: {:.2}]", s_candidate, rel.target, uncertainty);
+                         return QueryResponse {
+                             answer: format!("Logic: {} is related to {}. [Uncertainty: {:.2}]", s_candidate, rel.target, uncertainty),
+                             trace,
+                         };
                      }
                  }
              }
@@ -210,12 +225,21 @@ impl OmniMind {
         if let Some((top, sim)) = results.first() {
             if *sim > 0.3 {
                 let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(0.8, *sim, 0.2);
-                format!("Logic: Match found. Result: {} (sim: {:.2}) [Uncertainty: {:.2}]", top, sim, uncertainty)
+                QueryResponse {
+                    answer: format!("Logic: Match found. Result: {} (sim: {:.2}) [Uncertainty: {:.2}]", top, sim, uncertainty),
+                    trace: None,
+                }
             } else {
-                "No match found.".to_string()
+                QueryResponse {
+                    answer: "No match found.".to_string(),
+                    trace: None,
+                }
             }
         } else {
-            "No match found.".to_string()
+            QueryResponse {
+                answer: "No match found.".to_string(),
+                trace: None,
+            }
         }
     }
 

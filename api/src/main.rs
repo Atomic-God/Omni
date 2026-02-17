@@ -74,13 +74,17 @@ async fn learn(
 
 async fn ask(State(state): State<AppState>, Json(payload): Json<TextPayload>) -> Json<AskResponse> {
     let mut mind = state.mind.lock().unwrap();
-    let answer = mind.ask(&payload.text);
-    Json(AskResponse { answer })
+    let response = mind.ask(&payload.text);
+    Json(AskResponse {
+        answer: response.answer,
+        trace: response.trace,
+    })
 }
 
 #[derive(Serialize)]
 struct AskResponse {
     answer: String,
+    trace: Option<engine::ReasoningTrace>,
 }
 
 async fn feedback(

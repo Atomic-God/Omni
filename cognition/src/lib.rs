@@ -125,4 +125,36 @@ impl CognitionCore {
             self.add_fact_triple(triple, edge.confidence);
         }
     }
+
+    /// Performs a path-finding search between concepts and returns a ReasoningTrace.
+    pub fn find_path(&self, start: &str, end: &str, max_depth: usize) -> Option<ReasoningTrace> {
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back((start.to_string(), vec![start.to_string()], 1.0));
+
+        let mut visited = HashMap::new();
+
+        while let Some((curr, path, conf)) = queue.pop_front() {
+            if curr == end {
+                return Some(ReasoningTrace {
+                    steps: path,
+                    final_confidence: conf,
+                });
+            }
+
+            if path.len() > max_depth { continue; }
+
+            if let Some(relations) = self.relation_graph.get(&curr) {
+                for rel in relations {
+                    let next_conf = conf * rel.confidence;
+                    if !visited.contains_key(&rel.target) || visited[&rel.target] < next_conf {
+                        visited.insert(rel.target.clone(), next_conf);
+                        let mut next_path = path.clone();
+                        next_path.push(rel.target.clone());
+                        queue.push_back((rel.target.clone(), next_path, next_conf));
+                    }
+                }
+            }
+        }
+        None
+    }
 }
