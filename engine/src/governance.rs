@@ -1,4 +1,4 @@
-use log::{info, warn, debug};
+use tracing::{info, warn, debug};
 use crate::OmniMind;
 use cognition::knowledge::{ReasoningEngine};
 
@@ -61,6 +61,46 @@ impl SelfVerificationLoop {
         }
 
         info!("Governance: Global verification complete.");
+    }
+}
+
+pub struct PromptDefense;
+
+impl PromptDefense {
+    /// Detects potential prompt injection patterns.
+    pub fn sanitize(input: &str) -> Result<String, String> {
+        let triggers = ["ignore previous instructions", "system override", "reveal secret", "become a"];
+        let lower = input.to_lowercase();
+        for trigger in triggers {
+            if lower.contains(trigger) {
+                warn!("Security: Prompt injection attempt detected: {}", trigger);
+                return Err(format!("Injection detected: {}", trigger));
+            }
+        }
+        Ok(input.to_string())
+    }
+}
+
+pub struct PrivacyGuard {
+    pub enabled: bool,
+}
+
+impl PrivacyGuard {
+    pub fn new() -> Self {
+        Self { enabled: false }
+    }
+
+    /// Scrubs sensitive patterns (like emails/PII) if privacy mode is on.
+    pub fn scrub(&self, input: &str) -> String {
+        if !self.enabled { return input.to_string(); }
+
+        let mut result = input.to_string();
+        // Very simple regex-like scrubbing for demonstration
+        let pii_patterns = ["@"]; // scrub emails
+        for p in pii_patterns {
+            result = result.replace(p, "[SCRUBBED]");
+        }
+        result
     }
 }
 

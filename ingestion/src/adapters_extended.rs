@@ -1,6 +1,6 @@
 use crate::{IngestionAdapter, SemanticChunk, chunk_content_with_structure};
 use std::path::Path;
-use log::warn;
+use tracing::warn;
 use csv::ReaderBuilder;
 
 // --- Spreadsheet Adapter ---

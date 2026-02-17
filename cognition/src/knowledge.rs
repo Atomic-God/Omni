@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use serde::{Serialize, Deserialize};
-use log::{info, warn, debug};
+use tracing::{info, warn, debug};
 use core_vsa::FactTriple;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,7 @@ pub struct KnowledgeGraph {
     pub facts: HashMap<String, KnowledgeFact>,
     pub contradictions: Vec<(String, String)>,
     pub subject_index: HashMap<String, Vec<String>>,
+    pub source_trust: HashMap<String, f32>, // Step 34
 }
 
 impl KnowledgeGraph {
@@ -26,6 +27,7 @@ impl KnowledgeGraph {
             facts: HashMap::new(),
             contradictions: Vec::new(),
             subject_index: HashMap::new(),
+            source_trust: HashMap::new(),
         }
     }
 
@@ -57,9 +59,14 @@ impl KnowledgeGraph {
             timestamp: now,
         });
 
+        // Use trust scoring in confidence calculation
+        let source_id = id.split(':').next().unwrap_or("unknown");
+        let trust = self.source_trust.get(source_id).cloned().unwrap_or(1.0);
+        let weighted_reliability = reliability * trust;
+
         let prior = fact.confidence;
         let n = fact.reinforcement_count as f32;
-        fact.confidence = (prior * n + reliability) / (n + 1.0);
+        fact.confidence = (prior * n + weighted_reliability) / (n + 1.0);
         fact.reinforcement_count += 1;
         fact.timestamp = now;
     }
@@ -91,12 +98,17 @@ impl KnowledgeGraph {
             let conf_a = self.facts.get(&a_id).map(|f| f.confidence).unwrap_or(0.0);
             let conf_b = self.facts.get(&b_id).map(|f| f.confidence).unwrap_or(0.0);
 
-            if conf_a > conf_b + 0.05 {
-                info!("Resolving conflict: Favoring {} over {}", a_id, b_id);
-                if let Some(f) = self.facts.get_mut(&b_id) { f.confidence *= 0.2; }
-            } else if conf_b > conf_a + 0.05 {
-                info!("Resolving conflict: Favoring {} over {}", b_id, a_id);
-                if let Some(f) = self.facts.get_mut(&a_id) { f.confidence *= 0.2; }
+            // Step 28: Complex resolution based on confidence and trust
+            if conf_a > conf_b * 1.5 {
+                info!("Resolving conflict: Favoring {} (high confidence) over {}", a_id, b_id);
+                if let Some(f) = self.facts.get_mut(&b_id) { f.confidence *= 0.1; }
+            } else if conf_b > conf_a * 1.5 {
+                info!("Resolving conflict: Favoring {} (high confidence) over {}", b_id, a_id);
+                if let Some(f) = self.facts.get_mut(&a_id) { f.confidence *= 0.1; }
+            } else {
+                // Ambiguous conflict: Dampen both
+                if let Some(f) = self.facts.get_mut(&a_id) { f.confidence *= 0.8; }
+                if let Some(f) = self.facts.get_mut(&b_id) { f.confidence *= 0.8; }
             }
         }
     }

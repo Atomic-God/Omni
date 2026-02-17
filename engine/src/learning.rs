@@ -1,5 +1,5 @@
 use crate::OmniMind;
-use log::info;
+use tracing::info;
 use memory::{MemoryLayer, HierarchicalMemory};
 
 pub struct LearningEngine;

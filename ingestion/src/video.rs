@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::error::Error;
-use log::info;
+use tracing::info;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use core_vsa::HyperVector;

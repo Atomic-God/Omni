@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
-use log::info;
+use tracing::info;
 
 pub struct SimpleTokenizer {
     vocab: HashMap<String, usize>,

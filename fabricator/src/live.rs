@@ -4,7 +4,7 @@ use notify::{Watcher, RecursiveMode, Result as NotifyResult, Event};
 use engine::OmniMind;
 use learning::LearningEngine;
 use ingestion::ingest_path;
-use log::{info, error, warn};
+use tracing::{info, error, warn};
 
 pub struct LiveFabricator {
     mind: Arc<Mutex<OmniMind>>,

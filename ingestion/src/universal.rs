@@ -4,7 +4,7 @@ use std::path::Path;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, BufRead};
-use log::{info, warn, debug};
+use tracing::{info, warn, debug};
 use calamine::{Reader, open_workbook_auto};
 use lopdf::Document;
 use lofty::{Probe, TaggedFileExt, Accessor, AudioFile};

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use log::{info, warn};
+use tracing::{info, warn};
 
 #[derive(Clone, Debug)]
 pub struct Plan {

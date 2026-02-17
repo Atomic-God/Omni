@@ -1,5 +1,5 @@
 use std::path::Path;
-use log::info;
+use tracing::info;
 use core_vsa::HyperVector;
 
 pub struct AudioMeaningExtractor;

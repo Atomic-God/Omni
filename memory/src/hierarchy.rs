@@ -19,6 +19,7 @@ pub struct MemoryEntry {
     pub confidence: f32,
     pub source_reliability: f32,
     pub reinforcement_count: u32,
+    pub stability: f32, // Step 40
 }
 
 impl MemoryEntry {
@@ -39,6 +40,7 @@ impl MemoryEntry {
             confidence: 0.5,
             source_reliability: 1.0,
             reinforcement_count: 1,
+            stability: 1.0,
         }
     }
 
@@ -54,6 +56,7 @@ impl MemoryEntry {
         self.confidence = (self.confidence * n + reliability) / (n + 1.0);
         self.reinforcement_count += 1;
         self.importance += 0.5;
+        self.stability *= 1.5; // Ebbinghaus reinforcement: stability grows
     }
 
     pub fn decay(&mut self, rate: f32) {

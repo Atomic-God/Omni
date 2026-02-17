@@ -1,3 +1,4 @@
+#![deny(warnings)]
 pub mod ooda;
 pub mod adaptation;
 pub mod scrubber;

@@ -7,7 +7,7 @@ use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
 use flate2::Compression;
 use std::collections::HashMap;
-use log::info;
+use tracing::info;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SnapshotHeader {

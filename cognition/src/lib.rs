@@ -1,3 +1,4 @@
+#![deny(warnings)]
 use core_vsa::SymbolGraph;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};

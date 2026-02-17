@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::fs;
-use log::{info, error, warn};
+use tracing::{info, error, warn};
 use crc32fast::Hasher;
 use std::io::Read;
 

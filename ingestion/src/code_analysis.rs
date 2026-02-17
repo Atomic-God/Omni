@@ -2,7 +2,7 @@ use std::path::Path;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use core_vsa::FactTriple;
-use log::debug;
+use tracing::debug;
 
 pub struct CodeAnalyzer;
 

@@ -2,7 +2,7 @@ use core_vsa::HyperVector;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::{self, File};
-use log::info;
+use tracing::info;
 use serde::{Serialize, Deserialize};
 use std::cell::RefCell;
 

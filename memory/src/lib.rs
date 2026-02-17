@@ -1,9 +1,10 @@
+#![deny(warnings)]
 use core_vsa::HyperVector;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::fs;
-use log::{info, debug};
+use tracing::{info, debug};
 
 pub mod lsh;
 pub mod storage;
@@ -21,7 +22,7 @@ pub use snapshot::{SnapshotManager, MindSnapshot, SnapshotHeader, MindPack};
 pub use recovery::CorruptionRecovery;
 pub use hierarchy::{MemoryLayer, MemoryEntry, HierarchicalMemory};
 pub use layered::LayeredMemory;
-pub use evolution::{LifecycleManager, EpisodicEncoder};
+use crate::evolution::{LifecycleManager, EpisodicEncoder, ForgettingEngine};
 pub use consolidation::PrototypeConsolidator;
 
 use std::error::Error;
@@ -107,6 +108,24 @@ impl MemoryManager {
         let file = File::create(path)?;
         bincode::serialize_into(file, &pack)?;
         Ok(())
+    }
+
+    /// Triggers a "Sleep Cycle" for deep memory consolidation and pruning.
+    pub fn sleep_cycle(&mut self) {
+        info!("Industrial Memory: Starting Sleep Cycle (Consolidation & Forgetting)...");
+
+        // 1. Prototype generation and promotion
+        self.consolidate_layers();
+
+        // 2. Apply forgetting curve
+        ForgettingEngine::prune_fading_memories(&mut self.metadata, 0.95);
+
+        // 3. Synchronize indices
+        let keys: Vec<String> = self.metadata.keys().cloned().collect();
+        self.episodic_index.sync_with_keys(&keys);
+        self.semantic_index.sync_with_keys(&keys);
+
+        info!("Industrial Memory: Sleep Cycle complete. Active entries: {}", self.metadata.len());
     }
 
     pub fn apply_aging(&mut self, decay_rate: f32, prune_threshold: f32) {

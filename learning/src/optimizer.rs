@@ -1,6 +1,6 @@
 use cognition::CognitionCore;
 use std::collections::{HashMap, HashSet};
-use log::info;
+use tracing::info;
 
 pub struct LearningOptimizer;
 

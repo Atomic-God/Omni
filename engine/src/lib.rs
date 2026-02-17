@@ -1,6 +1,7 @@
+#![deny(warnings)]
 use std::path::PathBuf;
 use memory::MemoryManager;
-use log::{info, debug};
+use tracing::{info, debug};
 use ingestion::ingest_graph;
 use core_vsa::HyperVector;
 use core_vsa::traits::MemoryStore;
@@ -11,7 +12,8 @@ pub use cognition::{CognitionCore, ReasoningTrace};
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use ingestion::nlp::SymbolicNLP;
 use serde::{Serialize, Deserialize};
-use crate::governance::{SelfCorrectionLoop, SecuritySandbox};
+use crate::governance::{SelfCorrectionLoop, SecuritySandbox, PrivacyGuard, PromptDefense};
+use crate::task::TaskLoop;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
@@ -23,6 +25,7 @@ pub mod budget;
 pub mod governance;
 pub mod bench;
 pub mod learning;
+pub mod task;
 
 pub enum LifecycleState {
     Forge(MemoryManager, CognitionCore),
@@ -39,6 +42,8 @@ pub struct OmniMind {
     pub state: LifecycleState,
     pub metrics: metrics::RuntimeMetrics,
     pub vsa_dimension: usize,
+    pub privacy: PrivacyGuard,
+    pub task_loop: TaskLoop,
 }
 
 impl OmniMind {
@@ -59,6 +64,8 @@ impl OmniMind {
             state: LifecycleState::Forge(memory, cognition),
             metrics: metrics::RuntimeMetrics::new(),
             vsa_dimension,
+            privacy: PrivacyGuard::new(),
+            task_loop: TaskLoop::new(),
         }
     }
 
@@ -80,6 +87,8 @@ impl OmniMind {
             state: LifecycleState::Runtime(base_mem, delta_mem, cognition),
             metrics: metrics::RuntimeMetrics::new(),
             vsa_dimension,
+            privacy: PrivacyGuard::new(),
+            task_loop: TaskLoop::new(),
         }
     }
 
@@ -151,8 +160,18 @@ impl OmniMind {
     }
 
     pub fn learn(&mut self, text: &str) {
+        let text = match PromptDefense::sanitize(text) {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("Defense: Blocked learning due to injection: {}", e);
+                return;
+            }
+        };
+
+        let text = self.privacy.scrub(&text);
+
         debug!("OmniMind: Incremental learning with deep NLP extraction");
-        let vector = self.encode_text(text);
+        let vector = self.encode_text(&text);
 
         // Proper Meaning Extraction
         let facts = SymbolicNLP::extract_deep_facts(text);
@@ -176,6 +195,18 @@ impl OmniMind {
     }
 
     pub fn ask(&mut self, text: &str) -> QueryResponse {
+        let text = match PromptDefense::sanitize(text) {
+            Ok(t) => t,
+            Err(e) => {
+                return QueryResponse {
+                    answer: format!("Security Block: {}", e),
+                    trace: None,
+                };
+            }
+        };
+
+        let text = self.privacy.scrub(&text);
+
         let words: Vec<String> = text.split_whitespace()
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
             .filter(|w| !w.is_empty())

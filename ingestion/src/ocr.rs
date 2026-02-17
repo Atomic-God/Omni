@@ -1,5 +1,5 @@
 use image::DynamicImage;
-use log::info;
+use tracing::info;
 use core_vsa::HyperVector;
 use std::collections::HashMap;
 

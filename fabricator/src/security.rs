@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use log::{info, warn};
+use tracing::{info, warn};
 
 pub struct SecurityManager {
     pub sandbox_root: PathBuf,

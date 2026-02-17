@@ -1,7 +1,7 @@
 use core_vsa::{HyperVector, traits::MemoryStore};
 use memory::MemoryManager;
 use std::collections::VecDeque;
-use log::{info, warn};
+use tracing::{info, warn};
 use runtime::Goal;
 
 pub struct ContextManager {

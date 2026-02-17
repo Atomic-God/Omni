@@ -4,7 +4,7 @@ use ingestion::ingest_graph;
 use engine::{OmniMind, bench::VSABenchmark, governance::SelfVerificationLoop};
 use memory::MemoryManager;
 use std::path::PathBuf;
-use log::{info, error};
+use tracing::{info, error};
 use std::io::Write;
 use indicatif::{ProgressBar, ProgressStyle};
 

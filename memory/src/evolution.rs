@@ -40,20 +40,22 @@ impl LifecycleManager {
 pub struct ForgettingEngine;
 
 impl ForgettingEngine {
-    /// Applies temporal decay and importance-based pruning to memory stores.
-    pub fn prune_fading_memories(entries: &mut std::collections::HashMap<String, MemoryEntry>, decay_rate: f32) {
+    /// Applies Ebbinghaus forgetting curve and importance-based pruning.
+    pub fn prune_fading_memories(entries: &mut std::collections::HashMap<String, MemoryEntry>, base_decay: f32) {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         let mut to_remove = Vec::new();
 
         for (id, entry) in entries.iter_mut() {
             if entry.layer == "semantic" { continue; }
 
-            let age = now.saturating_sub(entry.timestamp);
-            // Higher age reduces importance
-            let age_factor = (age as f32 / 3600.0).max(1.0);
-            entry.importance *= decay_rate / age_factor;
+            let time_since_last = now.saturating_sub(entry.last_access) as f32;
 
-            if entry.importance < 0.05 {
+            // Retrievability R = exp(-t / S)
+            let retrievability = (-time_since_last / (entry.stability * 3600.0)).exp();
+
+            entry.importance *= retrievability * base_decay;
+
+            if entry.importance < 0.01 {
                 to_remove.push(id.clone());
             }
         }

@@ -1,3 +1,4 @@
+#![deny(warnings)]
 use core_vsa::traits::Ingestor;
 use core_vsa::SymbolGraph;
 use std::path::Path;

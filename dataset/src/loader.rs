@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use log::info;
+use tracing::info;
 
 pub struct StreamingLoader {
     files: Vec<PathBuf>,

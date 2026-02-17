@@ -1,5 +1,5 @@
 use crate::knowledge::{KnowledgeGraph, KnowledgeFact};
-use log::info;
+use tracing::info;
 
 pub struct AbductiveExplanation {
     pub hypothesis: String,

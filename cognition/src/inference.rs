@@ -1,5 +1,5 @@
 use crate::CognitionCore;
-use log::debug;
+use tracing::debug;
 
 pub struct UncertaintyScorer;
 

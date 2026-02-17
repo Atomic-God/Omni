@@ -1,5 +1,5 @@
 use hte::{HardwareProfile, detect, get_current_load};
-use log::info;
+use tracing::info;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerMode {

@@ -1,6 +1,6 @@
 use core_vsa::{HyperVector, DIMENSION};
 use std::collections::VecDeque;
-use log::debug;
+use tracing::debug;
 
 pub struct SequenceResonator {
     pub context_vector: HyperVector,

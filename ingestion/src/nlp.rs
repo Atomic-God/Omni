@@ -1,4 +1,4 @@
-use log::{debug, info};
+use tracing::{debug, info};
 use core_vsa::FactTriple;
 use unicode_normalization::UnicodeNormalization;
 use whatlang::{detect, Lang};

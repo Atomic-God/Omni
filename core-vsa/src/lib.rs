@@ -1,3 +1,16 @@
+#![deny(warnings)]
+//! # OmniForge Core VSA Engine
+//!
+//! This crate implements Vector Symbolic Architectures (VSA), specifically using
+//! Binary Spatter Codes (BSC). HyperVectors are high-dimensional (typically 10,000 bits)
+//! representations that allow for symbolic reasoning through algebraic operations.
+//!
+//! ## Key Operations:
+//! - **Binding**: XOR-based binding. Combines two vectors into a new one,
+//!   orthogonal to both. Reversible via unbinding (applying XOR again).
+//! - **Bundling**: Bitwise majority rule (implemented with probabilistic merging).
+//!   Merges vectors into a set-like representation that remains similar to its components.
+//! - **Permutation**: Cyclic shift. Used for sequence encoding and mapping structural roles.
 use once_cell::sync::Lazy;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -20,6 +33,35 @@ pub struct HyperVector {
     pub dim: usize,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_noise_resilience() {
+        let v1 = HyperVector::random();
+        let v2 = v1.add_noise(0.05); // 5% noise
+        let sim = v1.similarity(&v2);
+        println!("Similarity with 5% noise: {}", sim);
+        assert!(sim > 0.8); // 5% noise should keep similarity high
+
+        let v3 = v1.add_noise(0.25); // 25% noise
+        let sim2 = v1.similarity(&v3);
+        println!("Similarity with 25% noise: {}", sim2);
+        assert!(sim2 > 0.0); // Should still be positively correlated
+        assert!(sim2 < sim);
+    }
+
+    #[test]
+    fn test_binding_unbinding() {
+        let a = HyperVector::random();
+        let b = HyperVector::random();
+        let c = a.bind(&b);
+        let a_approx = c.bind(&b); // c XOR b = a
+        assert!(a.similarity(&a_approx) > 0.99);
+    }
+}
+
 impl Hash for HyperVector {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.dim.hash(state);
@@ -37,7 +79,15 @@ impl HyperVector {
     pub fn random_dim(dim: usize) -> Self {
         let num_words = (dim + 63) / 64;
         let mut rng = rand::thread_rng();
-        let words: Vec<u64> = (0..num_words).map(|_| rng.gen()).collect();
+        let mut words: Vec<u64> = (0..num_words).map(|_| rng.gen()).collect();
+
+        // Mask last word
+        if dim % 64 != 0 {
+            if let Some(last) = words.last_mut() {
+                *last &= (1 << (dim % 64)) - 1;
+            }
+        }
+
         Self { words, dim }
     }
 
@@ -48,7 +98,15 @@ impl HyperVector {
     pub fn deterministic_dim(seed: u64, dim: usize) -> Self {
         let num_words = (dim + 63) / 64;
         let mut rng = StdRng::seed_from_u64(seed);
-        let words: Vec<u64> = (0..num_words).map(|_| rng.gen()).collect();
+        let mut words: Vec<u64> = (0..num_words).map(|_| rng.gen()).collect();
+
+        // Mask last word
+        if dim % 64 != 0 {
+            if let Some(last) = words.last_mut() {
+                *last &= (1 << (dim % 64)) - 1;
+            }
+        }
+
         Self { words, dim }
     }
 
@@ -116,21 +174,34 @@ impl HyperVector {
         Self { words: new_words, dim: self.dim }
     }
 
+    /// Computes the cosine-like similarity between two HyperVectors using Hamming distance.
+    /// Result is in range [-1, 1], where 1 is identical, 0 is orthogonal (random), and -1 is inverse.
     pub fn similarity(&self, other: &Self) -> f32 {
         assert_eq!(self.dim, other.dim, "Dimension mismatch in similarity");
         let mut hamming: u32 = 0;
-        for i in 0..self.dim {
-            let word_idx = i / 64;
-            let bit_idx = i % 64;
-            let bit_a = (self.words[word_idx] >> bit_idx) & 1;
-            let bit_b = (other.words[word_idx] >> bit_idx) & 1;
-            if bit_a != bit_b {
-                hamming += 1;
-            }
+
+        for (a, b) in self.words.iter().zip(other.words.iter()) {
+            hamming += (a ^ b).count_ones();
         }
 
+        // Adjust for bits beyond self.dim in the last word
         let total_bits = self.dim as f32;
         1.0 - 2.0 * (hamming as f32 / total_bits)
+    }
+
+    /// Adds noise to the HyperVector by flipping a percentage of bits.
+    pub fn add_noise(&self, noise_level: f32) -> Self {
+        let mut rng = rand::thread_rng();
+        let words = self.words.iter().map(|&w| {
+            let mut word = w;
+            for i in 0..64 {
+                if rng.gen::<f32>() < noise_level {
+                    word ^= 1 << i;
+                }
+            }
+            word
+        }).collect();
+        Self { words, dim: self.dim }
     }
 
     pub fn truncate(&self, new_dim: usize) -> Self {

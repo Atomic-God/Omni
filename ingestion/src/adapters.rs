@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::Read;
 use zip::read::ZipArchive;
 use xml::reader::{EventReader, XmlEvent};
-use log::warn;
+use tracing::warn;
 
 pub struct HtmlAdapter;
 impl IngestionAdapter for HtmlAdapter {

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use core_vsa::FactTriple;
-use log::info;
+use tracing::info;
 
 pub struct DataMeaningExtractor;
 

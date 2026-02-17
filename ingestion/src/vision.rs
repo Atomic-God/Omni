@@ -1,6 +1,6 @@
 use image::{DynamicImage, GenericImageView};
 use core_vsa::HyperVector;
-use log::info;
+use tracing::info;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]

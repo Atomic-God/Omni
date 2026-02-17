@@ -1,6 +1,6 @@
 use core_vsa::HyperVector;
 use std::sync::Arc;
-use log::info;
+use tracing::info;
 use crate::{MemoryManager, MemoryStore, HierarchicalMemory, MemoryLayer};
 use std::error::Error;
 

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use log::warn;
+use tracing::warn;
 
 pub struct PermissionBoundary {
     pub allowed_paths: Vec<PathBuf>,

@@ -1,5 +1,5 @@
 use crate::{ShardedStorage, SnapshotManager, MemoryManager};
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use std::path::Path;
 use sha2::{Sha256, Digest};
 use std::fs::File;

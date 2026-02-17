@@ -1,8 +1,9 @@
+#![deny(warnings)]
 use memory::{MemoryManager, MemoryLayer, HierarchicalMemory};
 use ingestion::UniversalIngestor;
 use core_vsa::traits::Ingestor;
 use std::path::Path;
-use log::info;
+use tracing::info;
 use crate::consolidation::ConsolidationEngine;
 
 pub mod consolidation;

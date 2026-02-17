@@ -1,7 +1,7 @@
 use core_vsa::{HyperVector, DIMENSION};
 use std::collections::{HashMap, HashSet};
 use rand::seq::SliceRandom;
-use log::debug;
+use tracing::debug;
 use serde::{Serialize, Deserialize};
 
 const NUM_TABLES: usize = 10;
@@ -109,5 +109,16 @@ impl LSHIndex {
 
     pub fn len(&self) -> usize {
         self.vectors.len()
+    }
+
+    /// Synchronizes the index with a provided list of valid keys, removing any orphans.
+    pub fn sync_with_keys(&mut self, valid_keys: &[String]) {
+        let valid_set: HashSet<_> = valid_keys.iter().collect();
+        let current_keys: Vec<_> = self.vectors.keys().cloned().collect();
+        for key in current_keys {
+            if !valid_set.contains(&key) {
+                self.remove(&key);
+            }
+        }
     }
 }

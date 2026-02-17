@@ -1,6 +1,6 @@
 use crate::{IngestionAdapter, SemanticChunk};
 use std::path::Path;
-use log::info;
+use tracing::info;
 
 pub struct DataIngestionRegistry {
     adapters: Vec<Box<dyn IngestionAdapter>>,
