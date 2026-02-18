@@ -11,6 +11,7 @@ use lofty::{Probe, TaggedFileExt, Accessor, AudioFile};
 use walkdir::WalkDir;
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashSet;
 use sha2::{Sha256, Digest};
 use whatlang::detect;
@@ -56,9 +57,18 @@ impl Ingestor for UniversalIngestor {
                 .filter(|e| !e.path().to_string_lossy().contains("/.git/"))
                 .collect();
 
+            let total = entries.len();
+            let processed = AtomicUsize::new(0);
+
+            info!("Industrial Batch Ingestion: {} files detected.", total);
+
             entries.par_iter().for_each(|entry| {
                 if let Err(e) = self.process_single_file(entry.path(), &graph, &seen_hashes, &seen_semantic) {
                     warn!("Failed to process {:?}: {}", entry.path(), e);
+                }
+                let count = processed.fetch_add(1, Ordering::SeqCst) + 1;
+                if count % 10 == 0 || count == total {
+                    info!("Ingestion Progress: {}/{} files ({}%)", count, total, (count * 100) / total);
                 }
             });
         }
@@ -93,6 +103,7 @@ impl UniversalIngestor {
             "pdf" => self.process_pdf(path, graph),
             "csv" => self.process_csv(path, graph),
             "json" => self.process_json(path, graph),
+            "xml" => self.process_xml(path, graph),
             "yaml" | "yml" => self.process_yaml(path, graph),
             "docx" => self.process_docx(path, graph),
             "rs" | "py" | "c" | "cpp" | "js" | "ts" | "java" | "go" | "rb" => self.process_code(path, graph),
@@ -360,6 +371,27 @@ impl UniversalIngestor {
                  let mut g = graph.lock().unwrap();
                  g.add_node_with_confidence(&entry_id, HyperVector::random(), meta.to_map(), 1.0);
                  g.add_edge_with_confidence(&entry_id, &archive_id, "contained_in", 1.0, 1.0);
+            }
+        }
+        Ok(())
+    }
+
+    fn process_xml(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        use crate::adapters::XmlAdapter;
+        use crate::IngestionAdapter;
+
+        let adapter = XmlAdapter;
+        let chunks = adapter.ingest(path);
+        for chunk in chunks {
+            let node_id = format!("xml:{}", chunk.metadata.hash);
+            let mut g = graph.lock().unwrap();
+            let mut meta = chunk.metadata.to_map();
+            meta.insert("source".to_string(), path.to_string_lossy().to_string());
+            g.add_node_with_confidence(&node_id, HyperVector::random(), meta, 1.0);
+
+            let facts = SymbolicNLP::extract_deep_facts(&chunk.content);
+            for fact in facts {
+                g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
             }
         }
         Ok(())

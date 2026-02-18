@@ -1,16 +1,18 @@
 use hte::{HardwareProfile, detect, get_current_load};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerMode {
     LowPower,
     Balanced,
     HighPerformance,
+    Mobile, // Aggressive low-power mode
 }
 
 pub struct HardwareAdapter {
     pub profile: HardwareProfile,
     pub current_mode: PowerMode,
+    pub mobile_mode_forced: bool,
 }
 
 impl HardwareAdapter {
@@ -28,6 +30,7 @@ impl HardwareAdapter {
         Self {
             profile,
             current_mode: mode,
+            mobile_mode_forced: false,
         }
     }
 
@@ -56,7 +59,7 @@ impl HardwareAdapter {
 
     pub fn get_concurrency_limit(&self) -> usize {
         let base = match self.current_mode {
-            PowerMode::LowPower => 1,
+            PowerMode::LowPower | PowerMode::Mobile => 1,
             PowerMode::Balanced => (self.profile.physical_cores / 2).max(1),
             PowerMode::HighPerformance => self.profile.logical_cores,
         };
@@ -66,6 +69,10 @@ impl HardwareAdapter {
     }
 
     pub fn suggest_dimension(&self) -> usize {
+        if self.current_mode == PowerMode::Mobile || self.mobile_mode_forced {
+            return 2048; // Strictly enforce low precision for mobile
+        }
+
         let total_ram_gb = self.profile.total_memory / 1024 / 1024 / 1024;
 
         let base = if total_ram_gb < 2 {
@@ -91,5 +98,22 @@ impl HardwareAdapter {
         info!("Industrial Hardware Report [Mode: {:?}]:", self.current_mode);
         info!("  Load: {:.1}%", get_current_load());
         info!("  Suggested VSA Dim: {}", self.suggest_dimension());
+    }
+}
+
+pub struct PerformanceMonitor;
+
+impl PerformanceMonitor {
+    /// Tracks and logs live resource utilization.
+    pub fn track_telemetry() {
+        let load = get_current_load();
+        let profile = detect();
+        let used_mem_gb = profile.used_memory as f32 / 1024.0 / 1024.0 / 1024.0;
+
+        info!("Industrial Telemetry: [CPU Load: {:.1}%] [RAM Used: {:.2} GB]", load, used_mem_gb);
+
+        if load > 90.0 {
+            warn!("Industrial Alert: CPU Load exceeding industrial safety limits!");
+        }
     }
 }

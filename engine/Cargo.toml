@@ -10,6 +10,7 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 uuid = { version = "1.4", features = ["v4", "serde"] }
+rand = "0.8"
 chrono = "0.4"
 # Crate dependencies
 core-vsa = { path = "../core-vsa" }

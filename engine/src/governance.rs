@@ -139,6 +139,45 @@ impl SecuritySandbox {
     }
 }
 
+pub struct ConsistencyValidator;
+
+impl ConsistencyValidator {
+    /// Validates the knowledge graph for logical consistency and absence of loops.
+    pub fn validate_logical_integrity(mind: &crate::OmniMind) -> f32 {
+        info!("Governance: Validating logical integrity of the Knowledge Graph.");
+        let mut score = 1.0;
+
+        let cog = match &mind.state {
+            crate::LifecycleState::Forge(_, c) => c,
+            crate::LifecycleState::Runtime(_, _, c) => c,
+        };
+
+        // 1. Check for direct contradictions
+        let contradictions = &cog.knowledge_graph.contradictions;
+        if !contradictions.is_empty() {
+            warn!("Governance: Found {} unresolved contradictions.", contradictions.len());
+            score -= 0.1 * contradictions.len() as f32;
+        }
+
+        // 2. Check for circular reasoning (A causes B, B causes A)
+        // Simple heuristic for Phase-1
+        for (subject, relations) in &cog.relation_graph {
+            for rel in relations {
+                if let Some(reverse_rels) = cog.relation_graph.get(&rel.target) {
+                    for rev in reverse_rels {
+                        if rev.target == *subject && rev.relation_type == rel.relation_type {
+                            warn!("Governance: Circular logic detected: {} <-> {}", subject, rel.target);
+                            score -= 0.05;
+                        }
+                    }
+                }
+            }
+        }
+
+        score.clamp(0.0, 1.0)
+    }
+}
+
 pub struct AuditLog {
     pub entries: Vec<String>,
 }

@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::collections::VecDeque;
 use tracing::{info, warn};
+use rand;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TaskStatus {
@@ -16,6 +17,7 @@ pub struct Goal {
     pub description: String,
     pub status: TaskStatus,
     pub confidence: f32, // Step 97
+    pub retries: u32,
 }
 
 pub struct TaskLoop {
@@ -37,6 +39,7 @@ impl TaskLoop {
             description: description.to_string(),
             status: TaskStatus::Pending,
             confidence: 0.0,
+            retries: 0,
         };
         info!("Task Loop: New goal added: {}", description);
         self.goals.push_back(goal);
@@ -49,8 +52,23 @@ impl TaskLoop {
 
         info!("Task Loop: Executing step for goal: {}", goal.description);
 
-        // Multi-step simulation for Phase-1
-        // In reality, this would hook into cognition/planning
+        // Industrial failure simulation (e.g. random failure for testing recovery)
+        let mut rng = rand::thread_rng();
+        if rand::Rng::gen_bool(&mut rng, 0.05) {
+             warn!("Task Loop: Transient failure detected for goal: {}", goal.description);
+             if goal.retries < 3 {
+                 goal.retries += 1;
+                 goal.status = TaskStatus::Pending; // Backtrack to retry
+                 return Some(format!("Recovering: Retrying goal (attempt {})", goal.retries));
+             } else {
+                 goal.status = TaskStatus::Failed("Max retries exceeded".to_string());
+                 let failed = self.goals.pop_front().unwrap();
+                 self.history.push(failed);
+                 return Some("Goal Failed after multiple attempts".to_string());
+             }
+        }
+
+        // Multi-step progress simulation
         if goal.confidence < 0.9 {
             goal.confidence += 0.3;
             return Some(format!("Working on: {}", goal.description));

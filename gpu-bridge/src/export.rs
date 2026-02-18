@@ -12,16 +12,16 @@ impl KaggleExporter {
 
         // Stub: Just verify paths.
         if !data_path.exists() {
-            log::error!("Dataset path not found");
+            tracing::error!("Dataset path not found");
             return;
         }
-        log::info!("Exporting dataset to Parquet for Kaggle...");
+        tracing::info!("Exporting dataset to Parquet for Kaggle...");
         // Logic to stream read dataset and write parquet rows
     }
 
     pub fn export_graph(graph: &SymbolGraph, output_path: &Path) {
         let f = File::create(output_path).unwrap();
         serde_json::to_writer(f, graph).unwrap();
-        log::info!("Exported SymbolGraph to JSON for Python interop.");
+        tracing::info!("Exported SymbolGraph to JSON for Python interop.");
     }
 }

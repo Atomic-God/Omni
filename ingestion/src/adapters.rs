@@ -109,6 +109,25 @@ impl IngestionAdapter for JsonAdapter {
     }
 }
 
+pub struct XmlAdapter;
+impl IngestionAdapter for XmlAdapter {
+    fn can_handle(&self, path: &Path) -> bool {
+        matches!(path.extension().and_then(|s| s.to_str()), Some("xml"))
+    }
+    fn ingest(&self, path: &Path) -> Vec<SemanticChunk> {
+        let content = match generic_read_to_string(path) { Ok(c) => c, Err(_) => return vec![] };
+        let mut text = String::new();
+        let parser = EventReader::from_str(&content);
+        for e in parser {
+            if let Ok(XmlEvent::Characters(c)) = e {
+                text.push_str(&c);
+                text.push(' ');
+            }
+        }
+        crate::chunk_content(&text.trim(), "xml_text", path)
+    }
+}
+
 pub struct PdfAdapterStub; // Renamed from PdfAdapter to allow explicit import if needed
 impl IngestionAdapter for PdfAdapterStub {
     fn can_handle(&self, path: &Path) -> bool {

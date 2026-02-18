@@ -7,6 +7,7 @@ use axum::{
 use serde_json::json;
 
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum ApiError {
     #[error("Internal Server Error: {0}")]
     Internal(String),

@@ -84,6 +84,18 @@ pub struct ChunkMetadata {
     pub structure_type: String,
 }
 
+impl ChunkMetadata {
+    pub fn to_map(&self) -> std::collections::HashMap<String, String> {
+        let mut map = std::collections::HashMap::new();
+        map.insert("hash".to_string(), self.hash.clone());
+        map.insert("timestamp".to_string(), self.timestamp.to_string());
+        map.insert("file_type".to_string(), self.file_type.clone());
+        map.insert("language".to_string(), self.language.clone());
+        map.insert("structure_type".to_string(), self.structure_type.clone());
+        map
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticChunk {
     pub source: String,

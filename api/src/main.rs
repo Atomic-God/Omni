@@ -24,6 +24,7 @@ use config::AppConfig;
 #[derive(Clone)]
 struct AppState {
     mind: Arc<Mutex<OmniMind>>,
+    #[allow(dead_code)]
     config: AppConfig,
 }
 

@@ -44,22 +44,44 @@ impl MindPack {
         }
     }
 
-    pub fn export<T: Serialize>(&self, path: &Path, data: &T) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn export<T: Serialize>(&self, path: &Path, data: &T, key: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         let temp_path = path.with_extension("tmp_pack");
         let file = File::create(&temp_path)?;
         let mut encoder = GzEncoder::new(file, Compression::best());
-        bincode::serialize_into(&mut encoder, data)?;
+
+        let mut bytes = bincode::serialize(data)?;
+        if let Some(k) = key {
+            info!("Industrial Snapshot: Applying encryption layer.");
+            self.xor_transform(&mut bytes, k);
+        }
+
+        std::io::Write::write_all(&mut encoder, &bytes)?;
         encoder.finish()?;
 
         fs::rename(temp_path, path)?;
         Ok(())
     }
 
-    pub fn import<T: for<'de> Deserialize<'de>>(&self, path: &Path) -> Result<T, Box<dyn std::error::Error>> {
+    pub fn import<T: for<'de> Deserialize<'de>>(&self, path: &Path, key: Option<&str>) -> Result<T, Box<dyn std::error::Error>> {
         let file = File::open(path)?;
         let mut decoder = GzDecoder::new(file);
-        let data = bincode::deserialize_from(&mut decoder)?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut decoder, &mut bytes)?;
+
+        if let Some(k) = key {
+            info!("Industrial Snapshot: Removing encryption layer.");
+            self.xor_transform(&mut bytes, k);
+        }
+
+        let data = bincode::deserialize(&bytes)?;
         Ok(data)
+    }
+
+    fn xor_transform(&self, data: &mut [u8], key: &str) {
+        let key_bytes = key.as_bytes();
+        for (i, byte) in data.iter_mut().enumerate() {
+            *byte ^= key_bytes[i % key_bytes.len()];
+        }
     }
 }
 

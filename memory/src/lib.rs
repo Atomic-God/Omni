@@ -2,7 +2,6 @@
 use core_vsa::HyperVector;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::fs::File;
 use std::fs;
 use tracing::{info, debug};
 
@@ -94,7 +93,7 @@ impl MemoryManager {
         SnapshotManager::save_delta(self, &delta_path, &base_snapshot)
     }
 
-    pub fn export_mindpack(&self, path: &Path) -> Result<(), Box<dyn Error>> {
+    pub fn export_mindpack(&self, path: &Path, encryption_key: Option<&str>) -> Result<(), Box<dyn Error>> {
         self.save_snapshot("main")?;
         let snapshot_path = self.root_dir.join("main.snap");
         let snapshot = SnapshotManager::load(&snapshot_path)?;
@@ -105,8 +104,23 @@ impl MemoryManager {
             ]),
             integrity_hashes: HashMap::new(),
         };
-        let file = File::create(path)?;
-        bincode::serialize_into(file, &pack)?;
+
+        pack.export(path, &pack, encryption_key)?;
+        Ok(())
+    }
+
+    pub fn incremental_restore(&mut self, snapshots: Vec<MindSnapshot>) -> Result<(), Box<dyn Error>> {
+        info!("Industrial Restore: Applying {} snapshot layers.", snapshots.len());
+        for snap in snapshots {
+            if snap.header.is_delta {
+                SnapshotManager::apply_delta(self, &snap);
+            } else {
+                self.storage = snap.storage;
+                self.episodic_index = snap.episodic_index;
+                self.semantic_index = snap.semantic_index;
+                self.metadata = snap.metadata;
+            }
+        }
         Ok(())
     }
 

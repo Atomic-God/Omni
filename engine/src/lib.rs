@@ -14,6 +14,7 @@ use ingestion::nlp::SymbolicNLP;
 use serde::{Serialize, Deserialize};
 use crate::governance::{SelfCorrectionLoop, SecuritySandbox, PrivacyGuard, PromptDefense};
 use crate::task::TaskLoop;
+use tracing::warn;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
@@ -174,22 +175,22 @@ impl OmniMind {
         let vector = self.encode_text(&text);
 
         // Proper Meaning Extraction
-        let facts = SymbolicNLP::extract_deep_facts(text);
+        let facts = SymbolicNLP::extract_deep_facts(&text);
 
         match &mut self.state {
             LifecycleState::Forge(mem, cog) => {
-                let _ = mem.store(text, vector);
+                let _ = mem.store(&text, vector);
                 for fact in facts {
                     cog.add_fact_triple(fact, 1.0);
                 }
-                cog.reinforce_knowledge(text, 1.0);
+                cog.reinforce_knowledge(&text, 1.0);
             },
             LifecycleState::Runtime(_, delta, cog) => {
-                let _ = delta.store(text, vector);
+                let _ = delta.store(&text, vector);
                 for fact in facts {
                     cog.add_fact_triple(fact, 1.0);
                 }
-                cog.reinforce_knowledge(text, 1.0);
+                cog.reinforce_knowledge(&text, 1.0);
             }
         }
     }
@@ -256,7 +257,7 @@ impl OmniMind {
              }
         }
 
-        let vector = self.encode_text(text);
+        let vector = self.encode_text(&text);
         let results = self.query(&vector);
         if let Some((top, sim)) = results.first() {
             if *sim > 0.3 {

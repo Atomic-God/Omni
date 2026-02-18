@@ -841,12 +841,12 @@ name = "dataset"
 version = "0.1.0"
 dependencies = [
  "csv",
- "log",
  "neural",
  "rand 0.8.5",
  "rayon",
  "serde",
  "serde_json",
+ "tracing",
  "unicode-normalization",
  "walkdir",
 ]
@@ -947,6 +947,7 @@ dependencies = [
  "learning",
  "memory",
  "perception",
+ "rand 0.8.5",
  "runtime",
  "serde",
  "tokio",
@@ -1008,11 +1009,11 @@ dependencies = [
  "hte",
  "ingestion",
  "learning",
- "log",
  "memory",
  "notify",
  "perception",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -1232,11 +1233,11 @@ name = "gpu-bridge"
 version = "0.1.0"
 dependencies = [
  "core-vsa",
- "log",
  "neural",
  "parquet",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -1317,9 +1318,9 @@ name = "hte"
 version = "0.1.0"
 dependencies = [
  "directories",
- "log",
  "raw-cpuid",
  "sysinfo",
+ "tracing",
 ]
 
 [[package]]
@@ -2029,10 +2030,10 @@ dependencies = [
 name = "neural"
 version = "0.1.0"
 dependencies = [
- "log",
  "rand 0.8.5",
  "rayon",
  "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -2229,11 +2230,11 @@ dependencies = [
  "indicatif",
  "ingestion",
  "learning",
- "log",
  "memory",
  "neural",
  "runtime",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -2379,9 +2380,9 @@ name = "perception"
 version = "0.1.0"
 dependencies = [
  "core-vsa",
- "log",
  "once_cell",
  "regex",
+ "tracing",
 ]
 
 [[package]]

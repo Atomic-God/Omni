@@ -18,7 +18,7 @@ runtime = { path = "../runtime" }
 core-vsa = { path = "../core-vsa" }
 neural = { path = "../neural" }
 dataset = { path = "../dataset" }
-log = "0.4"
+tracing = "0.1"
 env_logger = "0.10"
 indicatif = "0.18.3"
 directories = "6.0.0"

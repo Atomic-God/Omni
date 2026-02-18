@@ -3,6 +3,7 @@ use config::{Config, ConfigError, File, Environment};
 use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct AppConfig {
     pub data_dir: PathBuf,
     pub port: u16,
