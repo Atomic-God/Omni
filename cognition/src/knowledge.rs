@@ -101,6 +101,22 @@ impl KnowledgeGraph {
         }
     }
 
+    pub fn penalize(&mut self, id: &str, penalty_weight: f32) {
+        let mut source_id_to_update = None;
+        if let Some(fact) = self.facts.get_mut(id) {
+            // Negative feedback: Dampen confidence and reliability
+            fact.confidence *= (1.0 - penalty_weight).max(0.0);
+            fact.source_reliability *= (1.0 - penalty_weight * 0.5).max(0.1);
+
+            source_id_to_update = Some(id.split(':').next().unwrap_or("unknown").to_string());
+            debug!("Fact {} penalized: new confidence {:.2}", id, fact.confidence);
+        }
+
+        if let Some(source_id) = source_id_to_update {
+            self.update_source_trust(&source_id, -penalty_weight * 0.1);
+        }
+    }
+
     pub fn apply_temporal_decay(&mut self, decay_rate: f32, now: u64) {
         for fact in self.facts.values_mut() {
             let age = now.saturating_sub(fact.timestamp);

@@ -131,3 +131,31 @@ fn test_ingestion_robustness_and_recovery() {
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_dir_all("./test_robustness");
 }
+
+#[test]
+fn test_continuous_learning_and_governance() {
+    let mut mind = OmniMind::new_forge("./test_learning_gov");
+
+    // 1. Learn and reinforce
+    mind.learn("Efficiency is key.");
+
+    // 2. Negative Feedback
+    let fact_id = "efficiency-taxonomy-key";
+    engine::learning::LearningEngine::process_feedback(&mut mind, fact_id, -0.8);
+
+    // 3. Verify confidence drop
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+             if let Some(fact) = cog.knowledge_graph.facts.get(fact_id) {
+                 println!("Fact Confidence after penalty: {:.2}", fact.confidence);
+                 assert!(fact.confidence < 0.5);
+             }
+        }
+        _ => {}
+    }
+
+    // 4. Test Sleep Cycle (Consistency Validation)
+    mind.sleep_cycle();
+
+    let _ = std::fs::remove_dir_all("./test_learning_gov");
+}

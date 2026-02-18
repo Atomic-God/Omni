@@ -9,25 +9,47 @@ impl LearningEngine {
         info!("Processing feedback for {}: score={}", key, score);
         match &mut mind.state {
             crate::LifecycleState::Forge(mem, cog) => {
+                let mut found = false;
                 if let Some(entry) = mem.metadata.get_mut(key) {
                     if score > 0.0 {
                         entry.reinforce(score);
-                        cog.reinforce_knowledge(key, score);
                     } else {
                         entry.confidence *= (1.0 + score).max(0.1);
                         entry.importance *= (1.0 + score).max(0.1);
                     }
+                    found = true;
+                }
+
+                if score > 0.0 {
+                    cog.reinforce_knowledge(key, score);
+                } else {
+                    cog.penalize_knowledge(key, -score);
+                }
+
+                if !found && !cog.knowledge_graph.facts.contains_key(key) {
+                    info!("Feedback: Key {} not found in memory or cognition.", key);
                 }
             },
             crate::LifecycleState::Runtime(_, delta, cog) => {
+                let mut found = false;
                 if let Some(entry) = delta.metadata.get_mut(key) {
                     if score > 0.0 {
                         entry.reinforce(score);
-                        cog.reinforce_knowledge(key, score);
                     } else {
                         entry.confidence *= (1.0 + score).max(0.1);
                         entry.importance *= (1.0 + score).max(0.1);
                     }
+                    found = true;
+                }
+
+                if score > 0.0 {
+                    cog.reinforce_knowledge(key, score);
+                } else {
+                    cog.penalize_knowledge(key, -score);
+                }
+
+                if !found && !cog.knowledge_graph.facts.contains_key(key) {
+                    info!("Feedback: Key {} not found in memory or cognition.", key);
                 }
             }
         }

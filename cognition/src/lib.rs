@@ -98,6 +98,10 @@ impl CognitionCore {
         self.knowledge_graph.reinforce(id, reliability);
     }
 
+    pub fn penalize_knowledge(&mut self, id: &str, penalty: f32) {
+        self.knowledge_graph.penalize(id, penalty);
+    }
+
     pub fn resolve_contradictions(&mut self) {
         self.knowledge_graph.resolve_all_contradictions();
     }

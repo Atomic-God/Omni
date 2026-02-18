@@ -315,12 +315,15 @@ impl OmniMind {
                 mem.sleep_cycle();
                 cog.resolve_contradictions();
                 cog.apply_knowledge_decay(0.98);
+                // Self-Consistency Validation
+                crate::governance::SelfVerificationLoop::global_verification(self);
             },
             LifecycleState::Runtime(base, delta, cog) => {
                 base.sleep_cycle();
                 delta.sleep_cycle();
                 cog.resolve_contradictions();
                 cog.apply_knowledge_decay(0.98);
+                crate::governance::SelfVerificationLoop::global_verification(self);
             }
         }
         info!("OmniMind: Sleep Cycle complete.");
