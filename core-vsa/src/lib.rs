@@ -16,7 +16,6 @@ use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hasher, Hash};
-use std::collections::hash_map::DefaultHasher;
 
 pub mod traits;
 
@@ -127,10 +126,10 @@ impl HyperVector {
 
     pub fn bundle(&self, other: &Self) -> Self {
         assert_eq!(self.dim, other.dim, "Dimension mismatch in bundle");
-        let mut hasher = DefaultHasher::new();
-        for w in &self.words { hasher.write_u64(*w); }
-        for w in &other.words { hasher.write_u64(*w); }
-        let seed = hasher.finish();
+        let mut h = seahash::SeaHasher::new();
+        for w in &self.words { h.write_u64(*w); }
+        for w in &other.words { h.write_u64(*w); }
+        let seed = h.finish();
         let mut rng = StdRng::seed_from_u64(seed);
 
         let words = self

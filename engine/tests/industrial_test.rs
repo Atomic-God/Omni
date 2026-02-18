@@ -109,3 +109,25 @@ fn test_delta_snapshots_and_forgetting() {
 
     let _ = std::fs::remove_dir_all("./test_delta_industrial");
 }
+
+#[test]
+fn test_ingestion_robustness_and_recovery() {
+    let mut mind = OmniMind::new_forge("./test_robustness");
+
+    // 1. Create a corrupted "PDF" (actually just text with .pdf extension)
+    let path = "corrupted.pdf";
+    let high_entropy_content = "Industrial robustness requires advanced error recovery fallbacks and deep symbolic extraction of semantic meaning from heterogeneous data sources. Safety protocols are paramount. 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    std::fs::write(path, high_entropy_content).unwrap();
+
+    // 2. Ingest - should fail specialized parsing but succeed via generic fallback
+    let result = mind.ingest_file(path);
+    assert!(result.is_ok());
+
+    // 3. Verify knowledge was extracted despite "corruption"
+    let response = mind.ask("industrial robustness");
+    println!("Robustness Response: {}", response.answer);
+    assert!(response.answer.to_lowercase().contains("robustness") || response.answer.contains("Logic:"));
+
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_dir_all("./test_robustness");
+}

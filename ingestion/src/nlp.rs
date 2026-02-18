@@ -76,6 +76,19 @@ impl SymbolicNLP {
                     }
                 }
             }
+
+            // 4. Proximity / Adjacency for Industrial Concepts
+            for i in 0..tokens.len() - 1 {
+                let w1 = &tokens[i];
+                let w2 = &tokens[i+1];
+                if w1.len() > 3 && w2.len() > 3 {
+                    facts.push(FactTriple {
+                        subject: w1.clone(),
+                        predicate: "related_to".to_string(),
+                        object: w2.clone(),
+                    });
+                }
+            }
         }
 
         debug!("NLP: Extracted {} deep facts", facts.len());

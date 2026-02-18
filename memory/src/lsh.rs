@@ -16,13 +16,17 @@ pub struct LSHIndex {
 
 impl LSHIndex {
     pub fn new() -> Self {
+        Self::with_dimension(DIMENSION)
+    }
+
+    pub fn with_dimension(dim: usize) -> Self {
         let mut rng = rand::thread_rng();
         let mut tables = Vec::with_capacity(NUM_TABLES);
         let mut masks = Vec::with_capacity(NUM_TABLES);
 
         for _ in 0..NUM_TABLES {
             tables.push(HashMap::new());
-            let mut mask: Vec<usize> = (0..DIMENSION).collect();
+            let mut mask: Vec<usize> = (0..dim).collect();
             mask.shuffle(&mut rng);
             masks.push(mask.into_iter().take(BITS_PER_KEY).collect());
         }

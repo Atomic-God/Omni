@@ -706,6 +706,7 @@ version = "0.1.0"
 dependencies = [
  "once_cell",
  "rand 0.8.5",
+ "seahash",
  "serde",
 ]
 
@@ -949,6 +950,7 @@ dependencies = [
  "perception",
  "rand 0.8.5",
  "runtime",
+ "seahash",
  "serde",
  "tokio",
  "tracing",
@@ -1554,6 +1556,7 @@ dependencies = [
  "once_cell",
  "rayon",
  "regex",
+ "seahash",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2875,6 +2878,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "seahash"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
+
+[[package]]
 name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3162,7 +3171,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0136791f7c95b1f6dd99f9cc786b91bb81c3800b639b3478e561ddb7be95e5f1"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.1",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

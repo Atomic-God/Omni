@@ -1,4 +1,13 @@
 target/
+*.cog
+*.snap
+*.omf
+test_industrial/
+industrial_mind_export/
+industrial_snapshots/
+test_industrial_runtime/
+check_output.txt
+*.log
 **/*.rs.bk
 Cargo.lock
 *.omf

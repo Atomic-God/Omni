@@ -3,7 +3,7 @@ use core_vsa::traits::Ingestor;
 use std::path::Path;
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, BufRead};
+use std::io::{BufReader, BufRead, Read};
 use tracing::{info, warn, debug};
 use calamine::{Reader, open_workbook_auto};
 use lopdf::Document;
@@ -28,21 +28,36 @@ use crate::audio_meaning::AudioMeaningExtractor;
 
 pub struct UniversalIngestor {
     pub ocr: SymbolicOCR,
+    pub vsa_dimension: usize,
 }
 
 impl UniversalIngestor {
     pub fn new() -> Self {
         Self {
             ocr: SymbolicOCR::new(),
+            vsa_dimension: core_vsa::DIMENSION,
         }
     }
+
+    pub fn with_dimension(dimension: usize) -> Self {
+        Self {
+            ocr: SymbolicOCR::new(),
+            vsa_dimension: dimension,
+        }
+    }
+}
+
+#[derive(Default)]
+struct DuplicateRegistry {
+    hashes: HashSet<String>,
+    size_fast_hashes: HashSet<(u64, u64)>,
 }
 
 impl Ingestor for UniversalIngestor {
     fn ingest(&self, path: &Path) -> Result<SymbolGraph, Box<dyn Error + Send + Sync>> {
         info!("Industrial Ingestion Pipeline active: {:?}", path);
         let graph = Arc::new(Mutex::new(SymbolGraph::new()));
-        let seen_hashes = Arc::new(Mutex::new(HashSet::new()));
+        let seen_hashes = Arc::new(Mutex::new(DuplicateRegistry::default()));
         let seen_semantic = Arc::new(Mutex::new(Vec::new()));
 
         if path.is_file() {
@@ -100,19 +115,29 @@ impl crate::IngestionAdapter for UniversalAdapter {
 }
 
 impl UniversalIngestor {
-    fn process_single_file(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<HashSet<String>>>, seen_semantic: &Arc<Mutex<Vec<HyperVector>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let file_hash = self.compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
+    fn process_single_file(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<DuplicateRegistry>>, seen_semantic: &Arc<Mutex<Vec<HyperVector>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Multi-stage Duplicate Detection
+        let metadata = std::fs::metadata(path)?;
+        let size = metadata.len();
+
+        let fast_hash = self.compute_fast_hash(path).unwrap_or(0);
         {
             let mut s = seen.lock().unwrap();
-            if s.contains(&file_hash) {
-                debug!("Exact duplicate detected (SHA256): {:?}", path);
-                return Ok(());
+            if s.size_fast_hashes.contains(&(size, fast_hash)) {
+                // Potential duplicate, perform full hash check
+                let file_hash = self.compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
+                if s.hashes.contains(&file_hash) {
+                    debug!("Definitive duplicate detected (SHA256): {:?}", path);
+                    return Ok(());
+                }
+                s.hashes.insert(file_hash);
+            } else {
+                s.size_fast_hashes.insert((size, fast_hash));
             }
-            s.insert(file_hash.clone());
         }
 
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-        match ext.as_str() {
+        let result = match ext.as_str() {
             "xlsx" | "xls" | "ods" => self.process_spreadsheet(path, graph),
             "pdf" => self.process_pdf(path, graph),
             "csv" => self.process_csv(path, graph),
@@ -121,12 +146,37 @@ impl UniversalIngestor {
             "yaml" | "yml" => self.process_yaml(path, graph),
             "docx" => self.process_docx(path, graph),
             "rs" | "py" | "c" | "cpp" | "js" | "ts" | "java" | "go" | "rb" => self.process_code(path, graph),
+            "rtf" => self.process_rtf(path, graph),
             "jpg" | "png" | "jpeg" | "webp" => self.process_image(path, graph, seen_semantic),
             "mp3" | "wav" | "flac" | "m4a" => self.process_audio(path, graph),
             "mp4" | "mkv" | "avi" => self.process_video(path, graph),
             "zip" | "tar" | "gz" => self.process_archive(path, graph),
             _ => self.process_text_generic(path, graph, seen),
+        };
+
+        // Industrial Error Recovery Fallback: if specialized parser fails, try generic text ingestion
+        if let Err(ref e) = result {
+            warn!("Specialized ingestion failed for {:?} ({}), attempting generic text fallback.", path, e);
+            if let Ok(_) = self.process_text_generic(path, graph, seen) {
+                info!("Fallback success: Ingested {:?} as generic text.", path);
+                return Ok(());
+            }
         }
+        result
+    }
+
+    fn compute_fast_hash(&self, path: &Path) -> Option<u64> {
+        use std::io::Read;
+        let mut file = File::open(path).ok()?;
+        let mut buffer = [0u8; 1024];
+        let n = file.read(&mut buffer).ok()?;
+        if n == 0 { return Some(0); }
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
+        let mut hasher = DefaultHasher::new();
+        hasher.write(&buffer[..n]);
+        Some(hasher.finish())
     }
 
     fn compute_file_hash(&self, path: &Path) -> Option<String> {
@@ -147,11 +197,28 @@ impl UniversalIngestor {
                 let mut all_rows: Vec<Vec<String>> = Vec::new();
 
                 for (i, row) in range.rows().enumerate() {
-                    let row_vals: Vec<String> = row.iter().map(|c| c.to_string()).collect();
+                    let row_vals: Vec<String> = row.iter().map(|c| {
+                        match c {
+                            calamine::Data::Empty => "".to_string(),
+                            calamine::Data::String(s) => s.clone(),
+                            calamine::Data::Float(f) => f.to_string(),
+                            calamine::Data::Int(i) => i.to_string(),
+                            calamine::Data::Bool(b) => b.to_string(),
+                            calamine::Data::Error(e) => format!("Error: {:?}", e),
+                            calamine::Data::DateTime(d) => d.to_string(),
+                            calamine::Data::DateTimeIso(s) => s.clone(),
+                            calamine::Data::DurationIso(s) => s.clone(),
+                        }
+                    }).collect();
+
                     if i == 0 {
                         headers = row_vals;
                         continue;
                     }
+
+                    // Skip empty rows to reduce noise
+                    if row_vals.iter().all(|v| v.is_empty()) { continue; }
+
                     all_rows.push(row_vals.clone());
 
                     let row_str = row_vals.join(",");
@@ -184,7 +251,7 @@ impl UniversalIngestor {
                         }
                     }
                     let mut g = graph.lock().unwrap();
-                    g.add_node_with_confidence(&row_id, HyperVector::random(), meta.to_map(), 1.0);
+                    g.add_node_with_confidence(&row_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
                     for edge in edges { g.edges.push(edge); }
                 }
 
@@ -225,7 +292,7 @@ impl UniversalIngestor {
         }
 
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
         for fact in facts {
              g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
         }
@@ -272,7 +339,7 @@ impl UniversalIngestor {
                 }
             }
             let mut g = graph.lock().unwrap();
-            g.add_node_with_confidence(&row_id, HyperVector::random(), meta.to_map(), 1.0);
+            g.add_node_with_confidence(&row_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
             g.edges.extend(edges);
         }
 
@@ -327,29 +394,37 @@ impl UniversalIngestor {
         meta.insert("video_report", report);
 
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
         Ok(())
     }
 
     fn process_audio(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let tagged_file = Probe::open(path).map_err(|e| e.to_string())?.read().map_err(|e| e.to_string())?;
         let file_hash = self.compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
         let node_id = format!("audio:{}", file_hash);
-
         let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
         meta.file_type = "audio".to_string();
         meta.hash = file_hash;
 
-        if let Some(tag) = tagged_file.primary_tag() {
-            if let Some(title) = tag.title() { meta.insert("title", title.to_owned().to_string()); }
-            if let Some(artist) = tag.artist() { meta.insert("artist", artist.to_owned().to_string()); }
-            if let Some(album) = tag.album() { meta.insert("album", album.to_owned().to_string()); }
+        // Try to read tags, but don't fail if they are missing or corrupted
+        match Probe::open(path).and_then(|p| p.read()) {
+            Ok(tagged_file) => {
+                if let Some(tag) = tagged_file.primary_tag() {
+                    if let Some(title) = tag.title() { meta.insert("title", title.to_string()); }
+                    if let Some(artist) = tag.artist() { meta.insert("artist", artist.to_string()); }
+                    if let Some(album) = tag.album() { meta.insert("album", album.to_string()); }
+                }
+                let properties = tagged_file.properties();
+                meta.insert("duration_seconds", properties.duration().as_secs().to_string());
+                meta.insert("sample_rate", properties.sample_rate().unwrap_or(0).to_string());
+                meta.insert("bitrate", properties.audio_bitrate().unwrap_or(0).to_string());
+            }
+            Err(e) => {
+                warn!("Lofty: Could not read metadata for {:?}: {}", path, e);
+                meta.insert("metadata_error", e.to_string());
+            }
         }
 
-        let properties = tagged_file.properties();
-        meta.insert("duration_seconds", properties.duration().as_secs().to_string());
-
-        // Extract deep symbolic meaning from audio
+        // Extract deep symbolic meaning from audio (even if metadata failed)
         let (content_vec, content_desc) = AudioMeaningExtractor::extract_signature(path);
         meta.insert("acoustic_signature", content_desc);
 
@@ -368,7 +443,7 @@ impl UniversalIngestor {
             let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
             meta.file_type = "archive".to_string();
             meta.hash = archive_hash.clone();
-            g.add_node_with_confidence(&archive_id, HyperVector::random(), meta.to_map(), 1.0);
+            g.add_node_with_confidence(&archive_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
         }
         if ext == "zip" {
             let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
@@ -383,7 +458,7 @@ impl UniversalIngestor {
                  meta.insert("entry_name", name);
 
                  let mut g = graph.lock().unwrap();
-                 g.add_node_with_confidence(&entry_id, HyperVector::random(), meta.to_map(), 1.0);
+                 g.add_node_with_confidence(&entry_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
                  g.add_edge_with_confidence(&entry_id, &archive_id, "contained_in", 1.0, 1.0);
             }
         }
@@ -401,7 +476,7 @@ impl UniversalIngestor {
             let mut g = graph.lock().unwrap();
             let mut meta = chunk.metadata.to_map();
             meta.insert("source".to_string(), path.to_string_lossy().to_string());
-            g.add_node_with_confidence(&node_id, HyperVector::random(), meta, 1.0);
+            g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta, 1.0);
 
             let facts = SymbolicNLP::extract_deep_facts(&chunk.content);
             for fact in facts {
@@ -424,7 +499,7 @@ impl UniversalIngestor {
         meta.hash = file_hash;
 
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
         for fact in schema_facts {
             g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
         }
@@ -443,7 +518,7 @@ impl UniversalIngestor {
         meta.hash = file_hash;
 
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
         for fact in schema_facts {
             g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
         }
@@ -451,14 +526,56 @@ impl UniversalIngestor {
     }
 
     fn process_docx(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let file_hash = self.compute_file_hash(path).unwrap_or_else(|| "none".to_string());
-        let node_id = format!("doc:{}", file_hash);
+        use crate::adapters::DocxAdapter;
+        use crate::IngestionAdapter;
+
+        let adapter = DocxAdapter;
+        let chunks = adapter.ingest(path);
+
+        for chunk in chunks {
+            let node_id = format!("docx:{}", chunk.metadata.hash);
+            let mut g = graph.lock().unwrap();
+
+            let mut meta = chunk.metadata.to_map();
+            meta.insert("source".to_string(), path.to_string_lossy().to_string());
+
+            g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta, 1.0);
+
+            // Extract NLP facts from DOCX content
+            let facts = SymbolicNLP::extract_deep_facts(&chunk.content);
+            for fact in facts {
+                g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
+            }
+        }
+        Ok(())
+    }
+
+    fn process_rtf(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let mut file = File::open(path)?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+
+        // Very basic RTF stripping: remove anything inside {} or starting with \
+        let re = regex::Regex::new(r"\{.*?\}|\\.*?\s|\\.*?[^a-zA-Z]").unwrap();
+        let stripped = re.replace_all(&content, " ");
+        let final_text = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
+
+        let chunk_hash = {
+            let mut h = Sha256::new(); h.update(final_text.as_bytes()); hex::encode(h.finalize())
+        };
+        let node_id = format!("rtf:{}", chunk_hash);
+
         let mut meta = NormalizedMetadata::new(&path.to_string_lossy());
-        meta.file_type = "docx_document".to_string();
-        meta.hash = file_hash;
+        meta.file_type = "rtf_document".to_string();
+        meta.hash = chunk_hash;
+
+        let facts = SymbolicNLP::extract_deep_facts(&final_text);
 
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
+        for fact in facts {
+            g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
+        }
         Ok(())
     }
 
@@ -474,14 +591,14 @@ impl UniversalIngestor {
         meta.insert("extracted_code_facts", facts.len().to_string());
 
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, HyperVector::random_dim(self.vsa_dimension), meta.to_map(), 1.0);
         for fact in facts {
             g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
         }
         Ok(())
     }
 
-    fn process_text_generic(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<HashSet<String>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn process_text_generic(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<DuplicateRegistry>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let file = File::open(path)?;
         let file_meta = file.metadata()?;
         let reader = BufReader::new(file);
@@ -513,7 +630,32 @@ impl UniversalIngestor {
         }).sum()
     }
 
-    fn ingest_text_chunk(&self, text_raw: &str, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, file_meta: &std::fs::Metadata, seen: &Arc<Mutex<HashSet<String>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn encode_text_deterministic(&self, text: &str) -> HyperVector {
+        let words: Vec<String> = text.split_whitespace()
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+            .filter(|w| !w.is_empty())
+            .collect();
+
+        if words.is_empty() {
+            return HyperVector::deterministic_dim(0, self.vsa_dimension);
+        }
+
+        let mut words = words;
+        words.sort();
+
+        let mut result = None;
+        for word in words {
+            let h = seahash::hash(word.as_bytes());
+            let v = HyperVector::deterministic_dim(h, self.vsa_dimension);
+            match result {
+                None => result = Some(v),
+                Some(r) => result = Some(r.bundle(&v)),
+            }
+        }
+        result.unwrap_or_else(|| HyperVector::random_dim(self.vsa_dimension))
+    }
+
+    fn ingest_text_chunk(&self, text_raw: &str, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, file_meta: &std::fs::Metadata, seen: &Arc<Mutex<DuplicateRegistry>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let text: String = text_raw.nfc().collect();
         let chunk_hash = {
             let mut h = Sha256::new(); h.update(text.as_bytes()); hex::encode(h.finalize())
@@ -521,8 +663,8 @@ impl UniversalIngestor {
 
         {
             let mut s = seen.lock().unwrap();
-            if s.contains(&chunk_hash) { return Ok(()); }
-            s.insert(chunk_hash.clone());
+            if s.hashes.contains(&chunk_hash) { return Ok(()); }
+            s.hashes.insert(chunk_hash.clone());
         }
 
         let node_id = format!("chunk:{}", chunk_hash);
@@ -538,8 +680,10 @@ impl UniversalIngestor {
         let facts = SymbolicNLP::extract_deep_facts(&text);
         meta.insert("extracted_meaning_count", facts.len().to_string());
 
+        let semantic_vec = self.encode_text_deterministic(&text);
+
         let mut g = graph.lock().unwrap();
-        g.add_node_with_confidence(&node_id, HyperVector::random(), meta.to_map(), 1.0);
+        g.add_node_with_confidence(&node_id, semantic_vec, meta.to_map(), 1.0);
         for fact in facts {
             g.add_edge_with_confidence(&fact.subject, &fact.object, &fact.predicate, 1.0, 1.0);
         }

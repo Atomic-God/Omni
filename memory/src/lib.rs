@@ -42,16 +42,20 @@ pub struct MemoryManager {
 
 impl MemoryManager {
     pub fn new(root_dir: &Path) -> Self {
+        Self::with_dimension(root_dir, core_vsa::DIMENSION)
+    }
+
+    pub fn with_dimension(root_dir: &Path, dim: usize) -> Self {
         fs::create_dir_all(root_dir).unwrap();
         Self {
-            episodic_index: LSHIndex::new(),
-            semantic_index: LSHIndex::new(),
+            episodic_index: LSHIndex::with_dimension(dim),
+            semantic_index: LSHIndex::with_dimension(dim),
             storage: ShardedStorage::new(root_dir),
             root_dir: root_dir.to_path_buf(),
             metadata: HashMap::new(),
             low_memory_mode: false,
             encoder: EpisodicEncoder::new(),
-            vsa_precision: core_vsa::DIMENSION,
+            vsa_precision: dim,
         }
     }
 

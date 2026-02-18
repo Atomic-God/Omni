@@ -2,12 +2,10 @@
 use std::path::PathBuf;
 use memory::MemoryManager;
 use tracing::{info, debug};
-use ingestion::ingest_graph;
 use core_vsa::HyperVector;
+use core_vsa::traits::Ingestor;
 use core_vsa::traits::MemoryStore;
 use runtime::HardwareAdapter;
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
 pub use cognition::{CognitionCore, ReasoningTrace};
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use ingestion::nlp::SymbolicNLP;
@@ -50,12 +48,12 @@ pub struct OmniMind {
 impl OmniMind {
     pub fn new_forge(path: &str) -> Self {
         info!("Initializing OmniMind in FORGE mode at {}", path);
-        let mut memory = MemoryManager::new(&PathBuf::from(path));
-        let cognition = CognitionCore::new();
-
         let adapter = HardwareAdapter::new();
         adapter.report();
         let vsa_dimension = adapter.suggest_dimension();
+
+        let mut memory = MemoryManager::with_dimension(&PathBuf::from(path), vsa_dimension);
+        let cognition = CognitionCore::new();
 
         if adapter.is_low_memory_mode() {
             memory.set_low_memory_mode(true);
@@ -72,12 +70,12 @@ impl OmniMind {
 
     pub fn new_runtime(base_path: &str, delta_path: &str) -> Self {
         info!("Initializing OmniMind in RUNTIME mode.");
-        let mut base_mem = MemoryManager::new(&PathBuf::from(base_path));
-        let mut delta_mem = MemoryManager::new(&PathBuf::from(delta_path));
-        let cognition = CognitionCore::new();
-
         let adapter = HardwareAdapter::new();
         let vsa_dimension = adapter.suggest_dimension();
+
+        let mut base_mem = MemoryManager::with_dimension(&PathBuf::from(base_path), vsa_dimension);
+        let mut delta_mem = MemoryManager::with_dimension(&PathBuf::from(delta_path), vsa_dimension);
+        let cognition = CognitionCore::new();
 
         if adapter.is_low_memory_mode() {
             base_mem.set_low_memory_mode(true);
@@ -100,7 +98,9 @@ impl OmniMind {
         }
 
         info!("API: Ingesting file and extracting proper meaning: {}", path);
-        let graph = ingest_graph(p).map_err(|e| e.to_string())?;
+
+        let ingestor = ingestion::UniversalIngestor::with_dimension(self.vsa_dimension);
+        let graph = ingestor.ingest(p).map_err(|e| e.to_string())?;
 
         match &mut self.state {
             LifecycleState::Forge(mem, cog) => {
@@ -149,9 +149,8 @@ impl OmniMind {
 
         let mut result = None;
         for word in words {
-            let mut hasher = DefaultHasher::new();
-            word.hash(&mut hasher);
-            let v = HyperVector::deterministic_dim(hasher.finish(), self.vsa_dimension);
+            let h = seahash::hash(word.as_bytes());
+            let v = HyperVector::deterministic_dim(h, self.vsa_dimension);
             match result {
                 None => result = Some(v),
                 Some(r) => result = Some(r.bundle(&v)),

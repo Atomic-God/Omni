@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+seahash = "4.1"
 serde_yaml = "0.9"
 core-vsa = { path = "../core-vsa" }
 tracing = "0.1"
