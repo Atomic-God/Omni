@@ -102,12 +102,19 @@ impl MemoryManager {
         self.save_snapshot("main")?;
         let snapshot_path = self.root_dir.join("main.snap");
         let snapshot = SnapshotManager::load(&snapshot_path)?;
+
+        let mut integrity_hashes = HashMap::new();
+        integrity_hashes.insert("main.snap".to_string(), snapshot.header.checksum.clone());
+
         let pack = MindPack {
             snapshots: vec![snapshot],
             manifest: HashMap::from([
                 ("engine_version".to_string(), "1.0".to_string()),
+                ("vsa_dimension".to_string(), self.vsa_precision.to_string()),
+                ("hardware_mode".to_string(), if self.low_memory_mode { "low-memory" } else { "standard" }.to_string()),
+                ("os".to_string(), std::env::consts::OS.to_string()),
             ]),
-            integrity_hashes: HashMap::new(),
+            integrity_hashes,
         };
 
         pack.export(path, &pack, encryption_key)?;
@@ -116,7 +123,16 @@ impl MemoryManager {
 
     pub fn incremental_restore(&mut self, snapshots: Vec<MindSnapshot>) -> Result<(), Box<dyn Error>> {
         info!("Industrial Restore: Applying {} snapshot layers.", snapshots.len());
+        let mut last_hash: Option<String> = None;
+
         for snap in snapshots {
+            // Verify chain integrity
+            if let Some(ref prev) = last_hash {
+                if snap.header.previous_hash.as_ref() != Some(prev) {
+                    return Err("Industrial Robustness Error: Snapshot chain broken!".into());
+                }
+            }
+
             if snap.header.is_delta {
                 SnapshotManager::apply_delta(self, &snap);
             } else {
@@ -124,7 +140,15 @@ impl MemoryManager {
                 self.episodic_index = snap.episodic_index;
                 self.semantic_index = snap.semantic_index;
                 self.metadata = snap.metadata;
+                // Re-extract shards from full snapshot
+                for (shard_id, data) in snap.shards {
+                    let shard_path = self.storage.root_dir.join(format!("shard_{}.bin", shard_id));
+                    let file = fs::File::create(shard_path)?;
+                    let shard = crate::storage::ShardFile { id: shard_id, data };
+                    bincode::serialize_into(file, &shard)?;
+                }
             }
+            last_hash = Some(snap.header.checksum.clone());
         }
         Ok(())
     }

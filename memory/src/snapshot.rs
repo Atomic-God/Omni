@@ -1,4 +1,5 @@
 use crate::{MemoryManager, LSHIndex, ShardedStorage, MemoryEntry};
+use core_vsa::HyperVector;
 use serde::{Serialize, Deserialize};
 use std::path::Path;
 use std::fs::{self, File};
@@ -26,6 +27,8 @@ pub struct MindSnapshot {
     pub semantic_index: LSHIndex,
     pub storage: ShardedStorage,
     pub metadata: HashMap<String, MemoryEntry>,
+    #[serde(default)]
+    pub shards: HashMap<usize, HashMap<String, HyperVector>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -102,22 +105,48 @@ impl SnapshotManager {
             }
         }
 
+        let mut shards = HashMap::new();
+        // Delta Shards: Only include shards that don't exist in base
+        for &shard_id in memory.storage.location_map.values() {
+            if shard_id > 0 && !base.shards.contains_key(&shard_id) {
+                let shard_path = memory.storage.root_dir.join(format!("shard_{}.bin", shard_id));
+                if let Ok(file) = File::open(&shard_path) {
+                    let shard: crate::storage::ShardFile = bincode::deserialize_from(file)?;
+                    shards.insert(shard_id, shard.data);
+                }
+            }
+        }
+
         let body = MindSnapshotBody {
-            episodic_index: memory.episodic_index.clone(), // In industrial version, LSHIndex should also be delta-encoded, but for Phase-1 we keep it simple
+            episodic_index: memory.episodic_index.clone(),
             semantic_index: memory.semantic_index.clone(),
             storage: memory.storage.clone(),
             metadata: delta_metadata,
+            shards,
         };
 
         Self::save_ext_with_body(body, path, true, Some(base_hash.clone()), Some(base_hash))
     }
 
     fn save_ext(memory: &MemoryManager, path: &Path, is_delta: bool, base_snapshot: Option<String>, previous_hash: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+        let mut shards = HashMap::new();
+        // Industrial: Collect all shard data for portability
+        for &shard_id in memory.storage.location_map.values() {
+            if shard_id > 0 {
+                let shard_path = memory.storage.root_dir.join(format!("shard_{}.bin", shard_id));
+                if let Ok(file) = File::open(&shard_path) {
+                    let shard: crate::storage::ShardFile = bincode::deserialize_from(file)?;
+                    shards.insert(shard_id, shard.data);
+                }
+            }
+        }
+
         let body = MindSnapshotBody {
             episodic_index: memory.episodic_index.clone(),
             semantic_index: memory.semantic_index.clone(),
             storage: memory.storage.clone(),
             metadata: memory.metadata.clone(),
+            shards,
         };
         Self::save_ext_with_body(body, path, is_delta, base_snapshot, previous_hash)
     }
@@ -158,9 +187,26 @@ impl SnapshotManager {
     }
 
     pub fn apply_delta(base: &mut MemoryManager, delta: &MindSnapshot) {
+        // Extract delta shards
+        for (&shard_id, data) in &delta.shards {
+            let shard_path = base.storage.root_dir.join(format!("shard_{}.bin", shard_id));
+            if !shard_path.exists() {
+                let file = File::create(shard_path).ok();
+                if let Some(f) = file {
+                    let shard = crate::storage::ShardFile {
+                        id: shard_id,
+                        data: data.clone()
+                    };
+                    let _ = bincode::serialize_into(f, &shard);
+                }
+            }
+        }
+
+        // Apply metadata and location map
         for (k, v) in &delta.metadata {
             base.metadata.insert(k.clone(), v.clone());
-            base.storage.insert(k, v.vector.clone());
+            base.storage.location_map.insert(k.clone(), delta.storage.location_map.get(k).cloned().unwrap_or(0));
+
             if v.layer == "semantic" {
                 base.semantic_index.insert(k, v.vector.clone());
             } else {
@@ -184,12 +230,23 @@ impl SnapshotManager {
             return Err("Industrial Robustness Error: Snapshot checksum mismatch!".into());
         }
 
+        // Industrial: Extract shards back to storage root if missing
+        for (&shard_id, data) in &container.body.shards {
+            let shard_path = container.body.storage.root_dir.join(format!("shard_{}.bin", shard_id));
+            if !shard_path.exists() {
+                let file = File::create(shard_path)?;
+                let shard = crate::storage::ShardFile { id: shard_id, data: data.clone() };
+                bincode::serialize_into(file, &shard)?;
+            }
+        }
+
         Ok(MindSnapshot {
             header: container.header,
             episodic_index: container.body.episodic_index,
             semantic_index: container.body.semantic_index,
             storage: container.body.storage,
             metadata: container.body.metadata,
+            shards: container.body.shards,
         })
     }
 
@@ -227,6 +284,8 @@ struct MindSnapshotBody {
     semantic_index: LSHIndex,
     storage: ShardedStorage,
     metadata: HashMap<String, MemoryEntry>,
+    #[serde(default)]
+    shards: HashMap<usize, HashMap<String, HyperVector>>,
 }
 
 #[derive(Serialize, Deserialize)]
