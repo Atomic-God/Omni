@@ -33,12 +33,31 @@ impl ConfidenceTuner {
     }
 }
 
+pub struct ReinforcementScorer;
+
+impl ReinforcementScorer {
+    /// Adjusts memory importance based on reward/penalty feedback.
+    pub fn score_memory(entry: &mut memory::MemoryEntry, reward: f32) {
+        // Point 3: Reinforcement scoring
+        let current = entry.importance;
+        // Exponential growth for rewards, dampening for penalties
+        if reward > 0.0 {
+            entry.importance = (current + reward * 0.2).clamp(0.0, 5.0);
+            entry.stability *= 1.2;
+        } else {
+            entry.importance = (current + reward * 0.5).clamp(0.0, 5.0);
+            entry.stability *= 0.8;
+        }
+    }
+}
+
 pub struct RuntimeLearner {
     pub memory: MemoryManager,
     pub ingestor: UniversalIngestor,
     pub decay_rate: f32,
     pub similarity_threshold: f32,
     pub tuner: ConfidenceTuner,
+    pub reward_history: Vec<f32>,
 }
 
 impl RuntimeLearner {
@@ -49,6 +68,7 @@ impl RuntimeLearner {
             decay_rate: 0.99,
             similarity_threshold: 0.85,
             tuner: ConfidenceTuner::new(),
+            reward_history: Vec::new(),
         }
     }
 
@@ -64,8 +84,17 @@ impl RuntimeLearner {
         Ok(())
     }
 
-    pub fn feedback_loop(&mut self, success: bool) {
+    pub fn feedback_loop(&mut self, success: bool, target_key: Option<&str>) {
         self.tuner.adjust(success);
+        let reward = if success { 1.0 } else { -1.0 };
+        self.reward_history.push(reward);
+
+        if let Some(key) = target_key {
+            if let Some(entry) = self.memory.metadata.get_mut(key) {
+                ReinforcementScorer::score_memory(entry, reward);
+            }
+        }
+
         info!("Confidence Tuner: Learning Rate now {:.4}", self.tuner.learning_rate);
     }
 

@@ -105,9 +105,13 @@ impl CognitionCore {
 
     pub fn add_fact_triple(&mut self, triple: core_vsa::FactTriple, confidence: f32) {
         let rel_type = match triple.predicate.as_str() {
-            "taxonomy" | "is_a" => RelationType::Taxonomic,
-            "causality" | "causes" | "triggers" => RelationType::Causal,
-            "contradicts" => RelationType::Contradictory,
+            "taxonomy" | "is_a" | "es" | "son" | "ist" | "sind" => RelationType::Taxonomic,
+            "causality" | "causes" | "triggers" | "causa" | "verursacht" => RelationType::Causal,
+            "contradicts" | "contradice" | "widerspricht" => RelationType::Contradictory,
+            "means" | "significa" | "bedeutet" => {
+                self.link_multilingual_symbols(&triple.subject, &triple.object, confidence);
+                RelationType::Taxonomic
+            },
             _ => RelationType::Structural,
         };
         self.add_relation(&triple.subject, &triple.object, rel_type, 1.0, confidence);

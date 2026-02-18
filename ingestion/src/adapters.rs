@@ -4,8 +4,6 @@ use std::fs::File;
 use std::io::Read;
 use zip::read::ZipArchive;
 use xml::reader::{EventReader, XmlEvent};
-use tracing::warn;
-
 pub struct HtmlAdapter;
 impl IngestionAdapter for HtmlAdapter {
     fn can_handle(&self, path: &Path) -> bool {
@@ -128,14 +126,43 @@ impl IngestionAdapter for XmlAdapter {
     }
 }
 
-pub struct PdfAdapterStub; // Renamed from PdfAdapter to allow explicit import if needed
-impl IngestionAdapter for PdfAdapterStub {
+pub struct PdfAdapter;
+impl IngestionAdapter for PdfAdapter {
     fn can_handle(&self, path: &Path) -> bool {
         matches!(path.extension().and_then(|s| s.to_str()), Some("pdf"))
     }
     fn ingest(&self, path: &Path) -> Vec<SemanticChunk> {
-        warn!("PDF ingestion requires external libs (poppler). Skipping content for: {:?}", path);
-        vec![]
+        use lopdf::Document;
+        let mut chunks = Vec::new();
+
+        if let Ok(doc) = Document::load(path) {
+            let pages = doc.get_pages();
+            for (page_num, _) in pages {
+                if let Ok(text) = doc.extract_text(&[page_num]) {
+                    if !text.trim().is_empty() {
+                        chunks.extend(crate::chunk_content_with_structure(
+                            &text,
+                            "pdf_page",
+                            path,
+                            &format!("Page {}", page_num)
+                        ));
+                    }
+                }
+            }
+
+            // Extract metadata if available
+            if let Ok(info) = doc.get_dictionary(doc.trailer.get(b"Info").and_then(|obj| obj.as_reference()).unwrap_or((0, 0))) {
+                let mut meta_str = String::new();
+                for (key, value) in info {
+                    meta_str.push_str(&format!("{}: {:?}\n", String::from_utf8_lossy(key), value));
+                }
+                if !meta_str.is_empty() {
+                    chunks.extend(crate::chunk_content_with_structure(&meta_str, "pdf_metadata", path, "metadata"));
+                }
+            }
+        }
+
+        chunks
     }
 }
 

@@ -1,0 +1,24 @@
+   Compiling cognition v0.1.0 (/app/cognition)
+   Compiling ingestion v0.1.0 (/app/ingestion)
+   Compiling memory v0.1.0 (/app/memory)
+   Compiling runtime v0.1.0 (/app/runtime)
+   Compiling learning v0.1.0 (/app/learning)
+   Compiling engine v0.1.0 (/app/engine)
+   Compiling fabricator v0.1.0 (/app/fabricator)
+   Compiling omniforge v0.1.0 (/app/cli)
+   Compiling api v0.1.0 (/app/api)
+error: unused import: `tokio_stream::StreamExt`
+  --> api/src/main.rs:20:5
+   |
+20 | use tokio_stream::StreamExt;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> api/src/main.rs:1:9
+   |
+ 1 | #![deny(warnings)]
+   |         ^^^^^^^^
+   = note: `#[deny(unused_imports)]` implied by `#[deny(warnings)]`
+
+error: could not compile `api` (bin "api" test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

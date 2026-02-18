@@ -1,0 +1,68 @@
+   Compiling cognition v0.1.0 (/app/cognition)
+   Compiling ingestion v0.1.0 (/app/ingestion)
+error: unexpected closing delimiter: `}`
+  --> ingestion/src/nlp.rs:84:1
+   |
+39 |             if let Some(pos) = tax_pos {
+   |                                        - this delimiter might not be properly closed...
+...
+47 |                 }
+   |                 - ...as it matches this but it has different indentation
+...
+84 | }
+   | ^ unexpected closing delimiter
+
+error: could not compile `ingestion` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: cannot find macro `warn` in this scope
+  --> cognition/src/inference.rs:30:13
+   |
+30 |             warn!("Inference Blocked: Direct contradiction found for {}", subject);
+   |             ^^^^
+   |
+   = note: `warn` is in scope, but it is an attribute: `#[warn]`
+help: consider importing this macro
+   |
+ 1 + use tracing::warn;
+   |
+
+error: cannot find macro `warn` in this scope
+  --> cognition/src/inference.rs:39:22
+   |
+39 |                      warn!("Inference Blocked: Indirect contradiction found in path step {}", step);
+   |                      ^^^^
+   |
+   = note: `warn` is in scope, but it is an attribute: `#[warn]`
+help: consider importing this macro
+   |
+ 1 + use tracing::warn;
+   |
+
+error: cannot find macro `warn` in this scope
+  --> cognition/src/inference.rs:48:17
+   |
+48 |                 warn!("Inference Blocked: Confidence too low ({:.4})", path.final_confidence);
+   |                 ^^^^
+   |
+   = note: `warn` is in scope, but it is an attribute: `#[warn]`
+help: consider importing this macro
+   |
+ 1 + use tracing::warn;
+   |
+
+error: could not compile `ingestion` (lib) due to 1 previous error
+error: unused import: `tracing::debug`
+ --> cognition/src/inference.rs:2:5
+  |
+2 | use tracing::debug;
+  |     ^^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> cognition/src/lib.rs:1:9
+  |
+1 | #![deny(warnings)]
+  |         ^^^^^^^^
+  = note: `#[deny(unused_imports)]` implied by `#[deny(warnings)]`
+
+error: could not compile `cognition` (lib) due to 4 previous errors
+error: could not compile `cognition` (lib test) due to 4 previous errors

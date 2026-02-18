@@ -32,16 +32,17 @@ impl SymbolicNLP {
 
             if tokens.len() < 2 { continue; }
 
-            // 1. Taxonomy / Identification
-            if tokens.contains(&"is".to_string()) || tokens.contains(&"are".to_string()) {
-                if let Some(pos) = tokens.iter().position(|t| t == "is" || t == "are") {
-                    if pos > 0 && pos < tokens.len() - 1 {
-                        facts.push(FactTriple {
-                            subject: tokens[pos-1].clone(),
-                            predicate: "taxonomy".to_string(),
-                            object: tokens[pos+1].clone(),
-                        });
-                    }
+            // 1. Taxonomy / Identification (Multi-language triggers)
+            let tax_triggers = ["is", "are", "es", "son", "est", "sont", "ist", "sind", "ser", "esta"];
+            let tax_pos = tokens.iter().position(|t| tax_triggers.contains(&t.as_str()));
+
+            if let Some(pos) = tax_pos {
+                if pos > 0 && pos < tokens.len() - 1 {
+                    facts.push(FactTriple {
+                        subject: tokens[pos-1].clone(),
+                        predicate: "taxonomy".to_string(),
+                        object: tokens[pos+1].clone(),
+                    });
                 }
             }
 
@@ -54,8 +55,14 @@ impl SymbolicNLP {
                 });
             }
 
-            // 3. Industrial Relations
-            let industrial_verbs = ["uses", "requires", "causes", "triggers", "connects", "has", "eats", "eat", "breathes", "means"];
+            // 3. Industrial Relations (Multi-language triggers)
+            let industrial_verbs = [
+                "uses", "requires", "causes", "triggers", "connects", "has", "means",
+                "eats", "eat", "breathes", "fly", "flies",
+                "utiliza", "requiere", "causa", "conecta", "tiene", "significa",
+                "utilise", "necessite", "provoque", "relie", "a", "signifie",
+                "verwendet", "benotigt", "verursacht", "verbindet", "hat", "bedeutet"
+            ];
             for verb in industrial_verbs {
                 if tokens.contains(&verb.to_string()) {
                     if let Some(pos) = tokens.iter().position(|t| t == verb) {

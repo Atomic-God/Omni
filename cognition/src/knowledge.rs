@@ -73,12 +73,24 @@ impl KnowledgeGraph {
 
     pub fn reinforce(&mut self, id: &str, evidence_reliability: f32) {
         if let Some(fact) = self.facts.get_mut(id) {
+            // Step 2 & 3: Bayesian-like update
+            // New Confidence = (Prior * Likelihood) / (Prior * Likelihood + (1-Prior)*(1-Likelihood))
+            // Simplified for Phase-1 industrial logic:
             let prior = fact.confidence;
-            let n = fact.reinforcement_count as f32;
-            fact.confidence = (prior * n + evidence_reliability) / (n + 1.0);
+            let likelihood = evidence_reliability;
+
+            let numerator = prior * likelihood;
+            let denominator = numerator + (1.0 - prior) * (1.0 - likelihood);
+
+            if denominator > 0.0 {
+                fact.confidence = numerator / denominator;
+            } else {
+                fact.confidence = (prior + likelihood) / 2.0;
+            }
+
             fact.reinforcement_count += 1;
             fact.timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-            debug!("Fact {} reinforced to confidence {:.2}", id, fact.confidence);
+            debug!("Fact {} Bayesian reinforced to confidence {:.2}", id, fact.confidence);
         }
     }
 
@@ -117,6 +129,7 @@ impl KnowledgeGraph {
 pub struct ReasoningEngine;
 
 impl ReasoningEngine {
+    /// Performs deep transitive inference with Bayesian confidence propagation.
     pub fn infer_transitive(graph: &KnowledgeGraph, start: &str, predicate: &str, max_depth: usize) -> Option<(String, f32)> {
         let mut queue = VecDeque::new();
         queue.push_back((start.to_string(), 1.0, 0));
@@ -132,6 +145,7 @@ impl ReasoningEngine {
                     if let Some(fact) = graph.facts.get(id) {
                         if let Some(ref triple) = fact.triple {
                             if triple.predicate == predicate {
+                                // Bayesian Propagation: C(A->C) = C(A->B) * C(B->C)
                                 let new_conf = conf * fact.confidence;
                                 if !visited.contains_key(&triple.object) || visited[&triple.object] < new_conf {
                                     visited.insert(triple.object.clone(), new_conf);
@@ -144,8 +158,10 @@ impl ReasoningEngine {
             }
         }
 
+        // Return best explanation with confidence above industrial threshold
         visited.into_iter()
             .filter(|(k, _)| k != start)
+            .filter(|(_, v)| *v > 0.1)
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
     }
 

@@ -1,0 +1,74 @@
+   Compiling cognition v0.1.0 (/app/cognition)
+   Compiling ingestion v0.1.0 (/app/ingestion)
+error: unused import: `debug`
+ --> cognition/src/inference.rs:2:15
+  |
+2 | use tracing::{debug, warn};
+  |               ^^^^^
+  |
+note: the lint level is defined here
+ --> cognition/src/lib.rs:1:9
+  |
+1 | #![deny(warnings)]
+  |         ^^^^^^^^
+  = note: `#[deny(unused_imports)]` implied by `#[deny(warnings)]`
+
+error: unused import: `tracing::warn`
+ --> ingestion/src/adapters.rs:7:5
+  |
+7 | use tracing::warn;
+  |     ^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> ingestion/src/lib.rs:1:9
+  |
+1 | #![deny(warnings)]
+  |         ^^^^^^^^
+  = note: `#[deny(unused_imports)]` implied by `#[deny(warnings)]`
+
+error[E0382]: borrow of moved value: `path.steps`
+  --> cognition/src/inference.rs:38:53
+   |
+36 |              for step in path.steps {
+   |                          ---------- `path.steps` moved due to this implicit call to `.into_iter()`
+37 |                  let local_contradictions = core.detect_contradictions(&step);
+38 |                  if local_contradictions.iter().any(|c| path.steps.contains(c)) {
+   |                                                     ^^^ ---------- borrow occurs due to use in closure
+   |                                                     |
+   |                                                     value borrowed here after move
+   |
+note: `into_iter` takes ownership of the receiver `self`, which moves `path.steps`
+  --> /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/core/src/iter/traits/collect.rs:310:18
+   = note: move occurs because `path.steps` has type `Vec<std::string::String>`, which does not implement the `Copy` trait
+help: consider iterating over a slice of the `Vec<std::string::String>`'s content to avoid moving into the `for` loop
+   |
+36 |              for step in &path.steps {
+   |                          +
+
+For more information about this error, try `rustc --explain E0382`.
+error: could not compile `cognition` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `cognition` (lib test) due to 2 previous errors
+error[E0599]: no method named `get_dict` found for struct `Document` in the current scope
+   --> ingestion/src/adapters.rs:156:35
+    |
+156 | ...   if let Ok(info) = doc.get_dict(doc.trailer.get(b"Info").and_then(|obj| obj.as_reference()).unwrap_or(lopdf::ObjectId::new(0, 0))) {
+    |                             ^^^^^^^^
+    |
+help: there is a method `get_dictionary` with a similar name
+    |
+156 |             if let Ok(info) = doc.get_dictionary(doc.trailer.get(b"Info").and_then(|obj| obj.as_reference()).unwrap_or(lopdf::ObjectId::new(0, 0))) {
+    |                                           ++++++
+
+error[E0599]: no function or associated item named `new` found for tuple `(u32, u16)` in the current scope
+   --> ingestion/src/adapters.rs:156:131
+    |
+156 | ...ference()).unwrap_or(lopdf::ObjectId::new(0, 0))) {
+    |                                          ^^^ function or associated item not found in `(u32, u16)`
+    |
+help: there is a method `ne` with a similar name, but with different arguments
+   --> /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/core/src/cmp.rs:264:5
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `ingestion` (lib) due to 3 previous errors
+error: could not compile `ingestion` (lib test) due to 3 previous errors

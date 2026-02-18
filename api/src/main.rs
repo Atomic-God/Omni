@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use futures_util::stream::{self, Stream};
-use tokio_stream::StreamExt;
 use error::ApiError;
 use config::AppConfig;
 
@@ -58,6 +57,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/query/stream", get(query_stream))
         .route("/feedback", post(feedback))
         .route("/ingest", post(ingest_file))
+        .route("/telemetry", get(get_telemetry))
+        .route("/task/step", post(task_step))
         .route("/snapshot/:name", post(save_snapshot))
         .route("/snapshot/:name", get(load_snapshot))
         .with_state(state.clone());
@@ -166,27 +167,45 @@ async fn load_snapshot(
     }
 }
 
+async fn get_telemetry(State(state): State<AppState>) -> Result<Json<engine::metrics::RuntimeMetrics>, ApiError> {
+    let mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
+    Ok(Json(mind.metrics.clone()))
+}
+
+async fn task_step(State(state): State<AppState>) -> Result<Json<String>, ApiError> {
+    let mut mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
+    let result = mind.task_loop.step().unwrap_or_else(|| "No active goals".to_string());
+    Ok(Json(result))
+}
+
 async fn query_stream(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
-    info!("Starting reasoning stream...");
+    info!("Starting industrial reasoning stream...");
 
-    let mind = state.mind.lock().unwrap();
-    let stats = mind.memory_stats();
+    let mind_lock = state.mind.clone();
 
-    let trace_steps = vec![
-        format!("Telemetry: {}", stats),
-        "Observe: Scanning semantic neighborhoods...".to_string(),
-        "Orient: Resolving causal link weights...".to_string(),
-        "Decide: Generating abductive hypotheses...".to_string(),
-        "Act: Finalizing response with industrial confidence.".to_string(),
-    ];
+    let stream = stream::unfold(0, move |count| {
+        let mind_lock = mind_lock.clone();
+        async move {
+            if count >= 5 { return None; }
 
-    let stream = stream::iter(trace_steps)
-        .map(|step| {
-            Event::default().data(step)
-        })
-        .map(Ok);
+            let msg = {
+                let mind = mind_lock.lock().unwrap();
+                match count {
+                    0 => format!("Telemetry: {}", mind.memory_stats()),
+                    1 => "Observe: Scanning semantic neighborhoods...".to_string(),
+                    2 => "Orient: Resolving causal link weights...".to_string(),
+                    3 => "Decide: Generating abductive hypotheses...".to_string(),
+                    4 => "Act: Finalizing response with industrial confidence.".to_string(),
+                    _ => unreachable!(),
+                }
+            };
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            Some((Ok(Event::default().data(msg)), count + 1))
+        }
+    });
 
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }

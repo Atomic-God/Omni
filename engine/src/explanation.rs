@@ -6,6 +6,25 @@ pub enum AudienceModel {
     Expert,
 }
 
+pub struct TraceGenerator;
+
+impl TraceGenerator {
+    /// Generates a detailed audit log of the reasoning steps taken.
+    pub fn generate_audit_trace(core: &cognition::CognitionCore, start: &str, end: &str) -> String {
+        let mut trace = format!("Industrial Audit Trace: {} -> {}\n", start, end);
+        if let Some(path) = core.find_path(start, end, 5) {
+            for (i, step) in path.steps.iter().enumerate() {
+                trace.push_str(&format!("  Step {}: {}\n", i, step));
+            }
+            trace.push_str(&format!("  Final Confidence: {:.4}\n", path.final_confidence));
+            trace.push_str(&format!("  Entropy: {:.4}\n", core.compute_global_entropy()));
+        } else {
+            trace.push_str("  No logical path found between concepts.\n");
+        }
+        trace
+    }
+}
+
 pub struct ExplanationEngine;
 
 impl ExplanationEngine {

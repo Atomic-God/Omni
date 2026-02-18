@@ -1,5 +1,5 @@
 use crate::CognitionCore;
-use tracing::debug;
+use tracing::warn;
 
 pub struct UncertaintyScorer;
 
@@ -22,15 +22,33 @@ impl UncertaintyScorer {
 pub struct ReasoningValidator;
 
 impl ReasoningValidator {
+    /// Deep validation of an inference path against global knowledge consistency.
     pub fn validate_inference(core: &CognitionCore, subject: &str, object: &str) -> bool {
+        // 1. Direct contradiction check
         let contradictions = core.detect_contradictions(subject);
         if contradictions.contains(&object.to_string()) {
+            warn!("Inference Blocked: Direct contradiction found for {}", subject);
             return false;
         }
 
-        // Counter-reasoning loop stub
-        // Try to prove the opposite: does subject have a relationship that precludes object?
-        debug!("Self-verification: Validating path {} -> {}", subject, object);
+        // 2. Transitive contradiction check
+        if let Some(path) = core.find_path(subject, object, 4) {
+             for step in &path.steps {
+                 let local_contradictions = core.detect_contradictions(step);
+                 if local_contradictions.iter().any(|c| path.steps.contains(c)) {
+                     warn!("Inference Blocked: Indirect contradiction found in path step {}", step);
+                     return false;
+                 }
+             }
+        }
+
+        // 3. Confidence Thresholding
+        if let Some(path) = core.find_path(subject, object, 4) {
+            if path.final_confidence < 0.2 {
+                warn!("Inference Blocked: Confidence too low ({:.4})", path.final_confidence);
+                return false;
+            }
+        }
 
         true
     }

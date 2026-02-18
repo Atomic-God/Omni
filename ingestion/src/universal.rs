@@ -59,18 +59,32 @@ impl Ingestor for UniversalIngestor {
 
             let total = entries.len();
             let processed = AtomicUsize::new(0);
+            let errors = AtomicUsize::new(0);
 
-            info!("Industrial Batch Ingestion: {} files detected.", total);
+            info!("Industrial Batch Ingestion: {} files detected. Starting parallel pipeline.", total);
+
+            let start_time = std::time::Instant::now();
 
             entries.par_iter().for_each(|entry| {
-                if let Err(e) = self.process_single_file(entry.path(), &graph, &seen_hashes, &seen_semantic) {
-                    warn!("Failed to process {:?}: {}", entry.path(), e);
-                }
-                let count = processed.fetch_add(1, Ordering::SeqCst) + 1;
-                if count % 10 == 0 || count == total {
-                    info!("Ingestion Progress: {}/{} files ({}%)", count, total, (count * 100) / total);
+                match self.process_single_file(entry.path(), &graph, &seen_hashes, &seen_semantic) {
+                    Ok(_) => {
+                        let count = processed.fetch_add(1, Ordering::SeqCst) + 1;
+                        if count % 10 == 0 || count == total {
+                            let elapsed = start_time.elapsed().as_secs_f32();
+                            let rate = count as f32 / elapsed;
+                            info!("Ingestion Progress: {}/{} files ({}%) [Rate: {:.2} files/sec]", count, total, (count * 100) / total, rate);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Batch Pipeline Error [File: {:?}]: {}", entry.path(), e);
+                        errors.fetch_add(1, Ordering::SeqCst);
+                    }
                 }
             });
+
+            let final_count = processed.load(Ordering::SeqCst);
+            let final_errors = errors.load(Ordering::SeqCst);
+            info!("Batch Ingestion Complete. Processed: {}, Errors: {}, Total Time: {:?}", final_count, final_errors, start_time.elapsed());
         }
         let result = graph.lock().unwrap().clone();
         Ok(result)
