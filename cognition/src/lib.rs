@@ -98,6 +98,10 @@ impl CognitionCore {
         self.knowledge_graph.reinforce(id, reliability);
     }
 
+    pub fn resolve_contradictions(&mut self) {
+        self.knowledge_graph.resolve_all_contradictions();
+    }
+
     pub fn apply_knowledge_decay(&mut self, decay_rate: f32) {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         self.knowledge_graph.apply_temporal_decay(decay_rate, now);

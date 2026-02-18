@@ -19,6 +19,7 @@ pub struct KnowledgeGraph {
     pub contradictions: Vec<(String, String)>,
     pub subject_index: HashMap<String, Vec<String>>,
     pub source_trust: HashMap<String, f32>, // Step 34
+    pub exclusive_predicates: Vec<String>,
 }
 
 impl KnowledgeGraph {
@@ -28,6 +29,7 @@ impl KnowledgeGraph {
             contradictions: Vec::new(),
             subject_index: HashMap::new(),
             source_trust: HashMap::new(),
+            exclusive_predicates: vec!["taxonomy".to_string(), "is_a".to_string(), "is_at".to_string(), "color".to_string()],
         }
     }
 
@@ -35,10 +37,15 @@ impl KnowledgeGraph {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 
         if let Some(ref t) = triple {
+            let is_exclusive = self.exclusive_predicates.contains(&t.predicate);
             let conflicting: Vec<String> = self.facts.values()
-                .filter(|f| f.triple.as_ref().map_or(false, |ft|
-                    ft.subject == t.subject && ft.predicate == t.predicate && ft.object != t.object
-                ))
+                .filter(|f| f.triple.as_ref().map_or(false, |ft| {
+                    if is_exclusive {
+                        ft.subject == t.subject && ft.predicate == t.predicate && ft.object != t.object
+                    } else {
+                        false // Non-exclusive predicates can have multiple values
+                    }
+                }))
                 .map(|f| f.id.clone())
                 .collect();
 
@@ -107,22 +114,41 @@ impl KnowledgeGraph {
     pub fn resolve_all_contradictions(&mut self) {
         let conflicts = self.contradictions.clone();
         for (a_id, b_id) in conflicts {
-            let conf_a = self.facts.get(&a_id).map(|f| f.confidence).unwrap_or(0.0);
-            let conf_b = self.facts.get(&b_id).map(|f| f.confidence).unwrap_or(0.0);
+            let (conf_a, source_a) = self.facts.get(&a_id).map(|f| (f.confidence, f.id.split(':').next().unwrap_or("unknown").to_string())).unwrap_or((0.0, "unknown".to_string()));
+            let (conf_b, source_b) = self.facts.get(&b_id).map(|f| (f.confidence, f.id.split(':').next().unwrap_or("unknown").to_string())).unwrap_or((0.0, "unknown".to_string()));
 
             // Step 28: Complex resolution based on confidence and trust
             if conf_a > conf_b * 1.5 {
                 info!("Resolving conflict: Favoring {} (high confidence) over {}", a_id, b_id);
                 if let Some(f) = self.facts.get_mut(&b_id) { f.confidence *= 0.1; }
+                self.update_source_trust(&source_a, 0.05);
+                self.update_source_trust(&source_b, -0.1);
             } else if conf_b > conf_a * 1.5 {
                 info!("Resolving conflict: Favoring {} (high confidence) over {}", b_id, a_id);
                 if let Some(f) = self.facts.get_mut(&a_id) { f.confidence *= 0.1; }
+                self.update_source_trust(&source_b, 0.05);
+                self.update_source_trust(&source_a, -0.1);
             } else {
                 // Ambiguous conflict: Dampen both
                 if let Some(f) = self.facts.get_mut(&a_id) { f.confidence *= 0.8; }
                 if let Some(f) = self.facts.get_mut(&b_id) { f.confidence *= 0.8; }
+                self.update_source_trust(&source_a, -0.02);
+                self.update_source_trust(&source_b, -0.02);
             }
         }
+        self.contradictions.clear();
+    }
+
+    pub fn update_source_trust(&mut self, source_id: &str, delta: f32) {
+        let trust = self.source_trust.entry(source_id.to_string()).or_insert(1.0);
+        *trust = (*trust + delta).clamp(0.1, 2.0);
+    }
+
+    /// Temporal Truth: Retrieves the most recent fact about a subject/predicate pair.
+    pub fn get_recent_truth(&self, subject: &str, predicate: &str) -> Option<&KnowledgeFact> {
+        self.facts.values()
+            .filter(|f| f.triple.as_ref().map_or(false, |t| t.subject == subject && t.predicate == predicate))
+            .max_by_key(|f| f.timestamp)
     }
 }
 

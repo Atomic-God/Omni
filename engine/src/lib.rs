@@ -217,6 +217,21 @@ impl OmniMind {
             LifecycleState::Runtime(_, _, c) => c,
         };
 
+        // Industrial: Check for most recent truth first
+        for s_candidate in &words {
+            for p_candidate in &words {
+                if let Some(fact) = cog.knowledge_graph.get_recent_truth(s_candidate, p_candidate) {
+                    if let Some(ref t) = fact.triple {
+                        let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(fact.confidence, 1.0, 0.05);
+                        return QueryResponse {
+                            answer: format!("Recent Truth: {} {} is {}. [Uncertainty: {:.2}]", t.subject, t.predicate, t.object, uncertainty),
+                            trace: None,
+                        };
+                    }
+                }
+            }
+        }
+
         for s_candidate in &words {
             if let Some(relations) = cog.relation_graph.get(s_candidate) {
                 for rel in relations {
@@ -291,6 +306,24 @@ impl OmniMind {
             LifecycleState::Forge(mem, _) => format!("Memory: {} entries", mem.metadata.len()),
             LifecycleState::Runtime(base, delta, _) => format!("Base: {}, Delta: {}", base.metadata.len(), delta.metadata.len()),
         }
+    }
+
+    pub fn sleep_cycle(&mut self) {
+        info!("OmniMind: Industrial Sleep Cycle starting.");
+        match &mut self.state {
+            LifecycleState::Forge(mem, cog) => {
+                mem.sleep_cycle();
+                cog.resolve_contradictions();
+                cog.apply_knowledge_decay(0.98);
+            },
+            LifecycleState::Runtime(base, delta, cog) => {
+                base.sleep_cycle();
+                delta.sleep_cycle();
+                cog.resolve_contradictions();
+                cog.apply_knowledge_decay(0.98);
+            }
+        }
+        info!("OmniMind: Sleep Cycle complete.");
     }
 
     pub fn save(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
