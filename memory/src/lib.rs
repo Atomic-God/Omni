@@ -14,6 +14,7 @@ pub mod tests;
 pub mod layered;
 pub mod evolution;
 pub mod consolidation; // New
+pub mod deduplication; // New
 
 pub use lsh::LSHIndex;
 pub use storage::ShardedStorage;
@@ -135,10 +136,18 @@ impl MemoryManager {
         // 1. Prototype generation and promotion
         self.consolidate_layers();
 
-        // 2. Apply forgetting curve
-        ForgettingEngine::prune_fading_memories(&mut self.metadata, 0.95);
+        // 2. Industrial Semantic Deduplication
+        crate::deduplication::Deduplicator::merge_similar(&mut self.metadata, 0.98);
 
-        // 3. Synchronize indices
+        // 3. Apply forgetting curve & utility pruning
+        ForgettingEngine::prune_fading_memories(&mut self.metadata, 0.95);
+        ForgettingEngine::prune_by_utility(&mut self.metadata, 0.5);
+
+        // 4. Industrial Index Optimization
+        self.episodic_index.optimize();
+        self.semantic_index.optimize();
+
+        // 5. Synchronize indices
         let keys: Vec<String> = self.metadata.keys().cloned().collect();
         self.episodic_index.sync_with_keys(&keys);
         self.semantic_index.sync_with_keys(&keys);

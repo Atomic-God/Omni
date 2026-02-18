@@ -64,6 +64,23 @@ impl ForgettingEngine {
             entries.remove(&id);
         }
     }
+
+    /// Prunes entries with low industrial utility (low access + low reinforcement).
+    pub fn prune_by_utility(entries: &mut std::collections::HashMap<String, MemoryEntry>, threshold: f32) {
+        let mut to_remove = Vec::new();
+        for (id, entry) in entries.iter() {
+            if entry.layer == "semantic" { continue; }
+
+            // Utility U = (Access * 0.4) + (Reinforcement * 0.6)
+            let utility = (entry.access_count as f32 * 0.4) + (entry.reinforcement_count as f32 * 0.6);
+            if utility < threshold {
+                to_remove.push(id.clone());
+            }
+        }
+        for id in to_remove {
+            entries.remove(&id);
+        }
+    }
 }
 
 pub struct EpisodicEncoder {

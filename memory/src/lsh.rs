@@ -125,4 +125,14 @@ impl LSHIndex {
             }
         }
     }
+
+    /// Performs industrial optimization: removes empty buckets and shrinks map capacity.
+    pub fn optimize(&mut self) {
+        debug!("LSH Optimization: Pruning empty buckets and shrinking tables.");
+        for table in self.tables.iter_mut() {
+            table.retain(|_, bucket| !bucket.is_empty());
+            table.shrink_to_fit();
+        }
+        self.vectors.shrink_to_fit();
+    }
 }
