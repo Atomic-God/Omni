@@ -1,0 +1,28 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+chrono = "0.4"
+# Crate dependencies
+core-vsa = { path = "../core-vsa" }
+cognition = { path = "../cognition" }
+memory = { path = "../memory" }
+ingestion = { path = "../ingestion" }
+runtime = { path = "../runtime" }
+hte = { path = "../hte" }
+fabricator = { path = "../fabricator" }
+perception = { path = "../perception" }
+learning = { path = "../learning" }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "omni_bench"
+harness = false

@@ -1,0 +1,22 @@
+[package]
+name = "omniforge"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "omniforge"
+path = "src/main.rs"
+
+[dependencies]
+engine = { path = "../engine" }
+hte = { path = "../hte" }
+ingestion = { path = "../ingestion" }
+fabricator = { path = "../fabricator" }
+memory = { path = "../memory" }
+learning = { path = "../learning" }
+log = "0.4"
+env_logger = "0.10"
+indicatif = "0.18.3"
+directories = "6.0.0"
+ctrlc = "3.5.1"
+serde_json = "1.0"

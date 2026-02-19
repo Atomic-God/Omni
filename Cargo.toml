@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "hte",
+    "core-vsa",
+    "fabricator",
+    "cli",
+    "cognition",
+    "memory",
+    "engine",
+    "ingestion",
+    "learning",
+    "api",
+    "perception",
+    "neural",
+    "dataset",
+    "trainer",
+    "gpu-bridge",
+]
+resolver = "2"

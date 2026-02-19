@@ -1,0 +1,10 @@
+[package]
+name = "perception"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core-vsa = { path = "../core-vsa" }
+log = "0.4"
+regex = "1.10"
+once_cell = "1.18"

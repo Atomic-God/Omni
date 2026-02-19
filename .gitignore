@@ -1,0 +1,11 @@
+target/
+**/*.rs.bk
+Cargo.lock
+*.omf
+*.mindpack
+*.zip
+test_data/
+prod_data/
+omniforge_data/
+omniforge
+test_memory.json
