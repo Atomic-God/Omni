@@ -174,7 +174,7 @@ async fn get_telemetry(State(state): State<AppState>) -> Result<Json<engine::met
 
 async fn task_step(State(state): State<AppState>) -> Result<Json<String>, ApiError> {
     let mut mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
-    let result = mind.task_loop.step().unwrap_or_else(|| "No active goals".to_string());
+    let result = mind.execute_task_step().unwrap_or_else(|| "No active goals".to_string());
     Ok(Json(result))
 }
 

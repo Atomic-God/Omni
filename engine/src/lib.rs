@@ -341,6 +341,15 @@ impl OmniMind {
         }
     }
 
+    pub fn execute_task_step(&mut self) -> Option<String> {
+        let cog = match &self.state {
+            LifecycleState::Forge(_, c) => c,
+            LifecycleState::Runtime(_, _, c) => c,
+        };
+        let uncertainty = UncertaintyScorer::estimate_entropy(cog);
+        self.task_loop.step(uncertainty)
+    }
+
     pub fn sleep_cycle(&mut self) {
         info!("OmniMind: Industrial Sleep Cycle starting.");
         match &mut self.state {
