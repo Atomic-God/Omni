@@ -73,25 +73,29 @@ impl HardwareAdapter {
             return 2048; // Strictly enforce low precision for mobile
         }
 
-        let total_ram_gb = self.profile.total_memory / 1024 / 1024 / 1024;
+        let avail_ram_gb = self.profile.available_memory / 1024 / 1024 / 1024;
 
-        let base = if total_ram_gb < 2 {
+        let base = if avail_ram_gb < 2 {
             2048
-        } else if total_ram_gb < 8 {
+        } else if avail_ram_gb < 4 {
+            5120
+        } else if avail_ram_gb < 12 {
             10000
         } else {
             20000
         };
 
         match self.current_mode {
-            PowerMode::LowPower => base / 5,
-            _ => base,
+            PowerMode::LowPower => (base / 2).max(2048),
+            PowerMode::Balanced => base,
+            PowerMode::HighPerformance => (base * 2).min(32000), // Max industrial precision
+            PowerMode::Mobile => 2048,
         }
     }
 
     pub fn is_low_memory_mode(&self) -> bool {
-        let free_ram_gb = (self.profile.total_memory - self.profile.used_memory) / 1024 / 1024 / 1024;
-        free_ram_gb < 1 || self.current_mode == PowerMode::LowPower
+        let avail_ram_gb = self.profile.available_memory / 1024 / 1024 / 1024;
+        avail_ram_gb < 1 || self.current_mode == PowerMode::LowPower || self.current_mode == PowerMode::Mobile
     }
 
     pub fn report(&self) {
