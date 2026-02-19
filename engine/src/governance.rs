@@ -1,6 +1,10 @@
 use tracing::{info, warn, debug};
 use crate::OmniMind;
 use cognition::knowledge::{ReasoningEngine};
+use serde::{Serialize, Deserialize};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 
 pub struct SelfCorrectionLoop;
 
@@ -179,16 +183,59 @@ impl ConsistencyValidator {
 }
 
 pub struct AuditLog {
-    pub entries: Vec<String>,
+    pub log_path: PathBuf,
 }
 
 impl AuditLog {
-    pub fn new() -> Self {
-        Self { entries: Vec::new() }
+    pub fn new(root_dir: &std::path::Path) -> Self {
+        Self { log_path: root_dir.join("audit.log") }
     }
 
-    pub fn log(&mut self, action: &str) {
-        let entry = format!("[Action] {}", action);
-        self.entries.push(entry);
+    pub fn log(&self, action: &str) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let entry = format!("[{}] Industrial Action: {}\n", now, action);
+
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&self.log_path) {
+            let _ = file.write_all(entry.as_bytes());
+        }
+        info!("{}", entry.trim());
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Action {
+    Ingest,
+    Learn,
+    Ask,
+    Snapshot,
+    Control,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionPolicy {
+    pub allowed_actions: Vec<Action>,
+    pub max_file_size_bytes: u64,
+    pub strict_mode: bool,
+}
+
+impl PermissionPolicy {
+    pub fn forge_default() -> Self {
+        Self {
+            allowed_actions: vec![Action::Ingest, Action::Learn, Action::Ask, Action::Snapshot, Action::Control],
+            max_file_size_bytes: 100 * 1024 * 1024, // 100MB
+            strict_mode: false,
+        }
+    }
+
+    pub fn runtime_default() -> Self {
+        Self {
+            allowed_actions: vec![Action::Ask, Action::Learn], // No direct ingestion or snapshots in basic runtime
+            max_file_size_bytes: 1024 * 1024, // 1MB
+            strict_mode: true,
+        }
+    }
+
+    pub fn is_allowed(&self, action: Action) -> bool {
+        self.allowed_actions.contains(&action)
     }
 }

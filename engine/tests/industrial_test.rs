@@ -159,3 +159,20 @@ fn test_continuous_learning_and_governance() {
 
     let _ = std::fs::remove_dir_all("./test_learning_gov");
 }
+
+#[test]
+fn test_runtime_safety_and_permissions() {
+    // 1. Initialize in Runtime mode (delta_path doesn't need to exist for basic check)
+    let mut mind = engine::OmniMind::new_runtime("./base", "./delta");
+
+    // 2. Try ingestion (should be blocked in default runtime policy)
+    let result = mind.ingest_file("test.txt");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("Permission Denied"));
+
+    // 3. Check audit log creation
+    assert!(std::path::Path::new("./delta/audit.log").exists());
+
+    let _ = std::fs::remove_dir_all("./base");
+    let _ = std::fs::remove_dir_all("./delta");
+}

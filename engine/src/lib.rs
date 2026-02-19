@@ -10,7 +10,7 @@ pub use cognition::{CognitionCore, ReasoningTrace};
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use ingestion::nlp::SymbolicNLP;
 use serde::{Serialize, Deserialize};
-use crate::governance::{SelfCorrectionLoop, SecuritySandbox, PrivacyGuard, PromptDefense};
+use crate::governance::{SelfCorrectionLoop, SecuritySandbox, PrivacyGuard, PromptDefense, PermissionPolicy, AuditLog, Action};
 use crate::task::TaskLoop;
 use tracing::warn;
 use std::fs::File;
@@ -43,6 +43,8 @@ pub struct OmniMind {
     pub vsa_dimension: usize,
     pub privacy: PrivacyGuard,
     pub task_loop: TaskLoop,
+    pub permissions: PermissionPolicy,
+    pub audit_log: AuditLog,
 }
 
 impl OmniMind {
@@ -65,6 +67,8 @@ impl OmniMind {
             vsa_dimension,
             privacy: PrivacyGuard::new(),
             task_loop: TaskLoop::new(),
+            permissions: PermissionPolicy::forge_default(),
+            audit_log: AuditLog::new(&PathBuf::from(path)),
         }
     }
 
@@ -88,15 +92,28 @@ impl OmniMind {
             vsa_dimension,
             privacy: PrivacyGuard::new(),
             task_loop: TaskLoop::new(),
+            permissions: PermissionPolicy::runtime_default(),
+            audit_log: AuditLog::new(&PathBuf::from(delta_path)),
         }
     }
 
     pub fn ingest_file(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.permissions.is_allowed(Action::Ingest) {
+            self.audit_log.log(&format!("Denied Ingestion attempt: {}", path));
+            return Err("Permission Denied: Ingestion blocked by industrial policy".into());
+        }
+
         let p = std::path::Path::new(path);
         if !SecuritySandbox::validate_ingestion_path(p) {
              return Err("Security Violation: Path outside allowed boundary".into());
         }
 
+        let metadata = std::fs::metadata(p)?;
+        if metadata.len() > self.permissions.max_file_size_bytes {
+            return Err(format!("Security Violation: File size {} exceeds limit {}", metadata.len(), self.permissions.max_file_size_bytes).into());
+        }
+
+        self.audit_log.log(&format!("Ingesting file: {}", path));
         info!("API: Ingesting file and extracting proper meaning: {}", path);
 
         let ingestor = ingestion::UniversalIngestor::with_dimension(self.vsa_dimension);
@@ -160,6 +177,12 @@ impl OmniMind {
     }
 
     pub fn learn(&mut self, text: &str) {
+        if !self.permissions.is_allowed(Action::Learn) {
+            self.audit_log.log("Denied Learning attempt");
+            warn!("Permission Denied: Learning blocked by policy");
+            return;
+        }
+
         let text = match PromptDefense::sanitize(text) {
             Ok(t) => t,
             Err(e) => {
@@ -170,6 +193,7 @@ impl OmniMind {
 
         let text = self.privacy.scrub(&text);
 
+        self.audit_log.log("Incremental Learning Event");
         debug!("OmniMind: Incremental learning with deep NLP extraction");
         let vector = self.encode_text(&text);
 
@@ -195,6 +219,14 @@ impl OmniMind {
     }
 
     pub fn ask(&mut self, text: &str) -> QueryResponse {
+        if !self.permissions.is_allowed(Action::Ask) {
+            self.audit_log.log("Denied Query attempt");
+            return QueryResponse {
+                answer: "Permission Denied: Query blocked by policy".to_string(),
+                trace: None,
+            };
+        }
+
         let text = match PromptDefense::sanitize(text) {
             Ok(t) => t,
             Err(e) => {
@@ -206,6 +238,7 @@ impl OmniMind {
         };
 
         let text = self.privacy.scrub(&text);
+        self.audit_log.log(&format!("Query Event: {}", text));
 
         let words: Vec<String> = text.split_whitespace()
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
@@ -330,6 +363,11 @@ impl OmniMind {
     }
 
     pub fn save(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.permissions.is_allowed(Action::Snapshot) {
+            self.audit_log.log(&format!("Denied Snapshot attempt: {}", path));
+            return Err("Permission Denied: Snapshot saving blocked by policy".into());
+        }
+        self.audit_log.log(&format!("Saving state to: {}", path));
         let cog_path = format!("{}.cog", path);
         match &self.state {
             LifecycleState::Forge(mem, cog) => {
