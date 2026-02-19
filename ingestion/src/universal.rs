@@ -51,6 +51,7 @@ impl UniversalIngestor {
 struct DuplicateRegistry {
     hashes: HashSet<String>,
     size_fast_hashes: HashSet<(u64, u64)>,
+    semantic_vectors: Vec<HyperVector>,
 }
 
 impl Ingestor for UniversalIngestor {
@@ -58,10 +59,9 @@ impl Ingestor for UniversalIngestor {
         info!("Industrial Ingestion Pipeline active: {:?}", path);
         let graph = Arc::new(Mutex::new(SymbolGraph::new()));
         let seen_hashes = Arc::new(Mutex::new(DuplicateRegistry::default()));
-        let seen_semantic = Arc::new(Mutex::new(Vec::new()));
 
         if path.is_file() {
-            if let Err(e) = self.process_single_file(path, &graph, &seen_hashes, &seen_semantic) {
+            if let Err(e) = self.process_single_file(path, &graph, &seen_hashes) {
                 warn!("Failed to process {:?}: {}", path, e);
             }
         } else {
@@ -81,7 +81,7 @@ impl Ingestor for UniversalIngestor {
             let start_time = std::time::Instant::now();
 
             entries.par_iter().for_each(|entry| {
-                match self.process_single_file(entry.path(), &graph, &seen_hashes, &seen_semantic) {
+                match self.process_single_file(entry.path(), &graph, &seen_hashes) {
                     Ok(_) => {
                         let count = processed.fetch_add(1, Ordering::SeqCst) + 1;
                         if count % 10 == 0 || count == total {
@@ -115,7 +115,7 @@ impl crate::IngestionAdapter for UniversalAdapter {
 }
 
 impl UniversalIngestor {
-    fn process_single_file(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<DuplicateRegistry>>, seen_semantic: &Arc<Mutex<Vec<HyperVector>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn process_single_file(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<DuplicateRegistry>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Multi-stage Duplicate Detection
         let metadata = std::fs::metadata(path)?;
         let size = metadata.len();
@@ -147,7 +147,7 @@ impl UniversalIngestor {
             "docx" => self.process_docx(path, graph),
             "rs" | "py" | "c" | "cpp" | "js" | "ts" | "java" | "go" | "rb" => self.process_code(path, graph),
             "rtf" => self.process_rtf(path, graph),
-            "jpg" | "png" | "jpeg" | "webp" => self.process_image(path, graph, seen_semantic),
+            "jpg" | "png" | "jpeg" | "webp" => self.process_image(path, graph, seen),
             "mp3" | "wav" | "flac" | "m4a" => self.process_audio(path, graph),
             "mp4" | "mkv" | "avi" => self.process_video(path, graph),
             "zip" | "tar" | "gz" => self.process_archive(path, graph),
@@ -352,21 +352,21 @@ impl UniversalIngestor {
         Ok(())
     }
 
-    fn process_image(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen_semantic_vecs: &Arc<Mutex<Vec<HyperVector>>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn process_image(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<DuplicateRegistry>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let img = image::open(path).map_err(|e| e.to_string())?;
         let ocr_text = self.ocr.extract_text(&img);
         let (semantic_vec, meaning_desc, vision_meta) = VisionSemanticExtractor::extract_deep_meaning(&img);
 
         {
-            let s = seen_semantic_vecs.lock().unwrap();
-            for prev in s.iter() {
+            let mut s = seen.lock().unwrap();
+            for prev in s.semantic_vectors.iter() {
                 if semantic_vec.similarity(prev) > 0.95 {
                     info!("Near-duplicate visual detected: {:?}", path);
                     return Ok(());
                 }
             }
+            s.semantic_vectors.push(semantic_vec.clone());
         }
-        seen_semantic_vecs.lock().unwrap().push(semantic_vec.clone());
 
         let file_hash = self.compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
         let node_id = format!("img:{}", file_hash);
@@ -681,6 +681,17 @@ impl UniversalIngestor {
         meta.insert("extracted_meaning_count", facts.len().to_string());
 
         let semantic_vec = self.encode_text_deterministic(&text);
+
+        {
+            let mut s = seen.lock().unwrap();
+            for prev in s.semantic_vectors.iter() {
+                if semantic_vec.similarity(prev) > 0.95 {
+                    debug!("Smarter Duplicate Detection: Skipping semantically redundant chunk (sim > 0.95)");
+                    return Ok(());
+                }
+            }
+            s.semantic_vectors.push(semantic_vec.clone());
+        }
 
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, semantic_vec, meta.to_map(), 1.0);
