@@ -168,7 +168,8 @@ async fn load_snapshot(
 }
 
 async fn get_telemetry(State(state): State<AppState>) -> Result<Json<engine::metrics::RuntimeMetrics>, ApiError> {
-    let mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
+    let mut mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
+    mind.update_metrics();
     Ok(Json(mind.metrics.clone()))
 }
 

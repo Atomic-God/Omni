@@ -8,6 +8,7 @@ pub struct RuntimeMetrics {
     pub average_confidence: f32, // Step 50
     pub consolidation_count: u32,
     pub memories_pruned: u32,
+    pub hardware_snapshot: serde_json::Value,
 }
 
 impl RuntimeMetrics {
@@ -19,6 +20,7 @@ impl RuntimeMetrics {
             average_confidence: 0.0,
             consolidation_count: 0,
             memories_pruned: 0,
+            hardware_snapshot: serde_json::json!({}),
         }
     }
 }

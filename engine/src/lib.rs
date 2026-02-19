@@ -341,6 +341,10 @@ impl OmniMind {
         }
     }
 
+    pub fn update_metrics(&mut self) {
+        self.metrics.hardware_snapshot = runtime::adaptation::PerformanceMonitor::capture_snapshot();
+    }
+
     pub fn execute_task_step(&mut self) -> Option<String> {
         let cog = match &self.state {
             LifecycleState::Forge(_, c) => c,

@@ -952,6 +952,7 @@ dependencies = [
  "runtime",
  "seahash",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "uuid",
@@ -2815,6 +2816,7 @@ dependencies = [
  "crc32fast",
  "hte",
  "serde",
+ "serde_json",
  "tracing",
 ]
 

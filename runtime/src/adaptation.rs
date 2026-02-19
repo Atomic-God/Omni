@@ -108,16 +108,36 @@ impl HardwareAdapter {
 pub struct PerformanceMonitor;
 
 impl PerformanceMonitor {
-    /// Tracks and logs live resource utilization.
+    /// Tracks and logs live resource utilization with detailed industrial metrics.
     pub fn track_telemetry() {
         let load = get_current_load();
         let profile = detect();
         let used_mem_gb = profile.used_memory as f32 / 1024.0 / 1024.0 / 1024.0;
+        let total_mem_gb = profile.total_memory as f32 / 1024.0 / 1024.0 / 1024.0;
+        let mem_usage_pct = (used_mem_gb / total_mem_gb) * 100.0;
 
-        info!("Industrial Telemetry: [CPU Load: {:.1}%] [RAM Used: {:.2} GB]", load, used_mem_gb);
+        info!("Industrial Telemetry: [CPU Load: {:.1}%] [RAM Used: {:.2}/{:.2} GB ({:.1}%)]",
+            load, used_mem_gb, total_mem_gb, mem_usage_pct);
 
         if load > 90.0 {
             warn!("Industrial Alert: CPU Load exceeding industrial safety limits!");
         }
+        if mem_usage_pct > 85.0 {
+            warn!("Industrial Alert: RAM usage critically high ({:.1}%)!", mem_usage_pct);
+        }
+    }
+
+    /// Captures a point-in-time performance snapshot.
+    pub fn capture_snapshot() -> serde_json::Value {
+        let load = get_current_load();
+        let profile = detect();
+        serde_json::json!({
+            "cpu_load": load,
+            "ram_used_bytes": profile.used_memory,
+            "ram_total_bytes": profile.total_memory,
+            "thermal_limit": profile.thermal_limit,
+            "throttling": profile.throttling_active,
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+        })
     }
 }
