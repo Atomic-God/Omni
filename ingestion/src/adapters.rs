@@ -39,8 +39,30 @@ impl IngestionAdapter for DocxAdapter {
             }
         }
 
-        if content.is_empty() { return vec![]; }
-        crate::chunk_content(&content, "docx_text", path)
+        let mut chunks = Vec::new();
+        if !content.is_empty() {
+             chunks.extend(crate::chunk_content(&content, "docx_text", path));
+        }
+
+        // Extract metadata from docProps/core.xml
+        if let Ok(mut meta_file) = archive.by_name("docProps/core.xml") {
+            let mut meta_xml = String::new();
+            if meta_file.read_to_string(&mut meta_xml).is_ok() {
+                let mut meta_content = String::new();
+                let parser = EventReader::from_str(&meta_xml);
+                for e in parser {
+                    if let Ok(XmlEvent::Characters(text)) = e {
+                        meta_content.push_str(&text);
+                        meta_content.push(' ');
+                    }
+                }
+                if !meta_content.is_empty() {
+                    chunks.extend(crate::chunk_content_with_structure(&meta_content, "docx_metadata", path, "metadata"));
+                }
+            }
+        }
+
+        chunks
     }
 }
 

@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub port: u16,
     pub log_level: String,
     pub security_boundary: bool,
+    pub auto_prune_interval_secs: u64,
 }
 
 impl AppConfig {
@@ -18,6 +19,7 @@ impl AppConfig {
             .set_default("port", 3000)?
             .set_default("log_level", "info")?
             .set_default("security_boundary", true)?
+            .set_default("auto_prune_interval_secs", 3600)?
             .add_source(File::with_name("config/settings").required(false))
             .add_source(Environment::with_prefix("OMNIFORGE"))
             .build()?;

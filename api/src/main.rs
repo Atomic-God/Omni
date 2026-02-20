@@ -51,6 +51,20 @@ async fn main() -> anyhow::Result<()> {
         config: cfg.clone(),
     };
 
+    // Industrial Background Tasks: Automatic Memory Pruning
+    let mind_for_task = Arc::clone(&state.mind);
+    let interval = cfg.auto_prune_interval_secs;
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(interval));
+        loop {
+            ticker.tick().await;
+            info!("Background Task: Triggering automatic cognitive consolidation...");
+            if let Ok(mut mind) = mind_for_task.lock() {
+                mind.sleep_cycle();
+            }
+        }
+    });
+
     let v1_routes = Router::new()
         .route("/learn", post(learn))
         .route("/ask", post(ask))

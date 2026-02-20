@@ -99,7 +99,19 @@ impl Ingestor for UniversalIngestor {
 
             let final_count = processed.load(Ordering::SeqCst);
             let final_errors = errors.load(Ordering::SeqCst);
-            info!("Batch Ingestion Complete. Processed: {}, Errors: {}, Total Time: {:?}", final_count, final_errors, start_time.elapsed());
+            let elapsed = start_time.elapsed();
+            info!("Batch Ingestion Complete. Processed: {}, Errors: {}, Total Time: {:?}", final_count, final_errors, elapsed);
+
+            // Add batch summary metadata node
+            let mut g = graph.lock().unwrap();
+            let mut summary_meta = std::collections::HashMap::new();
+            summary_meta.insert("batch_root".to_string(), path.to_string_lossy().to_string());
+            summary_meta.insert("files_processed".to_string(), final_count.to_string());
+            summary_meta.insert("errors_encountered".to_string(), final_errors.to_string());
+            summary_meta.insert("total_time_ms".to_string(), elapsed.as_millis().to_string());
+
+            let summary_id = format!("batch:{}", seahash::hash(path.to_string_lossy().as_bytes()));
+            g.add_node_with_confidence(&summary_id, HyperVector::deterministic(0xBA7C), summary_meta, 1.0);
         }
         let result = graph.lock().unwrap().clone();
         Ok(result)
