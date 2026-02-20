@@ -41,20 +41,38 @@ impl HardwareAdapter {
         }
     }
 
-    /// Dynamically adjusts the power mode based on live telemetry (thermal/load).
+    /// Dynamically adjusts the power mode based on live telemetry (thermal/load/RAM).
     pub fn live_adjust(&mut self) {
+        // Refresh live RAM stats for dynamic scaling
+        let fresh = detect();
+        self.profile.used_memory = fresh.used_memory;
+        self.profile.available_memory = fresh.available_memory;
+
         let load = get_current_load();
         let thermal = self.profile.thermal_limit;
+        let avail_ram_gb = self.profile.available_memory / 1024 / 1024 / 1024;
 
-        let new_mode = if load > 85.0 || thermal > 80.0 {
+        let new_mode = if load > 85.0 || thermal > 80.0 || avail_ram_gb < 1 {
             PowerMode::LowPower
-        } else if load < 30.0 {
+        } else if self.is_mobile_platform() {
+            PowerMode::Mobile
+        } else if load < 30.0 && avail_ram_gb > 8 {
             PowerMode::HighPerformance
         } else {
             PowerMode::Balanced
         };
 
         self.set_mode(new_mode);
+    }
+
+    fn is_mobile_platform(&self) -> bool {
+        cfg_if::cfg_if! {
+            if #[cfg(any(target_os = "android", target_os = "ios"))] {
+                true
+            } else {
+                false
+            }
+        }
     }
 
     pub fn get_concurrency_limit(&self) -> usize {
@@ -69,13 +87,12 @@ impl HardwareAdapter {
     }
 
     pub fn suggest_dimension(&self) -> usize {
-        if self.current_mode == PowerMode::Mobile || self.mobile_mode_forced {
-            return 2048; // Strictly enforce low precision for mobile
-        }
-
         let avail_ram_gb = self.profile.available_memory / 1024 / 1024 / 1024;
 
-        let base = if avail_ram_gb < 2 {
+        // RAM-aware base dimension scaling
+        let base = if avail_ram_gb < 1 {
+            1024 // Extreme low memory
+        } else if avail_ram_gb < 2 {
             2048
         } else if avail_ram_gb < 4 {
             5120
@@ -86,22 +103,55 @@ impl HardwareAdapter {
         };
 
         match self.current_mode {
-            PowerMode::LowPower => (base / 2).max(2048),
+            PowerMode::LowPower => (base / 2).max(1024),
             PowerMode::Balanced => base,
             PowerMode::HighPerformance => (base * 2).min(32000), // Max industrial precision
-            PowerMode::Mobile => 2048,
+            PowerMode::Mobile => 2048, // Balanced for mobile
+        }
+    }
+
+    /// Toggles aggressive low-power features for mobile environments.
+    pub fn get_mobile_tuning(&self) -> MobileTuning {
+        if self.current_mode == PowerMode::Mobile || self.mobile_mode_forced {
+            MobileTuning {
+                disable_background_tasks: true,
+                reduce_io_frequency: true,
+                max_concurrency: 1,
+                use_fast_hashes_only: true,
+            }
+        } else {
+            MobileTuning::default()
         }
     }
 
     pub fn is_low_memory_mode(&self) -> bool {
         let avail_ram_gb = self.profile.available_memory / 1024 / 1024 / 1024;
-        avail_ram_gb < 1 || self.current_mode == PowerMode::LowPower || self.current_mode == PowerMode::Mobile
+        avail_ram_gb < 1 || self.current_mode == PowerMode::LowPower
     }
 
     pub fn report(&self) {
         info!("Industrial Hardware Report [Mode: {:?}]:", self.current_mode);
         info!("  Load: {:.1}%", get_current_load());
         info!("  Suggested VSA Dim: {}", self.suggest_dimension());
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MobileTuning {
+    pub disable_background_tasks: bool,
+    pub reduce_io_frequency: bool,
+    pub max_concurrency: usize,
+    pub use_fast_hashes_only: bool,
+}
+
+impl Default for MobileTuning {
+    fn default() -> Self {
+        Self {
+            disable_background_tasks: false,
+            reduce_io_frequency: false,
+            max_concurrency: 4,
+            use_fast_hashes_only: false,
+        }
     }
 }
 

@@ -45,6 +45,7 @@ pub struct OmniMind {
     pub task_loop: TaskLoop,
     pub permissions: PermissionPolicy,
     pub audit_log: AuditLog,
+    pub adapter: HardwareAdapter,
 }
 
 impl OmniMind {
@@ -69,6 +70,7 @@ impl OmniMind {
             task_loop: TaskLoop::new(),
             permissions: PermissionPolicy::forge_default(),
             audit_log: AuditLog::new(&PathBuf::from(path)),
+            adapter,
         }
     }
 
@@ -94,6 +96,7 @@ impl OmniMind {
             task_loop: TaskLoop::new(),
             permissions: PermissionPolicy::runtime_default(),
             audit_log: AuditLog::new(&PathBuf::from(delta_path)),
+            adapter,
         }
     }
 
@@ -351,6 +354,9 @@ impl OmniMind {
 
     pub fn update_metrics(&mut self) {
         self.metrics.hardware_snapshot = runtime::adaptation::PerformanceMonitor::capture_snapshot();
+
+        // Industrial: Perform live hardware adaptation during metric updates
+        self.adapter.live_adjust();
     }
 
     pub fn execute_task_step(&mut self) -> Option<String> {
