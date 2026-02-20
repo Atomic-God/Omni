@@ -15,6 +15,7 @@ pub struct SnapshotHeader {
     pub version: u32,
     pub timestamp: u64,
     pub checksum: String,
+    pub signature: Option<String>, // Step 2: Industrial Signature
     pub is_delta: bool,
     pub base_snapshot: Option<String>,
     pub previous_hash: Option<String>,
@@ -91,6 +92,15 @@ impl MindPack {
 pub struct SnapshotManager;
 
 impl SnapshotManager {
+    const INDUSTRIAL_KEY: &'static str = "OMNIFORGE_INDUSTRIAL_V1_SECRET";
+
+    fn compute_signature(checksum: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(checksum.as_bytes());
+        hasher.update(Self::INDUSTRIAL_KEY.as_bytes());
+        hex::encode(hasher.finalize())
+    }
+
     pub fn save(memory: &MemoryManager, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         Self::save_ext(memory, path, false, None, None)
     }
@@ -99,9 +109,11 @@ impl SnapshotManager {
         let base_hash = base.header.checksum.clone();
 
         let mut delta_metadata = HashMap::new();
+        let mut delta_keys = std::collections::HashSet::new();
         for (k, v) in &memory.metadata {
             if !base.metadata.contains_key(k) || base.metadata[k].importance != v.importance || base.metadata[k].reinforcement_count != v.reinforcement_count {
                 delta_metadata.insert(k.clone(), v.clone());
+                delta_keys.insert(k.clone());
             }
         }
 
@@ -117,9 +129,10 @@ impl SnapshotManager {
             }
         }
 
+        // Industrial Optimization: Only carry subset indices for the delta keys
         let body = MindSnapshotBody {
-            episodic_index: memory.episodic_index.clone(),
-            semantic_index: memory.semantic_index.clone(),
+            episodic_index: memory.episodic_index.get_subset(&delta_keys),
+            semantic_index: memory.semantic_index.get_subset(&delta_keys),
             storage: memory.storage.clone(),
             metadata: delta_metadata,
             shards,
@@ -158,10 +171,13 @@ impl SnapshotManager {
         hasher.update(&body_bytes);
         let checksum = hex::encode(hasher.finalize());
 
+        let signature = Some(Self::compute_signature(&checksum));
+
         let header = SnapshotHeader {
             version: crate::MEMORY_VERSION,
             timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
             checksum,
+            signature,
             is_delta,
             base_snapshot,
             previous_hash,
@@ -206,13 +222,11 @@ impl SnapshotManager {
         for (k, v) in &delta.metadata {
             base.metadata.insert(k.clone(), v.clone());
             base.storage.location_map.insert(k.clone(), delta.storage.location_map.get(k).cloned().unwrap_or(0));
-
-            if v.layer == "semantic" {
-                base.semantic_index.insert(k, v.vector.clone());
-            } else {
-                base.episodic_index.insert(k, v.vector.clone());
-            }
         }
+
+        // Industrial Optimization: Merge delta indices
+        base.episodic_index.merge(delta.episodic_index.clone());
+        base.semantic_index.merge(delta.semantic_index.clone());
     }
 
     pub fn load(path: &Path) -> Result<MindSnapshot, Box<dyn std::error::Error>> {
@@ -228,6 +242,16 @@ impl SnapshotManager {
 
         if computed != container.header.checksum {
             return Err("Industrial Robustness Error: Snapshot checksum mismatch!".into());
+        }
+
+        // Verify Industrial Signature
+        if let Some(ref sig) = container.header.signature {
+            let expected_sig = Self::compute_signature(&container.header.checksum);
+            if sig != &expected_sig {
+                return Err("Industrial Security Error: Snapshot signature invalid!".into());
+            }
+        } else {
+             return Err("Industrial Security Error: Missing snapshot signature!".into());
         }
 
         // Industrial: Extract shards back to storage root if missing

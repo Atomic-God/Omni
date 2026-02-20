@@ -1,0 +1,236 @@
+   Compiling serde_core v1.0.228
+   Compiling either v1.15.0
+   Compiling parking_lot_core v0.9.12
+   Compiling exr v1.74.0
+   Compiling rayon v1.11.0
+   Compiling parking_lot v0.12.5
+   Compiling globset v0.4.18
+   Compiling tar v0.4.44
+   Compiling sysinfo v0.29.11
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.149
+   Compiling num-rational v0.4.2
+   Compiling core-vsa v0.1.0 (/app/core-vsa)
+   Compiling string_cache v0.8.9
+   Compiling markup5ever v0.10.1
+   Compiling perception v0.1.0 (/app/perception)
+   Compiling csv v1.4.0
+   Compiling jpeg-decoder v0.3.2
+   Compiling cognition v0.1.0 (/app/cognition)
+   Compiling hte v0.1.0 (/app/hte)
+   Compiling html5ever v0.25.2
+   Compiling xml5ever v0.16.2
+   Compiling markup5ever_rcdom v0.1.0
+   Compiling tiff v0.9.1
+   Compiling mp4 v0.14.0
+   Compiling html2text v0.2.1
+   Compiling calamine v0.24.0
+   Compiling image v0.24.9
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling bincode v1.3.3
+   Compiling lopdf v0.31.0
+   Compiling ignore v0.4.25
+   Compiling memory v0.1.0 (/app/memory)
+   Compiling static_assertions v1.1.0
+   Compiling inotify-sys v0.1.5
+   Compiling inotify v0.11.0
+   Compiling ingestion v0.1.0 (/app/ingestion)
+   Compiling tokio v1.49.0
+   Compiling learning v0.1.0 (/app/learning)
+   Compiling uuid v1.21.0
+   Compiling lexical-util v0.8.5
+   Compiling runtime v0.1.0 (/app/runtime)
+   Compiling neural v0.1.0 (/app/neural)
+   Compiling num-iter v0.1.45
+   Compiling notify-types v2.1.0
+   Compiling num-complex v0.4.6
+   Compiling num v0.4.3
+   Compiling notify v8.2.0
+   Compiling engine v0.1.0 (/app/engine)
+   Compiling arrow-buffer v45.0.0
+   Compiling arrow-schema v45.0.0
+   Compiling fabricator v0.1.0 (/app/fabricator)
+   Compiling arrow-data v45.0.0
+   Compiling lexical-write-integer v0.8.5
+   Compiling lexical-parse-integer v0.8.6
+   Compiling arrow-array v45.0.0
+   Compiling lexical-parse-float v0.8.5
+   Compiling lexical-write-float v0.8.5
+   Compiling alloc-no-stdlib v2.0.4
+   Compiling alloc-stdlib v0.2.2
+   Compiling lexical-core v0.8.5
+   Compiling unicode-width v0.2.2
+   Compiling nix v0.30.1
+   Compiling brotli-decompressor v2.5.1
+   Compiling console v0.16.2
+   Compiling arrow-select v45.0.0
+   Compiling flatbuffers v23.5.26
+   Compiling lz4-sys v1.11.1+lz4-1.10.0
+   Compiling arrow-cast v45.0.0
+   Compiling portable-atomic v1.13.1
+   Compiling zstd-safe v6.0.6
+   Compiling dataset v0.1.0 (/app/dataset)
+   Compiling ordered-float v2.10.1
+   Compiling unit-prefix v0.5.2
+   Compiling integer-encoding v3.0.4
+   Compiling termcolor v1.4.1
+   Compiling humantime v2.3.0
+   Compiling env_logger v0.10.2
+   Compiling thrift v0.17.0
+   Compiling indicatif v0.18.3
+   Compiling arrow-ipc v45.0.0
+   Compiling zstd v0.12.4
+   Compiling lz4 v1.28.1
+   Compiling brotli v3.5.0
+   Compiling ctrlc v3.5.1
+   Compiling snap v1.1.1
+   Compiling twox-hash v1.6.3
+   Compiling omniforge v0.1.0 (/app/cli)
+   Compiling xtask v0.1.0 (/app/xtask)
+   Compiling parquet v45.0.0
+   Compiling gpu-bridge v0.1.0 (/app/gpu-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.14s
+warning: the following packages contain code that will be rejected by a future version of Rust: xml5ever v0.16.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/debug/deps/dataset-e2c4bb03aa665fcb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/fabricator-27db548bca69ecb6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/full_pipeline.rs (target/debug/deps/full_pipeline-f8be5f00d671d3fd)
+
+running 1 test
+test test_full_pipeline ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.99s
+
+     Running tests/lifecycle_test.rs (target/debug/deps/lifecycle_test-0c714ebda3bdc3ff)
+
+running 1 test
+test test_lifecycle_states ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.20s
+
+     Running tests/pack_test.rs (target/debug/deps/pack_test-c6ab17bc1301db5c)
+
+running 1 test
+test test_pack_and_clone ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.86s
+
+     Running unittests src/lib.rs (target/debug/deps/gpu_bridge-4b0428f82cb9c8ba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/hte-2ad63b918bfd7023)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/detection_test.rs (target/debug/deps/detection_test-3f08edb3cd720366)
+
+running 1 test
+test test_hardware_detection ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.69s
+
+     Running tests/hardware_invariance.rs (target/debug/deps/hardware_invariance-ee30998a4386cc84)
+
+running 1 test
+test tests::test_hardware_invariance ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/learning-b363b2f846b1e5c2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/neural-400e7547c75c63ab)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/omniforge-37041036c00429bc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/omniforge-5eceeb882170dd98)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/perception-d47a095ce08c56ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/xtask-8f936a15633d4ece)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests dataset
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fabricator
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests gpu_bridge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hte
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests learning
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests neural
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests omniforge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests perception
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

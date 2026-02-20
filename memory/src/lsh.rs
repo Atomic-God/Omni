@@ -135,4 +135,28 @@ impl LSHIndex {
         }
         self.vectors.shrink_to_fit();
     }
+
+    /// Returns a subset of the index containing only the specified keys.
+    /// Used for delta snapshot optimization.
+    pub fn get_subset(&self, keys: &HashSet<String>) -> Self {
+        let mut subset = Self {
+            tables: vec![HashMap::new(); NUM_TABLES],
+            masks: self.masks.clone(),
+            vectors: HashMap::new(),
+        };
+
+        for key in keys {
+            if let Some(vec) = self.vectors.get(key) {
+                subset.insert(key, vec.clone());
+            }
+        }
+        subset
+    }
+
+    /// Merges another index into this one.
+    pub fn merge(&mut self, other: Self) {
+        for (key, vec) in other.vectors {
+            self.insert(&key, vec);
+        }
+    }
 }
