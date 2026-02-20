@@ -56,7 +56,11 @@ impl MemoryEntry {
         self.confidence = (self.confidence * n + reliability) / (n + 1.0);
         self.reinforcement_count += 1;
         self.importance += 0.5;
-        self.stability *= 1.5; // Ebbinghaus reinforcement: stability grows
+
+        // Industrial Spaced Repetition: Stability growth is non-linear
+        // Stability increases more for high-confidence reinforcement.
+        let growth_factor = 1.0 + (self.confidence * 1.5).min(2.5);
+        self.stability *= growth_factor;
     }
 
     pub fn decay(&mut self, rate: f32) {

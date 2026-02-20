@@ -369,7 +369,9 @@ impl OmniMind {
                 mem.sleep_cycle();
                 cog.resolve_contradictions();
                 cog.apply_knowledge_decay(0.98);
-                // Self-Consistency Validation
+
+                // Industrial Self-Consistency Verification
+                crate::governance::ConsistencyAuditor::audit_cross_source(self);
                 crate::governance::SelfVerificationLoop::global_verification(self);
             },
             LifecycleState::Runtime(base, delta, cog) => {
@@ -377,6 +379,8 @@ impl OmniMind {
                 delta.sleep_cycle();
                 cog.resolve_contradictions();
                 cog.apply_knowledge_decay(0.98);
+
+                crate::governance::ConsistencyAuditor::audit_cross_source(self);
                 crate::governance::SelfVerificationLoop::global_verification(self);
             }
         }

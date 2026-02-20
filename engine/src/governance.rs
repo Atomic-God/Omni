@@ -143,6 +143,49 @@ impl SecuritySandbox {
     }
 }
 
+pub struct ConsistencyAuditor;
+
+impl ConsistencyAuditor {
+    /// Performs industrial cross-source verification.
+    /// Checks if facts from different sources (e.g. Ingest vs Learn) contradict each other.
+    pub fn audit_cross_source(mind: &mut OmniMind) -> usize {
+        info!("Governance: Starting Cross-Source Consistency Audit...");
+        let mut contradictions_found = 0;
+
+        let cog = match &mut mind.state {
+            crate::LifecycleState::Forge(_, c) => c,
+            crate::LifecycleState::Runtime(_, _, c) => c,
+        };
+
+        // Scan for facts about the same subject/predicate but different objects
+        let facts: Vec<_> = cog.knowledge_graph.facts.values().cloned().collect();
+        for i in 0..facts.len() {
+            for j in (i + 1)..facts.len() {
+                let f1 = &facts[i];
+                let f2 = &facts[j];
+
+                if let (Some(t1), Some(t2)) = (&f1.triple, &f2.triple) {
+                    if t1.subject == t2.subject && t1.predicate == t2.predicate && t1.object != t2.object {
+                        // Potential contradiction between sources
+                        warn!("Industrial Audit: Cross-source contradiction detected: Subject '{}' has conflicting '{}' values: '{}' vs '{}'",
+                            t1.subject, t1.predicate, t1.object, t2.object);
+
+                        cog.knowledge_graph.contradictions.push((f1.id.clone(), f2.id.clone()));
+                        contradictions_found += 1;
+                    }
+                }
+            }
+        }
+
+        if contradictions_found > 0 {
+            info!("Industrial Audit: Resolving {} newly identified cross-source conflicts.", contradictions_found);
+            cog.knowledge_graph.resolve_all_contradictions();
+        }
+
+        contradictions_found
+    }
+}
+
 pub struct ConsistencyValidator;
 
 impl ConsistencyValidator {

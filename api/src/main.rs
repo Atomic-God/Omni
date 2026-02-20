@@ -59,8 +59,16 @@ async fn main() -> anyhow::Result<()> {
         loop {
             ticker.tick().await;
             info!("Background Task: Triggering automatic cognitive consolidation...");
-            if let Ok(mut mind) = mind_for_task.lock() {
-                mind.sleep_cycle();
+
+            match mind_for_task.lock() {
+                Ok(mut mind) => {
+                    mind.sleep_cycle();
+                    mind.audit_log.log("Automatic background cognitive consolidation cycle successful.");
+                    info!("Background Task: Consolidation cycle complete.");
+                }
+                Err(e) => {
+                    warn!("Background Task: Could not acquire mind lock: {}", e);
+                }
             }
         }
     });
