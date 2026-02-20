@@ -255,9 +255,17 @@ impl OmniMind {
             for p_candidate in &words {
                 if let Some(fact) = cog.knowledge_graph.get_recent_truth(s_candidate, p_candidate) {
                     if let Some(ref t) = fact.triple {
-                        let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(fact.confidence, 1.0, 0.05);
+                        let composite_conf = fact.get_composite_confidence();
+                        let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(composite_conf, 1.0, 0.05);
+
+                        let history_str = if fact.history.len() > 1 {
+                            format!(" (Previous values: {})", fact.history.iter().map(|h| h.value.clone()).collect::<Vec<_>>().join(", "))
+                        } else {
+                            "".to_string()
+                        };
+
                         return QueryResponse {
-                            answer: format!("Recent Truth: {} {} is {}. [Uncertainty: {:.2}]", t.subject, t.predicate, t.object, uncertainty),
+                            answer: format!("Recent Truth: {} {} is {}. [Uncertainty: {:.2}]{}", t.subject, t.predicate, t.object, uncertainty, history_str),
                             trace: None,
                         };
                     }

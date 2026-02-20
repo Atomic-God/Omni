@@ -102,7 +102,17 @@ impl CognitionCore {
         self.knowledge_graph.penalize(id, penalty);
     }
 
+    pub fn identify_causal_chains(&self, observation: &str) -> Vec<(String, f32)> {
+        knowledge::ReasoningEngine::infer_causal_chain(&self.knowledge_graph, observation, 3)
+    }
+
     pub fn resolve_contradictions(&mut self) {
+        // Transitive Inconsistency Scan
+        let transitive_conflicts = knowledge::ContradictionEngine::scan_transitive_inconsistencies(&self.knowledge_graph);
+        for conflict in transitive_conflicts {
+            self.knowledge_graph.contradictions.push(conflict);
+        }
+
         self.knowledge_graph.resolve_all_contradictions();
     }
 
