@@ -171,7 +171,7 @@ fn test_runtime_safety_and_permissions() {
     assert!(result.unwrap_err().to_string().contains("Permission Denied"));
 
     // 3. Check audit log creation
-    assert!(std::path::Path::new("./delta/audit.log").exists());
+    assert!(std::path::Path::new("./delta/audit.jsonl").exists());
 
     let _ = std::fs::remove_dir_all("./base");
     let _ = std::fs::remove_dir_all("./delta");

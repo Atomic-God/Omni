@@ -101,22 +101,45 @@ impl OmniMind {
     }
 
     pub fn ingest_file(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let p = std::path::Path::new(path);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
         if !self.permissions.is_allowed(Action::Ingest) {
-            self.audit_log.log(&format!("Denied Ingestion attempt: {}", path));
+            self.audit_log.log_event(crate::governance::AuditEntry {
+                timestamp: now,
+                action: Action::Ingest,
+                resource: Some(path.to_string()),
+                success: false,
+                message: "Permission Denied: Ingestion blocked".into(),
+                hardware_mode: format!("{:?}", self.adapter.current_mode),
+            });
             return Err("Permission Denied: Ingestion blocked by industrial policy".into());
         }
 
-        let p = std::path::Path::new(path);
         if !SecuritySandbox::validate_ingestion_path(p) {
              return Err("Security Violation: Path outside allowed boundary".into());
         }
 
-        let metadata = std::fs::metadata(p)?;
-        if metadata.len() > self.permissions.max_file_size_bytes {
-            return Err(format!("Security Violation: File size {} exceeds limit {}", metadata.len(), self.permissions.max_file_size_bytes).into());
+        if let Err(e) = self.permissions.validate_file(p) {
+            self.audit_log.log_event(crate::governance::AuditEntry {
+                timestamp: now,
+                action: Action::Ingest,
+                resource: Some(path.to_string()),
+                success: false,
+                message: format!("Security Violation: {}", e),
+                hardware_mode: format!("{:?}", self.adapter.current_mode),
+            });
+            return Err(e.into());
         }
 
-        self.audit_log.log(&format!("Ingesting file: {}", path));
+        self.audit_log.log_event(crate::governance::AuditEntry {
+            timestamp: now,
+            action: Action::Ingest,
+            resource: Some(path.to_string()),
+            success: true,
+            message: format!("Ingesting file: {}", path),
+            hardware_mode: format!("{:?}", self.adapter.current_mode),
+        });
         info!("API: Ingesting file and extracting proper meaning: {}", path);
 
         let ingestor = ingestion::UniversalIngestor::with_dimension(self.vsa_dimension);
@@ -180,8 +203,17 @@ impl OmniMind {
     }
 
     pub fn learn(&mut self, text: &str) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
         if !self.permissions.is_allowed(Action::Learn) {
-            self.audit_log.log("Denied Learning attempt");
+            self.audit_log.log_event(crate::governance::AuditEntry {
+                timestamp: now,
+                action: Action::Learn,
+                resource: None,
+                success: false,
+                message: "Permission Denied: Learning blocked".into(),
+                hardware_mode: format!("{:?}", self.adapter.current_mode),
+            });
             warn!("Permission Denied: Learning blocked by policy");
             return;
         }
@@ -196,7 +228,14 @@ impl OmniMind {
 
         let text = self.privacy.scrub(&text);
 
-        self.audit_log.log("Incremental Learning Event");
+        self.audit_log.log_event(crate::governance::AuditEntry {
+            timestamp: now,
+            action: Action::Learn,
+            resource: None,
+            success: true,
+            message: "Incremental Learning Event".into(),
+            hardware_mode: format!("{:?}", self.adapter.current_mode),
+        });
         debug!("OmniMind: Incremental learning with deep NLP extraction");
         let vector = self.encode_text(&text);
 
@@ -222,8 +261,17 @@ impl OmniMind {
     }
 
     pub fn ask(&mut self, text: &str) -> QueryResponse {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
         if !self.permissions.is_allowed(Action::Ask) {
-            self.audit_log.log("Denied Query attempt");
+            self.audit_log.log_event(crate::governance::AuditEntry {
+                timestamp: now,
+                action: Action::Ask,
+                resource: None,
+                success: false,
+                message: "Denied Query attempt".into(),
+                hardware_mode: format!("{:?}", self.adapter.current_mode),
+            });
             return QueryResponse {
                 answer: "Permission Denied: Query blocked by policy".to_string(),
                 trace: None,
@@ -241,7 +289,14 @@ impl OmniMind {
         };
 
         let text = self.privacy.scrub(&text);
-        self.audit_log.log(&format!("Query Event: {}", text));
+        self.audit_log.log_event(crate::governance::AuditEntry {
+            timestamp: now,
+            action: Action::Ask,
+            resource: Some(text.clone()),
+            success: true,
+            message: format!("Query Event: {}", text),
+            hardware_mode: format!("{:?}", self.adapter.current_mode),
+        });
 
         let words: Vec<String> = text.split_whitespace()
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
@@ -394,11 +449,28 @@ impl OmniMind {
     }
 
     pub fn save(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
         if !self.permissions.is_allowed(Action::Snapshot) {
-            self.audit_log.log(&format!("Denied Snapshot attempt: {}", path));
+            self.audit_log.log_event(crate::governance::AuditEntry {
+                timestamp: now,
+                action: Action::Snapshot,
+                resource: Some(path.to_string()),
+                success: false,
+                message: "Denied Snapshot attempt".into(),
+                hardware_mode: format!("{:?}", self.adapter.current_mode),
+            });
             return Err("Permission Denied: Snapshot saving blocked by policy".into());
         }
-        self.audit_log.log(&format!("Saving state to: {}", path));
+
+        self.audit_log.log_event(crate::governance::AuditEntry {
+            timestamp: now,
+            action: Action::Snapshot,
+            resource: Some(path.to_string()),
+            success: true,
+            message: format!("Saving state to: {}", path),
+            hardware_mode: format!("{:?}", self.adapter.current_mode),
+        });
         let cog_path = format!("{}.cog", path);
         match &self.state {
             LifecycleState::Forge(mem, cog) => {
