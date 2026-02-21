@@ -58,6 +58,7 @@ impl SymbolicNLP {
             // 3. Industrial Relations (Multi-language triggers)
             let industrial_verbs = [
                 "uses", "requires", "causes", "triggers", "connects", "has", "means",
+                "inhibits", "facilitates", "promotes", "blocks", "prevents",
                 "eats", "eat", "breathes", "fly", "flies",
                 "utiliza", "requiere", "causa", "conecta", "tiene", "significa",
                 "utilise", "necessite", "provoque", "relie", "a", "signifie",

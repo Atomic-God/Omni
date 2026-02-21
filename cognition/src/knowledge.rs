@@ -49,8 +49,11 @@ impl KnowledgeGraph {
         }
     }
 
-    pub fn add_fact(&mut self, id: &str, triple: Option<FactTriple>, reliability: f32) {
+    pub fn add_fact(&mut self, id: &str, triple: Option<FactTriple>, reliability: f32) -> f32 {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let source_id = id.split(':').next().unwrap_or("unknown");
+        let trust = self.source_trust.get(source_id).cloned().unwrap_or(1.0);
+        let weighted_reliability = reliability * trust;
 
         if let Some(ref t) = triple {
             let is_exclusive = self.exclusive_predicates.contains(&t.predicate);
@@ -59,15 +62,27 @@ impl KnowledgeGraph {
                     if is_exclusive {
                         ft.subject == t.subject && ft.predicate == t.predicate && ft.object != t.object
                     } else {
-                        false // Non-exclusive predicates can have multiple values
+                        false
                     }
                 }))
                 .map(|f| f.id.clone())
                 .collect();
 
             for conflict_id in conflicting {
-                warn!("Conflict detected during ingestion: {} contradicts existing {}", id, conflict_id);
-                self.contradictions.push((id.to_string(), conflict_id));
+                warn!("Industrial Belief Revision: Online conflict detected for {}", conflict_id);
+                // ONLINE BELIEF REVISION: Immediate resolution if one is much stronger
+                let existing_conf = self.facts.get(&conflict_id).map(|f| f.get_composite_confidence()).unwrap_or(0.0);
+                let new_conf = (0.5 * 0.5 + weighted_reliability * 0.3 + 0.0) / 1.0; // Estimate initial confidence
+
+                if new_conf > existing_conf * 1.2 {
+                    info!("Belief Revision: Favoring NEW fact {} over OLD {}", id, conflict_id);
+                    if let Some(f) = self.facts.get_mut(&conflict_id) { f.confidence *= 0.1; }
+                } else if existing_conf > new_conf * 1.2 {
+                    info!("Belief Revision: Dampening NEW fact {} in favor of existing strong evidence", id);
+                    // We'll set the new fact's initial confidence very low
+                } else {
+                    self.contradictions.push((id.to_string(), conflict_id));
+                }
             }
 
             self.subject_index.entry(t.subject.clone()).or_insert_with(Vec::new).push(id.to_string());
@@ -103,6 +118,8 @@ impl KnowledgeGraph {
         fact.confidence = (prior * n + weighted_reliability) / (n + 1.0);
         fact.reinforcement_count += 1;
         fact.timestamp = now;
+
+        fact.get_composite_confidence()
     }
 
     pub fn reinforce(&mut self, id: &str, evidence_reliability: f32) {
@@ -212,23 +229,30 @@ pub struct ReasoningEngine;
 pub struct ContradictionEngine;
 
 impl ContradictionEngine {
-    /// Scans for transitive contradictions (e.g., A is-a B, B is-a C, but A not-a C).
+    /// Scans for transitive contradictions (e.g., A is-a B, B is-a C, but A not-a C) and structural loops.
     pub fn scan_transitive_inconsistencies(graph: &KnowledgeGraph) -> Vec<(String, String)> {
         let mut inconsistencies = Vec::new();
         let subjects: Vec<String> = graph.subject_index.keys().cloned().collect();
 
         for s in subjects {
+            // 1. Taxonomic mismatch
             if let Some(inferred) = ReasoningEngine::infer_transitive(graph, &s, "taxonomy", 3) {
-                 // Check if there is a direct fact that contradicts the inference
                  for fact in graph.facts.values() {
                      if let Some(ref t) = fact.triple {
                          if t.subject == s && t.predicate == "taxonomy" && t.object != inferred.0 {
                              if fact.confidence > 0.8 && inferred.1 > 0.8 {
-                                 inconsistencies.push((fact.id.clone(), format!("Inferred mismatch with {}", inferred.0)));
+                                 inconsistencies.push((fact.id.clone(), format!("Inferred taxonomy mismatch with {}", inferred.0)));
                              }
                          }
                      }
                  }
+            }
+
+            // 2. Structural loops (e.g. A part_of B, B part_of A)
+            if let Some(parts) = ReasoningEngine::infer_transitive(graph, &s, "part_of", 5) {
+                if parts.0 == s {
+                     inconsistencies.push((format!("loop:{}", s), format!("Structural circularity detected for {}", s)));
+                }
             }
         }
         inconsistencies
@@ -237,6 +261,7 @@ impl ContradictionEngine {
 
 impl ReasoningEngine {
     /// Identifies and weights causal chains (Requirement 2).
+    /// Returns a list of (Cause, Confidence) pairs.
     pub fn infer_causal_chain(graph: &KnowledgeGraph, observation: &str, max_depth: usize) -> Vec<(String, f32)> {
         let mut chains = Vec::new();
         let mut queue = VecDeque::new();
@@ -250,13 +275,23 @@ impl ReasoningEngine {
             // Find facts where current concept is the object of a causal relationship
             for fact in graph.facts.values() {
                 if let Some(ref t) = fact.triple {
-                    let is_causal = ["causality", "causes", "triggers", "causa", "verursacht"].contains(&t.predicate.as_str());
-                    if is_causal && t.object == curr {
-                        let new_conf = conf * fact.confidence;
+                    let causal_weight: f32 = match t.predicate.as_str() {
+                        "causes" | "triggers" | "determinates" => 1.0,
+                        "facilitates" | "promotes" | "increases" => 0.6,
+                        "inhibits" | "blocks" | "decreases" | "prevents" => -0.8, // Negative causality
+                        _ => 0.0,
+                    };
+
+                    if causal_weight != 0.0 && t.object == curr {
+                        // Propagate confidence: C_cause = C_effect * Fact_confidence * |Causal_weight|
+                        let new_conf = conf * fact.get_composite_confidence() * causal_weight.abs();
+
                         if !visited.contains_key(&t.subject) || visited[&t.subject] < new_conf {
                             visited.insert(t.subject.clone(), new_conf);
                             queue.push_back((t.subject.clone(), new_conf, depth + 1));
-                            chains.push((t.subject.clone(), new_conf));
+
+                            let label = if causal_weight > 0.0 { "Cause" } else { "Inhibitor" };
+                            chains.push((format!("{}: {}", label, t.subject), new_conf));
                         }
                     }
                 }

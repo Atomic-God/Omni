@@ -57,7 +57,7 @@ impl CognitionCore {
             let mut found_next = false;
             if let Some(relations) = self.relation_graph.get(&current) {
                 for rel in relations {
-                    if rel.relation_type == RelationType::Causal { // "causes"
+                    if let RelationType::Causal(_) = rel.relation_type { // "causes"
                         if !path.contains(&rel.target) {
                             found_next = true;
                             let mut new_path = path.clone();
@@ -80,7 +80,7 @@ impl CognitionCore {
         let mut effects = Vec::new();
         if let Some(relations) = self.relation_graph.get(cause) {
             for rel in relations {
-                if rel.relation_type == RelationType::Causal {
+                if let RelationType::Causal(_) = rel.relation_type {
                     effects.push(rel.target.clone());
                 }
             }

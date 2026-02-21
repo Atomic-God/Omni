@@ -17,9 +17,16 @@ pub use abductive::AbductiveReasoner;
 pub use intent::{IntentResolver, Intent};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum CausalType {
+    Facilitatory, // Increases likelihood
+    Inhibitory,   // Decreases likelihood
+    Deterministic, // A always leads to B
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RelationType {
     Taxonomic, // "is a"
-    Causal,    // "causes"
+    Causal(CausalType), // "causes"
     Temporal,  // "before/after"
     Structural, // "part of"
     Contradictory, // Added
@@ -122,20 +129,29 @@ impl CognitionCore {
     }
 
     pub fn add_fact_triple(&mut self, triple: core_vsa::FactTriple, confidence: f32) {
+        let triple = core_vsa::FactTriple {
+            subject: triple.subject.to_lowercase(),
+            predicate: triple.predicate.to_lowercase(),
+            object: triple.object.to_lowercase(),
+        };
+
+        let fact_id = format!("system:{}-{}-{}", triple.subject, triple.predicate, triple.object);
+        let composite_confidence = self.knowledge_graph.add_fact(&fact_id, Some(triple.clone()), confidence);
+
         let rel_type = match triple.predicate.as_str() {
             "taxonomy" | "is_a" | "es" | "son" | "ist" | "sind" => RelationType::Taxonomic,
-            "causality" | "causes" | "triggers" | "causa" | "verursacht" => RelationType::Causal,
+            "causes" | "triggers" | "determinates" => RelationType::Causal(CausalType::Deterministic),
+            "facilitates" | "promotes" | "increases" => RelationType::Causal(CausalType::Facilitatory),
+            "inhibits" | "blocks" | "decreases" | "prevents" => RelationType::Causal(CausalType::Inhibitory),
             "contradicts" | "contradice" | "widerspricht" => RelationType::Contradictory,
             "means" | "significa" | "bedeutet" => {
-                self.link_multilingual_symbols(&triple.subject, &triple.object, confidence);
+                self.link_multilingual_symbols(&triple.subject, &triple.object, composite_confidence);
                 RelationType::Taxonomic
             },
+            "part_of" | "composed_of" => RelationType::Structural,
             _ => RelationType::Structural,
         };
-        self.add_relation(&triple.subject, &triple.object, rel_type, 1.0, confidence);
-
-        let fact_id = format!("{}-{}-{}", triple.subject, triple.predicate, triple.object);
-        self.knowledge_graph.add_fact(&fact_id, Some(triple), confidence);
+        self.add_relation(&triple.subject, &triple.object, rel_type, 1.0, composite_confidence);
     }
 
     pub fn ingest_from_graph(&mut self, graph: &SymbolGraph) {

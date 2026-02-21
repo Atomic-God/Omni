@@ -310,28 +310,22 @@ impl OmniMind {
             LifecycleState::Runtime(_, _, c) => c,
         };
 
-        // Industrial: Check for most recent truth first
-        for s_candidate in &words {
-            for p_candidate in &words {
-                if let Some(fact) = cog.knowledge_graph.get_recent_truth(s_candidate, p_candidate) {
-                    if let Some(ref t) = fact.triple {
-                        let composite_conf = fact.get_composite_confidence();
-                        let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(composite_conf, 1.0, 0.05);
-
-                        let history_str = if fact.history.len() > 1 {
-                            format!(" (Previous values: {})", fact.history.iter().map(|h| h.value.clone()).collect::<Vec<_>>().join(", "))
-                        } else {
-                            "".to_string()
-                        };
-
-                        return QueryResponse {
-                            answer: format!("Recent Truth: {} {} is {}. [Uncertainty: {:.2}]{}", t.subject, t.predicate, t.object, uncertainty, history_str),
-                            trace: None,
-                        };
-                    }
-                }
+        // 1. Industrial Deep Reasoning: Check for Causal Chains
+        for candidate in &words {
+            if candidate == "what" || candidate == "is" || candidate == "who" || candidate == "how" || candidate == "means" || candidate == "causes" || candidate == "inhibits" { continue; }
+            let causes = cog.identify_causal_chains(candidate);
+            if !causes.is_empty() {
+                let (top_cause, conf) = &causes[0];
+                let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(*conf, 0.9, 0.1);
+                return QueryResponse {
+                    answer: format!("Causal Reasoning: I've identified that '{}' is a significant factor for '{}'. [Uncertainty: {:.2}]", top_cause, candidate, uncertainty),
+                    trace: cog.find_path(top_cause.split(": ").last().unwrap_or(top_cause), candidate, 3),
+                };
             }
         }
+
+        // 2. Logic Reasoning: Check for multi-step relations
+        let mut best_logic_res: Option<(QueryResponse, f32)> = None;
 
         for s_candidate in &words {
             if let Some(relations) = cog.relation_graph.get(s_candidate) {
@@ -343,10 +337,13 @@ impl OmniMind {
                                 if ReasoningValidator::validate_inference(cog, s_candidate, &next_rel.target) {
                                     let trace = cog.find_path(s_candidate, &next_rel.target, 3);
                                     let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(next_rel.confidence, rel.weight, 0.1);
-                                    return QueryResponse {
+                                    let res = QueryResponse {
                                         answer: format!("Logic: Yes, {} related to {} (via {}). [Uncertainty: {:.2}]", s_candidate, next_rel.target, intermediate, uncertainty),
                                         trace,
                                     };
+                                    if best_logic_res.as_ref().map_or(true, |(_, conf)| next_rel.confidence > *conf) {
+                                        best_logic_res = Some((res, next_rel.confidence));
+                                    }
                                 } else {
                                     info!("Validation Loop: Blocked contradictory inference {} -> {}", s_candidate, next_rel.target);
                                 }
@@ -360,16 +357,60 @@ impl OmniMind {
         for s_candidate in &words {
              if let Some(relations) = cog.relation_graph.get(s_candidate) {
                  for rel in relations {
-                     if words.contains(&rel.target) || words.contains(&"what".to_string()) || words.contains(&"who".to_string()) {
+                     if words.contains(&rel.target) || (words.contains(&"what".to_string()) && rel.target != "means" && rel.target != "causes" && rel.target != "inhibits") || words.contains(&"who".to_string()) {
+                         // Industrial: Fetch latest composite confidence from Knowledge Graph to ensure Belief Revision is respected
+                         let kg_conf = cog.knowledge_graph.facts.values()
+                             .filter(|f| f.triple.as_ref().map_or(false, |t| t.subject == *s_candidate && t.object == rel.target))
+                             .map(|f| f.get_composite_confidence())
+                             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                             .unwrap_or(rel.confidence);
+
                          let trace = cog.find_path(s_candidate, &rel.target, 2);
-                         let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(rel.confidence, 1.0, 0.05);
-                         return QueryResponse {
+                         let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(kg_conf, 1.0, 0.05);
+                         let res = QueryResponse {
                              answer: format!("Logic: {} is related to {}. [Uncertainty: {:.2}]", s_candidate, rel.target, uncertainty),
                              trace,
                          };
+                         if best_logic_res.as_ref().map_or(true, |(_, conf)| kg_conf > *conf) {
+                             best_logic_res = Some((res, kg_conf));
+                         }
                      }
                  }
              }
+        }
+        if let Some((res, _)) = best_logic_res { return res; }
+
+        // 3. Property Lookup: Check for most recent truth (Backwards compatibility)
+        for s_candidate in &words {
+            for word in &words {
+                if word == "what" || word == "is" || word == "who" || word == "how" || word == "means" || word == "causes" { continue; }
+
+                let fact_opt = cog.knowledge_graph.facts.values()
+                    .filter(|f| f.triple.as_ref().map_or(false, |t| t.subject == *s_candidate && (t.predicate.contains(word) || t.object.contains(word))))
+                    .filter(|f| f.get_composite_confidence() > 0.4)
+                    .max_by(|a, b| a.get_composite_confidence().partial_cmp(&b.get_composite_confidence()).unwrap_or(std::cmp::Ordering::Equal));
+
+                if let Some(fact) = fact_opt {
+                    if let Some(ref t) = fact.triple {
+                        let composite_conf = fact.get_composite_confidence();
+                        let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(composite_conf, 1.0, 0.05);
+
+                        let history_str = if fact.history.len() > 1 {
+                            format!(" (Previous values: {})", fact.history.iter().map(|h| h.value.clone()).collect::<Vec<_>>().join(", "))
+                        } else {
+                            "".to_string()
+                        };
+
+                        return QueryResponse {
+                            answer: format!("Recent Truth: {} {} is {}. [Uncertainty: {:.2}]{}", t.subject, t.predicate, t.object, uncertainty, history_str),
+                            trace: Some(ReasoningTrace {
+                                steps: vec![format!("Source: Fact ID {}", fact.id), format!("Composite Confidence: {:.2}", composite_conf)],
+                                final_confidence: composite_conf,
+                            }),
+                        };
+                    }
+                }
+            }
         }
 
         let vector = self.encode_text(&text);
