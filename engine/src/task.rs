@@ -84,11 +84,21 @@ impl TaskLoop {
     /// Executes one step of the current top-level goal with industrial recovery logic.
     /// Incorporates uncertainty to decide between Observation and Action.
     pub fn step(&mut self, current_uncertainty: f32) -> Option<String> {
+        // Confidence Scoring Loop: Evaluate if current knowledge supports goal completion
+        if let Some(goal) = self.goals.front_mut() {
+            Self::update_goal_confidence(goal, current_uncertainty);
+        }
+
         let goal = self.goals.front_mut()?;
 
         if current_uncertainty > 0.7 && goal.status != TaskStatus::Pending {
              info!("Task Loop: HIGH UNCERTAINTY ({:.2}). Switching to Observation Mode.", current_uncertainty);
              return Some(format!("Observing: Gathering more data for goal: {}", goal.description));
+        }
+
+        if goal.confidence < 0.1 && goal.status == TaskStatus::InProgress {
+            warn!("Task Loop: Goal confidence CRITICALLY LOW ({:.2}). Re-evaluating strategy.", goal.confidence);
+            return self.handle_failure();
         }
 
         // Handle Backoff if retrying
@@ -125,12 +135,36 @@ impl TaskLoop {
         }
     }
 
+    fn update_goal_confidence(goal: &mut Goal, uncertainty: f32) {
+        // Industrial Confidence Scoring Loop:
+        // C_new = C_old * (1 - Uncertainty) + (SuccessRate * 0.1)
+        let decay = 1.0 - uncertainty;
+        goal.confidence = (goal.confidence * decay).clamp(0.0, 1.0);
+
+        // Reinforce if uncertainty is low
+        if uncertainty < 0.3 {
+            goal.confidence = (goal.confidence + 0.05).min(1.0);
+        }
+    }
+
     fn handle_failure(&mut self) -> Option<String> {
         let goal = self.goals.front_mut()?;
         if goal.retries < goal.strategy.max_retries {
             goal.retries += 1;
             goal.status = TaskStatus::Pending;
-            goal.confidence *= 0.5; // Backtrack on confidence
+
+            // Industrial Recovery: Pivot strategy based on retry count
+            if goal.retries == 1 {
+                info!("Recovery Logic [Tier 1]: Increasing observation priority.");
+                goal.confidence = 0.2;
+                return Some(format!("Recovery: Strategy shift to High Observation for: {}", goal.description));
+            } else if goal.retries == 2 {
+                info!("Recovery Logic [Tier 2]: Broadening semantic search.");
+                goal.confidence = 0.1;
+                return Some(format!("Recovery: Strategy shift to Broad Semantic Search for: {}", goal.description));
+            }
+
+            goal.confidence *= 0.5; // Backtrack
             Some(format!("Recovery Loop: Initiated Retry {}/{} for: {}", goal.retries, goal.strategy.max_retries, goal.description))
         } else {
             info!("Task Loop: UNRECOVERABLE FAILURE for goal: {}", goal.description);

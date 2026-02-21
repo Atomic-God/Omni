@@ -176,3 +176,26 @@ fn test_runtime_safety_and_permissions() {
     let _ = std::fs::remove_dir_all("./base");
     let _ = std::fs::remove_dir_all("./delta");
 }
+
+#[test]
+fn test_autonomous_task_loop() {
+    let mut mind = engine::OmniMind::new_forge("./test_task_loop");
+
+    // 1. Add Goal
+    mind.task_loop.add_goal("Optimize system energy usage", engine::task::Priority::High);
+
+    // 2. Execute Step (Normal)
+    let step1 = mind.execute_task_step();
+    assert!(step1.is_some());
+    println!("Task Step 1: {:?}", step1);
+
+    // 3. Simulate High Uncertainty
+    let step2 = mind.task_loop.step(0.85); // High uncertainty
+    assert!(step2.unwrap().contains("Observing"));
+
+    // 4. Test Confidence Scoring Loop
+    let goal = mind.task_loop.goals.front().unwrap();
+    println!("Goal Confidence: {:.2}", goal.confidence);
+
+    let _ = std::fs::remove_dir_all("./test_task_loop");
+}
