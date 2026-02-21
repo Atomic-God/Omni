@@ -21,21 +21,21 @@ pub struct VisualAtom {
 pub struct VisionSemanticExtractor;
 
 impl VisionSemanticExtractor {
-    pub fn extract_deep_meaning(img: &DynamicImage) -> (HyperVector, String, HashMap<String, String>) {
+    pub fn extract_deep_meaning(img: &DynamicImage, dim: usize) -> (HyperVector, String, HashMap<String, String>) {
         info!("Vision Core: Deep structural analysis of {}x{} image", img.width(), img.height());
 
         let mut metadata = HashMap::new();
 
         // 1. Spatial Quadrant Analysis
         let quadrants = Self::analyze_quadrants(img);
-        let mut scene_vector = HyperVector::deterministic(0x5CE11E);
+        let mut scene_vector = HyperVector::deterministic_dim(0x5CE11E, dim);
 
         for (i, region) in quadrants.iter().enumerate() {
             let region_hv = HyperVector::deterministic_dim(
                 ((region.edge_density * 1000.0) as u64) ^ ((region.brightness * 1000.0) as u64),
-                core_vsa::DIMENSION
+                dim
             );
-            let pos_hv = HyperVector::deterministic(i as u64);
+            let pos_hv = HyperVector::deterministic_dim(i as u64, dim);
             scene_vector = scene_vector.bundle(&region_hv.bind(&pos_hv));
 
             metadata.insert(format!("q{}_density", i), format!("{:.2}", region.edge_density));
@@ -43,13 +43,13 @@ impl VisionSemanticExtractor {
         }
 
         // 2. Visual Grammar: Extract "Atoms"
-        let atoms = Self::extract_visual_grammar(img);
+        let atoms = Self::extract_visual_grammar(img, dim);
         metadata.insert("visual_atom_count".to_string(), atoms.len().to_string());
 
         for atom in &atoms {
             let atom_hv = HyperVector::deterministic_dim(
                 ((atom.intensity * 100.0) as u64) ^ atom.kind.len() as u64,
-                core_vsa::DIMENSION
+                dim
             );
             scene_vector = scene_vector.bundle(&atom_hv.bind(&atom.spatial_hv));
         }
@@ -79,7 +79,7 @@ impl VisionSemanticExtractor {
         (scene_vector, meaning, metadata)
     }
 
-    fn extract_visual_grammar(img: &DynamicImage) -> Vec<VisualAtom> {
+    fn extract_visual_grammar(img: &DynamicImage, dim: usize) -> Vec<VisualAtom> {
         let mut atoms = Vec::new();
         let gray = img.to_luma8();
         let (w, h) = img.dimensions();
@@ -99,14 +99,14 @@ impl VisionSemanticExtractor {
                     atoms.push(VisualAtom {
                         kind: "Line".to_string(),
                         intensity: p[4] as f32 / 255.0,
-                        spatial_hv: HyperVector::deterministic((x ^ y) as u64),
+                        spatial_hv: HyperVector::deterministic_dim((x ^ y) as u64, dim),
                     });
                 } else if p.iter().all(|&v| (v as i16 - p[4] as i16).abs() < 10) {
                     if p[4] > 10 {
                         atoms.push(VisualAtom {
                             kind: "Region".to_string(),
                             intensity: p[4] as f32 / 255.0,
-                            spatial_hv: HyperVector::deterministic((x ^ y) as u64),
+                            spatial_hv: HyperVector::deterministic_dim((x ^ y) as u64, dim),
                         });
                     }
                 }

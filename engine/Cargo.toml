@@ -39,3 +39,7 @@ harness = false
 [[bench]]
 name = "ingestion_bench"
 harness = false
+
+[[bench]]
+name = "performance_bench"
+harness = false

@@ -111,7 +111,7 @@ impl Ingestor for UniversalIngestor {
             summary_meta.insert("total_time_ms".to_string(), elapsed.as_millis().to_string());
 
             let summary_id = format!("batch:{}", seahash::hash(path.to_string_lossy().as_bytes()));
-            g.add_node_with_confidence(&summary_id, HyperVector::deterministic(0xBA7C), summary_meta, 1.0);
+            g.add_node_with_confidence(&summary_id, HyperVector::deterministic_dim(0xBA7C, self.vsa_dimension), summary_meta, 1.0);
         }
         let result = graph.lock().unwrap().clone();
         Ok(result)
@@ -367,7 +367,7 @@ impl UniversalIngestor {
     fn process_image(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<DuplicateRegistry>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let img = image::open(path).map_err(|e| e.to_string())?;
         let ocr_text = self.ocr.extract_text(&img);
-        let (semantic_vec, meaning_desc, vision_meta) = VisionSemanticExtractor::extract_deep_meaning(&img);
+        let (semantic_vec, meaning_desc, vision_meta) = VisionSemanticExtractor::extract_deep_meaning(&img, self.vsa_dimension);
 
         {
             let mut s = seen.lock().unwrap();
@@ -396,7 +396,7 @@ impl UniversalIngestor {
     }
 
     fn process_video(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let report = VideoIngestor::process_video(path)?;
+        let report = VideoIngestor::process_video(path, self.vsa_dimension)?;
         let file_hash = self.compute_file_hash(path).unwrap_or_else(|| format!("{:?}", path));
         let node_id = format!("video:{}", file_hash);
 
@@ -437,7 +437,7 @@ impl UniversalIngestor {
         }
 
         // Extract deep symbolic meaning from audio (even if metadata failed)
-        let (content_vec, content_desc) = AudioMeaningExtractor::extract_signature(path);
+        let (content_vec, content_desc) = AudioMeaningExtractor::extract_signature(path, self.vsa_dimension);
         meta.insert("acoustic_signature", content_desc);
 
         let mut g = graph.lock().unwrap();

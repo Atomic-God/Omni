@@ -33,7 +33,7 @@ fn test_industrial_meaning_extraction() {
 #[test]
 fn test_vision_grammar_and_entropy() {
     let img = DynamicImage::ImageRgba8(RgbaImage::new(200, 200));
-    let (vec, meaning, meta) = VisionSemanticExtractor::extract_deep_meaning(&img);
+    let (vec, meaning, meta) = VisionSemanticExtractor::extract_deep_meaning(&img, 10000);
 
     assert!(vec.dim == core_vsa::DIMENSION);
     assert!(meta.contains_key("visual_atom_count"));

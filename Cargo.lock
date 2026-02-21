@@ -2816,6 +2816,7 @@ dependencies = [
  "core-vsa",
  "crc32fast",
  "hte",
+ "once_cell",
  "serde",
  "serde_json",
  "tracing",

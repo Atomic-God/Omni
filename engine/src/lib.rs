@@ -101,6 +101,7 @@ impl OmniMind {
     }
 
     pub fn ingest_file(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let _prof = runtime::ProfileScope::new("OmniMind::ingest_file");
         let p = std::path::Path::new(path);
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 
@@ -261,6 +262,7 @@ impl OmniMind {
     }
 
     pub fn ask(&mut self, text: &str) -> QueryResponse {
+        let _prof = runtime::ProfileScope::new("OmniMind::ask");
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 
         if !self.permissions.is_allowed(Action::Ask) {
@@ -409,6 +411,7 @@ impl OmniMind {
 
     pub fn update_metrics(&mut self) {
         self.metrics.hardware_snapshot = runtime::adaptation::PerformanceMonitor::capture_snapshot();
+        self.metrics.profiling_data = runtime::Profiler::get_averages();
 
         // Industrial: Perform live hardware adaptation during metric updates
         self.adapter.live_adjust();
@@ -424,6 +427,7 @@ impl OmniMind {
     }
 
     pub fn sleep_cycle(&mut self) {
+        let _prof = runtime::ProfileScope::new("OmniMind::sleep_cycle");
         info!("OmniMind: Industrial Sleep Cycle starting.");
         match &mut self.state {
             LifecycleState::Forge(mem, cog) => {

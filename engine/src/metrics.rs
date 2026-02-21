@@ -9,6 +9,7 @@ pub struct RuntimeMetrics {
     pub consolidation_count: u32,
     pub memories_pruned: u32,
     pub hardware_snapshot: serde_json::Value,
+    pub profiling_data: std::collections::HashMap<String, f64>,
 }
 
 impl RuntimeMetrics {
@@ -21,6 +22,7 @@ impl RuntimeMetrics {
             consolidation_count: 0,
             memories_pruned: 0,
             hardware_snapshot: serde_json::json!({}),
+            profiling_data: std::collections::HashMap::new(),
         }
     }
 }

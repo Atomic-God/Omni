@@ -9,7 +9,7 @@ use crate::ocr::SymbolicOCR;
 pub struct VideoIngestor;
 
 impl VideoIngestor {
-    pub fn process_video(path: &Path) -> Result<String, Box<dyn Error + Send + Sync>> {
+    pub fn process_video(path: &Path, dim: usize) -> Result<String, Box<dyn Error + Send + Sync>> {
         info!("Industrial Video Ingestor: Deep meaning extraction from {:?}", path);
         let mut report = String::new();
         report.push_str(&format!("Deep Video Analysis for: {}\n", path.display()));
@@ -26,7 +26,7 @@ impl VideoIngestor {
         }
 
         // 2. Adaptive Frame Sampling & Signature
-        let frame_sigs = Self::sample_frame_signatures(path, 8)?;
+        let frame_sigs = Self::sample_frame_signatures(path, 8, dim)?;
 
         // 3. Frame-to-Text Mapping (Simulated Symbolic Transcript)
         let _ocr = SymbolicOCR::new();
@@ -50,7 +50,7 @@ impl VideoIngestor {
         Ok(report)
     }
 
-    fn sample_frame_signatures(path: &Path, count: usize) -> Result<Vec<HyperVector>, Box<dyn Error + Send + Sync>> {
+    fn sample_frame_signatures(path: &Path, count: usize, dim: usize) -> Result<Vec<HyperVector>, Box<dyn Error + Send + Sync>> {
         let file = File::open(path)?;
         let mut reader = BufReader::new(file);
         let mut buffer = [0u64; 128];
@@ -61,7 +61,7 @@ impl VideoIngestor {
             let _ = reader.read(&mut skip);
 
             if reader.read_exact(unsafe { std::slice::from_raw_parts_mut(buffer.as_mut_ptr() as *mut u8, 1024) }).is_ok() {
-                sigs.push(HyperVector::deterministic(buffer[0] ^ buffer[64]));
+                sigs.push(HyperVector::deterministic_dim(buffer[0] ^ buffer[64], dim));
             }
         }
         Ok(sigs)
