@@ -260,3 +260,40 @@ fn test_belief_revision_and_causal_logic() {
 
     let _ = std::fs::remove_dir_all("./test_belief_revision");
 }
+
+#[test]
+fn test_semantic_clustering_and_concept_formation() {
+    let mut mind = engine::OmniMind::new_forge("./test_concepts");
+
+    // 1. Ingest multiple related facts
+    mind.learn("The engine uses fuel.");
+    mind.learn("The engine generates power.");
+    mind.learn("The engine requires maintenance.");
+    mind.learn("The engine has a cooling system.");
+
+    // 2. Trigger Sleep Cycle for Concept Formation
+    mind.sleep_cycle();
+
+    // 3. Verify Topic Emergence
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            // Should find a topic related to "engine"
+            let topics = cog.relation_graph.keys()
+                .filter(|k| k.starts_with("topic:"))
+                .collect::<Vec<_>>();
+
+            println!("Detected Topic IDs: {:?}", topics);
+            assert!(!topics.is_empty());
+
+            // Check for Domain
+            let domains = cog.relation_graph.keys()
+                .filter(|k| k.starts_with("domain:"))
+                .collect::<Vec<_>>();
+            println!("Detected Domain IDs: {:?}", domains);
+            assert!(!domains.is_empty());
+        }
+        _ => panic!("Expected Forge state"),
+    }
+
+    let _ = std::fs::remove_dir_all("./test_concepts");
+}

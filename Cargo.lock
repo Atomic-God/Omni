@@ -620,6 +620,7 @@ dependencies = [
  "core-vsa",
  "perception",
  "rand 0.8.5",
+ "seahash",
  "serde",
  "tracing",
 ]

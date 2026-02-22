@@ -11,6 +11,7 @@ pub mod world_model;
 pub mod inference;
 pub mod temporal;
 pub mod knowledge;
+pub mod concepts;
 
 pub use sequence::SequenceResonator;
 pub use abductive::AbductiveReasoner;

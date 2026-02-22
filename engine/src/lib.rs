@@ -489,40 +489,49 @@ impl OmniMind {
     pub fn sleep_cycle(&mut self) {
         let _prof = runtime::ProfileScope::new("OmniMind::sleep_cycle");
         info!("OmniMind: Industrial Sleep Cycle starting.");
-        match &mut self.state {
-            LifecycleState::Forge(mem, cog) => {
-                let prototypes = mem.sleep_cycle();
-                // Concept Evolution: Link prototypes in KG
-                for (proto_key, _, members) in prototypes {
-                    for member in members {
-                        cog.add_relation(&member, &proto_key, cognition::RelationType::Taxonomic, 1.0, 0.95);
-                    }
-                }
 
-                cog.resolve_contradictions();
-                cog.apply_knowledge_decay(0.98);
-
-                // Industrial Self-Consistency Verification
-                crate::governance::ConsistencyAuditor::audit_cross_source(self);
-                crate::governance::SelfVerificationLoop::global_verification(self);
-            },
+        let (prototypes, cog_ref) = match &mut self.state {
+            LifecycleState::Forge(mem, cog) => (mem.sleep_cycle(), cog),
             LifecycleState::Runtime(base, delta, cog) => {
-                let p1 = base.sleep_cycle();
-                let p2 = delta.sleep_cycle();
+                let mut p = base.sleep_cycle();
+                p.extend(delta.sleep_cycle());
+                (p, cog)
+            }
+        };
 
-                for (proto_key, _, members) in p1.into_iter().chain(p2.into_iter()) {
-                    for member in members {
-                        cog.add_relation(&member, &proto_key, cognition::RelationType::Taxonomic, 1.0, 0.95);
-                    }
-                }
-
-                cog.resolve_contradictions();
-                cog.apply_knowledge_decay(0.98);
-
-                crate::governance::ConsistencyAuditor::audit_cross_source(self);
-                crate::governance::SelfVerificationLoop::global_verification(self);
+        // 1. Concept Evolution: Link prototypes in KG
+        for (proto_key, _, members) in prototypes {
+            for member in members {
+                cog_ref.add_relation(&member, &proto_key, cognition::RelationType::Taxonomic, 1.0, 0.95);
             }
         }
+
+        // 2. Concept Formation: Hierarchical Clustering (Topic -> Domain)
+        let topics = cognition::concepts::ConceptFormationEngine::detect_topics(&cog_ref.knowledge_graph);
+        for topic in &topics {
+            info!("Concept Formation: Emerging Topic detected: {}", topic.label);
+            cog_ref.add_relation(&topic.id, &topic.label, cognition::RelationType::Taxonomic, 1.0, 0.9);
+            for fact_id in &topic.members {
+                cog_ref.add_relation(fact_id, &topic.id, cognition::RelationType::Structural, 1.0, 0.8);
+            }
+        }
+
+        let domains = cognition::concepts::ConceptFormationEngine::abstract_domains(&topics);
+        for domain in domains {
+            info!("Concept Formation: Emerging Domain detected: {}", domain.label);
+            cog_ref.add_relation(&domain.id, &domain.label, cognition::RelationType::Taxonomic, 1.0, 0.95);
+            for topic in domain.topics {
+                cog_ref.add_relation(&topic.id, &domain.id, cognition::RelationType::Structural, 1.0, 0.9);
+            }
+        }
+
+        cog_ref.resolve_contradictions();
+        cog_ref.apply_knowledge_decay(0.98);
+
+        // Industrial Self-Consistency Verification
+        crate::governance::ConsistencyAuditor::audit_cross_source(self);
+        crate::governance::SelfVerificationLoop::global_verification(self);
+
         info!("OmniMind: Sleep Cycle complete.");
     }
 
