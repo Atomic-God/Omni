@@ -154,29 +154,34 @@ impl MemoryManager {
     }
 
     /// Triggers a "Sleep Cycle" for deep memory consolidation and pruning.
-    pub fn sleep_cycle(&mut self) {
+    /// Returns any new Semantic Prototypes discovered.
+    pub fn sleep_cycle(&mut self) -> Vec<(String, HyperVector, Vec<String>)> {
         info!("Industrial Memory: Starting Sleep Cycle (Consolidation & Forgetting)...");
 
         // 1. Prototype generation and promotion
-        self.consolidate_layers();
+        let prototypes = self.consolidate_layers_ext();
 
         // 2. Industrial Semantic Deduplication
         crate::deduplication::Deduplicator::merge_similar(&mut self.metadata, 0.98);
 
-        // 3. Apply forgetting curve & utility pruning
+        // 3. Apply semantic overlap decay (Diversity maintenance)
+        ForgettingEngine::apply_semantic_overlap_decay(&mut self.metadata, 0.90);
+
+        // 4. Apply forgetting curve & utility pruning
         ForgettingEngine::prune_fading_memories(&mut self.metadata, 0.95);
         ForgettingEngine::prune_by_utility(&mut self.metadata, 0.5);
 
-        // 4. Industrial Index Optimization
+        // 5. Industrial Index Optimization
         self.episodic_index.optimize();
         self.semantic_index.optimize();
 
-        // 5. Synchronize indices
+        // 6. Synchronize indices
         let keys: Vec<String> = self.metadata.keys().cloned().collect();
         self.episodic_index.sync_with_keys(&keys);
         self.semantic_index.sync_with_keys(&keys);
 
         info!("Industrial Memory: Sleep Cycle complete. Active entries: {}", self.metadata.len());
+        prototypes
     }
 
     pub fn apply_aging(&mut self, decay_rate: f32, prune_threshold: f32) {
@@ -197,6 +202,46 @@ impl MemoryManager {
 
         self.consolidate_layers();
     }
+
+    fn consolidate_layers_ext(&mut self) -> Vec<(String, HyperVector, Vec<String>)> {
+        // 1. Prototype Generation (Industrial Compression)
+        let prototypes = PrototypeConsolidator::generate_prototypes(&self.metadata, 0.90);
+        for (key, proto_vec, _) in &prototypes {
+             if let Some(entry) = self.metadata.get_mut(key) {
+                 entry.vector = proto_vec.clone();
+                 entry.layer = "semantic".to_string();
+                 entry.confidence = 0.95;
+                 self.semantic_index.insert(key, entry.vector.clone());
+                 self.episodic_index.remove(key);
+             }
+        }
+
+        // 2. Lifecycle Promotion
+        let mut changes = Vec::new();
+        for (key, entry) in &self.metadata {
+            if let Some(new_layer) = LifecycleManager::evaluate_promotion(entry) {
+                changes.push((key.clone(), new_layer));
+            }
+        }
+
+        for (key, layer) in changes {
+            if let Some(entry) = self.metadata.get_mut(&key) {
+                let old_layer = entry.layer.clone();
+                entry.layer = match layer {
+                    MemoryLayer::Working => "working",
+                    MemoryLayer::Episodic => "episodic",
+                    MemoryLayer::Semantic => "semantic",
+                }.to_string();
+
+                if old_layer != "semantic" && entry.layer == "semantic" {
+                    self.episodic_index.remove(&key);
+                    self.semantic_index.insert(&key, entry.vector.clone());
+                    info!("Industrial Lifecycle: Fact Promoted to Semantic Stability: {}", key);
+                }
+            }
+        }
+        prototypes
+    }
 }
 
 impl MemoryStore for MemoryManager {
@@ -211,6 +256,16 @@ impl MemoryStore for MemoryManager {
     fn query_nearest(&self, query: &HyperVector, k: usize) -> Vec<(String, f32)> {
         let mut results = self.episodic_index.query(query, k);
         results.extend(self.semantic_index.query(query, k));
+
+        // Industrial Importance Weighting: Boost high-value memories
+        for res in results.iter_mut() {
+            if let Some(meta) = self.metadata.get(&res.0) {
+                // Final Score = Similarity * (0.9 + 0.1 * normalized_importance)
+                let boost = 0.9 + (meta.importance.min(5.0) / 5.0) * 0.1;
+                res.1 *= boost;
+            }
+        }
+
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         results.truncate(k);
         results
@@ -249,41 +304,6 @@ impl HierarchicalMemory for MemoryManager {
     }
 
     fn consolidate_layers(&mut self) {
-        // 1. Prototype Generation (Industrial Compression)
-        let prototypes = PrototypeConsolidator::generate_prototypes(&self.metadata, 0.90);
-        for (key, proto_vec) in prototypes {
-             if let Some(entry) = self.metadata.get_mut(&key) {
-                 entry.vector = proto_vec;
-                 entry.layer = "semantic".to_string();
-                 entry.confidence = 0.95;
-                 self.semantic_index.insert(&key, entry.vector.clone());
-                 self.episodic_index.remove(&key);
-             }
-        }
-
-        // 2. Lifecycle Promotion
-        let mut changes = Vec::new();
-        for (key, entry) in &self.metadata {
-            if let Some(new_layer) = LifecycleManager::evaluate_promotion(entry) {
-                changes.push((key.clone(), new_layer));
-            }
-        }
-
-        for (key, layer) in changes {
-            if let Some(entry) = self.metadata.get_mut(&key) {
-                let old_layer = entry.layer.clone();
-                entry.layer = match layer {
-                    MemoryLayer::Working => "working",
-                    MemoryLayer::Episodic => "episodic",
-                    MemoryLayer::Semantic => "semantic",
-                }.to_string();
-
-                if old_layer != "semantic" && entry.layer == "semantic" {
-                    self.episodic_index.remove(&key);
-                    self.semantic_index.insert(&key, entry.vector.clone());
-                    info!("Industrial Lifecycle: Fact Promoted to Semantic Stability: {}", key);
-                }
-            }
-        }
+        let _ = self.consolidate_layers_ext();
     }
 }

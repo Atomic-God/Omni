@@ -7,11 +7,11 @@ pub struct PrototypeConsolidator;
 
 impl PrototypeConsolidator {
     /// Merges highly similar memories into abstracted 'Prototypes'.
-    /// Returns a list of (Key, PrototypeVector) to be updated in the semantic layer.
+    /// Returns a list of (PrototypeKey, PrototypeVector, Members) to be updated and linked in KG.
     pub fn generate_prototypes(
         metadata: &HashMap<String, MemoryEntry>,
         similarity_threshold: f32
-    ) -> Vec<(String, HyperVector)> {
+    ) -> Vec<(String, HyperVector, Vec<String>)> {
         let mut prototypes = Vec::new();
         let mut visited = HashSet::new();
         let keys: Vec<String> = metadata.keys().cloned().collect();
@@ -21,7 +21,8 @@ impl PrototypeConsolidator {
             if visited.contains(key_a) { continue; }
 
             let entry_a = &metadata[key_a];
-            let mut cluster = vec![entry_a.vector.clone()];
+            let mut cluster_vecs = vec![entry_a.vector.clone()];
+            let mut cluster_keys = vec![key_a.clone()];
             visited.insert(key_a.clone());
 
             for j in (i+1)..keys.len() {
@@ -32,18 +33,20 @@ impl PrototypeConsolidator {
                 let sim = entry_a.vector.similarity(&entry_b.vector);
 
                 if sim > similarity_threshold {
-                    cluster.push(entry_b.vector.clone());
+                    cluster_vecs.push(entry_b.vector.clone());
+                    cluster_keys.push(key_b.clone());
                     visited.insert(key_b.clone());
                 }
             }
 
-            if cluster.len() > 3 { // Industrial Threshold: Only abstract if many examples
-                info!("Memory Core: Consolidating {} instances into a new Semantic Prototype: {}", cluster.len(), key_a);
-                let mut prototype = cluster[0].clone();
-                for k in 1..cluster.len() {
-                    prototype = prototype.bundle(&cluster[k]);
+            if cluster_vecs.len() > 3 { // Industrial Threshold: Only abstract if many examples
+                info!("Memory Core: Consolidating {} instances into a new Semantic Prototype: {}", cluster_vecs.len(), key_a);
+                let mut prototype = cluster_vecs[0].clone();
+                for k in 1..cluster_vecs.len() {
+                    prototype = prototype.bundle(&cluster_vecs[k]);
                 }
-                prototypes.push((key_a.clone(), prototype));
+
+                prototypes.push((key_a.clone(), prototype, cluster_keys));
             }
         }
 

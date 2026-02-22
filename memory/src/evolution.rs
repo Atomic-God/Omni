@@ -81,6 +81,34 @@ impl ForgettingEngine {
             entries.remove(&id);
         }
     }
+
+    /// Accelerated decay for semantically redundant memories to maintain diversity.
+    pub fn apply_semantic_overlap_decay(entries: &mut std::collections::HashMap<String, MemoryEntry>, threshold: f32) {
+        let keys: Vec<String> = entries.keys().cloned().collect();
+        let mut decay_targets = Vec::new();
+
+        for i in 0..keys.len() {
+            for j in (i + 1)..keys.len() {
+                let e1 = &entries[&keys[i]];
+                let e2 = &entries[&keys[j]];
+
+                if e1.vector.similarity(&e2.vector) > threshold {
+                    // Penalty for the one with lower reinforcement/confidence
+                    if e1.reinforcement_count < e2.reinforcement_count {
+                        decay_targets.push((keys[i].clone(), 0.8)); // 20% extra decay
+                    } else {
+                        decay_targets.push((keys[j].clone(), 0.8));
+                    }
+                }
+            }
+        }
+
+        for (id, factor) in decay_targets {
+            if let Some(entry) = entries.get_mut(&id) {
+                entry.importance *= factor;
+            }
+        }
+    }
 }
 
 pub struct EpisodicEncoder {
