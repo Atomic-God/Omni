@@ -26,9 +26,12 @@ use crate::code_analysis::CodeAnalyzer;
 use crate::data_meaning::DataMeaningExtractor;
 use crate::audio_meaning::AudioMeaningExtractor;
 
+pub type SymbolMapper = Arc<dyn Fn(&str) -> String + Send + Sync>;
+
 pub struct UniversalIngestor {
     pub ocr: SymbolicOCR,
     pub vsa_dimension: usize,
+    pub symbol_mapper: Option<SymbolMapper>,
 }
 
 impl UniversalIngestor {
@@ -36,6 +39,7 @@ impl UniversalIngestor {
         Self {
             ocr: SymbolicOCR::new(),
             vsa_dimension: core_vsa::DIMENSION,
+            symbol_mapper: None,
         }
     }
 
@@ -43,7 +47,13 @@ impl UniversalIngestor {
         Self {
             ocr: SymbolicOCR::new(),
             vsa_dimension: dimension,
+            symbol_mapper: None,
         }
+    }
+
+    pub fn with_mapper(mut self, mapper: SymbolMapper) -> Self {
+        self.symbol_mapper = Some(mapper);
+        self
     }
 }
 
@@ -643,10 +653,14 @@ impl UniversalIngestor {
     }
 
     fn encode_text_deterministic(&self, text: &str) -> HyperVector {
-        let words: Vec<String> = text.split_whitespace()
+        let mut words: Vec<String> = text.split_whitespace()
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
             .filter(|w| !w.is_empty())
             .collect();
+
+        if let Some(ref mapper) = self.symbol_mapper {
+            words = words.into_iter().map(|w| mapper(&w)).collect();
+        }
 
         if words.is_empty() {
             return HyperVector::deterministic_dim(0, self.vsa_dimension);

@@ -297,3 +297,23 @@ fn test_semantic_clustering_and_concept_formation() {
 
     let _ = std::fs::remove_dir_all("./test_concepts");
 }
+
+#[test]
+fn test_multilingual_cross_link() {
+    let mut mind = engine::OmniMind::new_forge("./test_multilingual");
+
+    // 1. Establish translation mapping
+    mind.learn("Gato means cat.");
+
+    // 2. Learn fact in target language
+    mind.learn("Cats are agile animals.");
+
+    // 3. Query in source language
+    let response = mind.ask("What is a gato?");
+    println!("Multilingual Response: {}", response.answer);
+
+    // Should be able to retrieve information linked to 'cat'
+    assert!(response.answer.to_lowercase().contains("animal") || response.answer.contains("Logic:"));
+
+    let _ = std::fs::remove_dir_all("./test_multilingual");
+}

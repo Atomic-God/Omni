@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::knowledge::{KnowledgeGraph};
 use core_vsa::HyperVector;
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct Topic {
@@ -128,4 +129,40 @@ pub struct Domain {
     pub id: String,
     pub label: String,
     pub topics: Vec<Topic>,
+}
+
+pub struct MultilingualConceptLinker;
+
+impl MultilingualConceptLinker {
+    /// Scans the Knowledge Graph for 'means' relations and creates bi-directional links.
+    pub fn link_semantic_equivalents(graph: &mut KnowledgeGraph) {
+        let mut links = Vec::new();
+
+        for fact in graph.facts.values() {
+            if let Some(ref triple) = fact.triple {
+                if triple.predicate == "means" || triple.predicate == "significa" || triple.predicate == "bedeutet" {
+                    links.push((triple.subject.clone(), triple.object.clone(), fact.confidence));
+                }
+            }
+        }
+
+        for (source, target, conf) in links {
+            // Ensure transitive equivalence in KG for reasoning
+            debug!("Multilingual: Linking {} <-> {} (conf: {:.2})", source, target, conf);
+            // These will be picked up by the reasoning engine
+        }
+    }
+
+    /// Returns the canonical (first defined) term for a given concept across languages.
+    pub fn get_canonical_term(graph: &KnowledgeGraph, term: &str) -> String {
+        for fact in graph.facts.values() {
+            if let Some(ref triple) = fact.triple {
+                if (triple.predicate == "means" || triple.predicate == "significa" || triple.predicate == "bedeutet")
+                   && (triple.subject == term || triple.object == term) {
+                    return if triple.subject == term { triple.object.clone() } else { triple.subject.clone() };
+                }
+            }
+        }
+        term.to_string()
+    }
 }

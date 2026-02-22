@@ -1,0 +1,12 @@
+    Checking cognition v0.1.0 (/app/cognition)
+    Checking ingestion v0.1.0 (/app/ingestion)
+    Checking memory v0.1.0 (/app/memory)
+    Checking runtime v0.1.0 (/app/runtime)
+    Checking learning v0.1.0 (/app/learning)
+    Checking engine v0.1.0 (/app/engine)
+    Checking fabricator v0.1.0 (/app/fabricator)
+    Checking api v0.1.0 (/app/api)
+    Checking omniforge v0.1.0 (/app/cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.72s
+warning: the following packages contain code that will be rejected by a future version of Rust: xml5ever v0.16.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

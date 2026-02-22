@@ -8,8 +8,8 @@ pub struct SymbolicNLP;
 impl SymbolicNLP {
     /// Deep extraction of meaning using rule-based Industrial Entity Recognition and Relation Mapping.
     pub fn extract_deep_facts(text: &str) -> Vec<FactTriple> {
-        // 1. Unicode Normalization (NFC)
-        let normalized: String = text.nfc().collect();
+        // 1. Unicode Normalization (NFKC for script compatibility)
+        let normalized: String = text.nfkc().collect();
 
         // 2. Language Detection
         let lang_info = detect(&normalized);
