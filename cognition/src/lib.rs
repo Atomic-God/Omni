@@ -139,6 +139,12 @@ impl CognitionCore {
         let fact_id = format!("system:{}-{}-{}", triple.subject, triple.predicate, triple.object);
         let composite_confidence = self.knowledge_graph.add_fact(&fact_id, Some(triple.clone()), confidence);
 
+        // Industrial Causal Tagging
+        if ["causes", "triggers", "inhibits", "prevents"].contains(&triple.predicate.as_str()) {
+             use crate::knowledge::IndustrialGraph;
+             self.knowledge_graph.tag_causal_link(&fact_id, "structural_causality");
+        }
+
         let rel_type = match triple.predicate.as_str() {
             "taxonomy" | "is_a" | "es" | "son" | "ist" | "sind" => RelationType::Taxonomic,
             "causes" | "triggers" | "determinates" => RelationType::Causal(CausalType::Deterministic),

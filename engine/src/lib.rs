@@ -7,6 +7,7 @@ use core_vsa::traits::Ingestor;
 use core_vsa::traits::MemoryStore;
 use runtime::HardwareAdapter;
 pub use cognition::{CognitionCore, ReasoningTrace};
+use cognition::knowledge::IndustrialGraph;
 use cognition::inference::{UncertaintyScorer, ReasoningValidator};
 use ingestion::nlp::SymbolicNLP;
 use serde::{Serialize, Deserialize};
@@ -169,13 +170,37 @@ impl OmniMind {
 
         match &mut self.state {
             LifecycleState::Forge(mem, cog) => {
-                cog.ingest_from_graph(&graph);
+                for edge in &graph.edges {
+                    let triple = core_vsa::FactTriple {
+                        subject: edge.source.clone(),
+                        predicate: edge.relation.clone(),
+                        object: edge.target.clone(),
+                    };
+                    let (valid, _conf) = cog.knowledge_graph.validate_fact(&triple);
+                    if !valid {
+                        warn!("Industrial Validation: Skipping contradictory fact: {:?}", triple);
+                        continue;
+                    }
+                    cog.add_fact_triple(triple, edge.confidence);
+                }
                 for node in graph.nodes {
                     let _ = mem.store(node.id.as_str(), node.vector);
                 }
             },
             LifecycleState::Runtime(_, delta, cog) => {
-                cog.ingest_from_graph(&graph);
+                for edge in &graph.edges {
+                    let triple = core_vsa::FactTriple {
+                        subject: edge.source.clone(),
+                        predicate: edge.relation.clone(),
+                        object: edge.target.clone(),
+                    };
+                    let (valid, _conf) = cog.knowledge_graph.validate_fact(&triple);
+                    if !valid {
+                        warn!("Industrial Validation: Skipping contradictory fact: {:?}", triple);
+                        continue;
+                    }
+                    cog.add_fact_triple(triple, edge.confidence);
+                }
                 for node in graph.nodes {
                     let _ = delta.store(node.id.as_str(), node.vector);
                 }
@@ -274,14 +299,24 @@ impl OmniMind {
             LifecycleState::Forge(mem, cog) => {
                 let _ = mem.store(&text, vector);
                 for fact in facts {
-                    cog.add_fact_triple(fact, 1.0);
+                    let (valid, _conf) = cog.knowledge_graph.validate_fact(&fact);
+                    if valid {
+                        cog.add_fact_triple(fact, 1.0);
+                    } else {
+                        warn!("Industrial Validation: learn() blocked fact: {:?}", fact);
+                    }
                 }
                 cog.reinforce_knowledge(&text, 1.0);
             },
             LifecycleState::Runtime(_, delta, cog) => {
                 let _ = delta.store(&text, vector);
                 for fact in facts {
-                    cog.add_fact_triple(fact, 1.0);
+                    let (valid, _conf) = cog.knowledge_graph.validate_fact(&fact);
+                    if valid {
+                        cog.add_fact_triple(fact, 1.0);
+                    } else {
+                        warn!("Industrial Validation: learn() blocked fact: {:?}", fact);
+                    }
                 }
                 cog.reinforce_knowledge(&text, 1.0);
             }

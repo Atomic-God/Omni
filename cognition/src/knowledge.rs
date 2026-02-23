@@ -18,7 +18,9 @@ pub struct KnowledgeFact {
     pub source_reliability: f32,
     pub reinforcement_count: u32,
     pub timestamp: u64,
-    pub history: Vec<FactHistoryEntry>, // Step 1: Temporal History
+    pub history: Vec<FactHistoryEntry>,
+    pub tags: Vec<String>,      // Industrial Tagging
+    pub evidence: Vec<String>,  // Supporting data/links
 }
 
 impl KnowledgeFact {
@@ -29,13 +31,79 @@ impl KnowledgeFact {
     }
 }
 
+pub trait IndustrialGraph {
+    fn detect_contradictions(&self, fact_id: &str) -> Vec<String>;
+    fn validate_fact(&self, triple: &FactTriple) -> (bool, f32);
+    fn tag_causal_link(&mut self, fact_id: &str, causal_type: &str);
+    fn get_entities(&self) -> Vec<String>;
+    fn get_relations(&self, entity: &str) -> Vec<(String, String, f32)>; // (Predicate, Object, Confidence)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeGraph {
     pub facts: BTreeMap<String, KnowledgeFact>,
     pub contradictions: Vec<(String, String)>,
     pub subject_index: BTreeMap<String, Vec<String>>,
-    pub source_trust: BTreeMap<String, f32>, // Step 34
+    pub source_trust: BTreeMap<String, f32>,
     pub exclusive_predicates: Vec<String>,
+}
+
+impl IndustrialGraph for KnowledgeGraph {
+    fn get_entities(&self) -> Vec<String> {
+        self.subject_index.keys().cloned().collect()
+    }
+
+    fn get_relations(&self, entity: &str) -> Vec<(String, String, f32)> {
+        let mut relations = Vec::new();
+        if let Some(fact_ids) = self.subject_index.get(entity) {
+            for id in fact_ids {
+                if let Some(fact) = self.facts.get(id) {
+                    if let Some(ref t) = fact.triple {
+                        relations.push((t.predicate.clone(), t.object.clone(), fact.get_composite_confidence()));
+                    }
+                }
+            }
+        }
+        relations
+    }
+
+    fn detect_contradictions(&self, fact_id: &str) -> Vec<String> {
+        let mut conflicts = Vec::new();
+        if let Some(fact) = self.facts.get(fact_id) {
+            if let Some(ref t) = fact.triple {
+                for other in self.facts.values() {
+                    if other.id == fact_id { continue; }
+                    if let Some(ref ot) = other.triple {
+                        if ot.subject == t.subject && ot.predicate == t.predicate && ot.object != t.object {
+                            if self.exclusive_predicates.contains(&t.predicate) {
+                                conflicts.push(other.id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        conflicts
+    }
+
+    fn validate_fact(&self, triple: &FactTriple) -> (bool, f32) {
+        let (valid, conf) = ReasoningEngine::verify_fact(self, triple);
+        if !valid { return (false, conf); }
+
+        // Multi-source validation: If multiple sources provide this fact, boost validity
+        let count = self.facts.values()
+            .filter(|f| f.triple.as_ref().map_or(false, |ft| ft.subject == triple.subject && ft.predicate == triple.predicate && ft.object == triple.object))
+            .count();
+
+        let industrial_validity = if count > 2 { 1.0 } else { 0.8 };
+        (true, industrial_validity * conf)
+    }
+
+    fn tag_causal_link(&mut self, fact_id: &str, causal_type: &str) {
+        if let Some(fact) = self.facts.get_mut(fact_id) {
+            fact.tags.push(format!("causal:{}", causal_type));
+        }
+    }
 }
 
 impl KnowledgeGraph {
@@ -96,6 +164,8 @@ impl KnowledgeGraph {
             reinforcement_count: 0,
             timestamp: now,
             history: Vec::new(),
+            tags: Vec::new(),
+            evidence: Vec::new(),
         });
 
         // Step 3: Track value history for temporal truth

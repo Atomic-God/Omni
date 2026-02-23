@@ -395,3 +395,64 @@ fn test_runtime_reasoning_depth() {
 
     let _ = std::fs::remove_dir_all("./test_reasoning_depth");
 }
+
+#[test]
+fn test_knowledge_graph_layer_industrial() {
+    use cognition::knowledge::IndustrialGraph;
+    let mut mind = engine::OmniMind::new_forge("./test_kg_layer");
+
+    // 1. Causal Link Tagging
+    mind.learn("Failure causes downtime.");
+    match &mut mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            let fact_id = "system:failure-causes-downtime";
+            cog.knowledge_graph.tag_causal_link(fact_id, "high_impact");
+
+            let fact = cog.knowledge_graph.facts.get(fact_id).unwrap();
+            assert!(fact.tags.contains(&"causal:high_impact".to_string()));
+        }
+        _ => {}
+    }
+
+    // 2. Contradiction Detection (Online Validation)
+    mind.learn("Machine_X is Green.");
+    mind.learn("Machine_X is Red."); // Contradiction in exclusive predicate
+
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            let fact_id = "system:machine_x-taxonomy-red";
+            // Since validation is now active, the contradictory fact should NOT exist
+            assert!(!cog.knowledge_graph.facts.contains_key(fact_id));
+        }
+        _ => {}
+    }
+
+    // 3. Entity Graph traversal
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            let entities = cog.knowledge_graph.get_entities();
+            assert!(entities.contains(&"machine_x".to_string()));
+
+            let rels = cog.knowledge_graph.get_relations("machine_x");
+            assert!(!rels.is_empty());
+        }
+        _ => {}
+    }
+
+    // 4. Fact Validation Blocking
+    mind.learn("DeviceA is Active.");
+    mind.learn("DeviceA is Inactive."); // Should be blocked by validation if exclusive
+
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            let active_fact = cog.knowledge_graph.facts.values().any(|f| f.triple.as_ref().map_or(false, |t| t.subject == "devicea" && t.object == "active"));
+            let inactive_fact = cog.knowledge_graph.facts.values().any(|f| f.triple.as_ref().map_or(false, |t| t.subject == "devicea" && t.object == "inactive"));
+
+            assert!(active_fact);
+            assert!(!inactive_fact); // Verified blocking
+        }
+        _ => {}
+    }
+
+    let _ = std::fs::remove_dir_all("./test_kg_layer");
+}
