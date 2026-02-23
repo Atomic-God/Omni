@@ -1,5 +1,5 @@
 use core_vsa::{HyperVector, DIMENSION};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet, BTreeMap};
 use rand::seq::SliceRandom;
 use tracing::debug;
 use serde::{Serialize, Deserialize};
@@ -9,9 +9,9 @@ const BITS_PER_KEY: usize = 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LSHIndex {
-    tables: Vec<HashMap<u64, Vec<String>>>,
+    tables: Vec<BTreeMap<u64, Vec<String>>>,
     masks: Vec<Vec<usize>>,
-    vectors: HashMap<String, HyperVector>,
+    vectors: BTreeMap<String, HyperVector>,
 }
 
 impl LSHIndex {
@@ -25,7 +25,7 @@ impl LSHIndex {
         let mut masks = Vec::with_capacity(NUM_TABLES);
 
         for _ in 0..NUM_TABLES {
-            tables.push(HashMap::new());
+            tables.push(BTreeMap::new());
             let mut mask: Vec<usize> = (0..dim).collect();
             mask.shuffle(&mut rng);
             masks.push(mask.into_iter().take(BITS_PER_KEY).collect());
@@ -34,7 +34,7 @@ impl LSHIndex {
         Self {
             tables,
             masks,
-            vectors: HashMap::new(),
+            vectors: BTreeMap::new(),
         }
     }
 
@@ -128,21 +128,19 @@ impl LSHIndex {
 
     /// Performs industrial optimization: removes empty buckets and shrinks map capacity.
     pub fn optimize(&mut self) {
-        debug!("LSH Optimization: Pruning empty buckets and shrinking tables.");
+        debug!("LSH Optimization: Pruning empty buckets.");
         for table in self.tables.iter_mut() {
             table.retain(|_, bucket| !bucket.is_empty());
-            table.shrink_to_fit();
         }
-        self.vectors.shrink_to_fit();
     }
 
     /// Returns a subset of the index containing only the specified keys.
     /// Used for delta snapshot optimization.
     pub fn get_subset(&self, keys: &HashSet<String>) -> Self {
         let mut subset = Self {
-            tables: vec![HashMap::new(); NUM_TABLES],
+            tables: vec![BTreeMap::new(); NUM_TABLES],
             masks: self.masks.clone(),
-            vectors: HashMap::new(),
+            vectors: BTreeMap::new(),
         };
 
         for key in keys {

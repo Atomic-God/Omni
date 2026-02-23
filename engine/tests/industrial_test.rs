@@ -299,6 +299,57 @@ fn test_semantic_clustering_and_concept_formation() {
 }
 
 #[test]
+fn test_snapshot_integrity_and_delta_chain() {
+    let mut mind = engine::OmniMind::new_forge("./test_integrity");
+
+    // Set low shard capacity to force flush
+    match &mut mind.state {
+        engine::LifecycleState::Forge(mem, _) => {
+            mem.storage.shard_capacity = 2;
+        }
+        _ => {}
+    }
+
+    // 1. Initial State
+    mind.learn("Core knowledge is immutable.");
+    mind.learn("Fact two forces shard flush.");
+    mind.save("base").unwrap();
+    let base_snap_path = std::env::current_dir().unwrap().join("test_integrity/base.snap");
+    assert!(base_snap_path.exists());
+
+    // 2. Incremental Learning
+    mind.learn("Delta knowledge is transient.");
+    mind.save("delta1").unwrap();
+
+    // 3. Corrupt a shard in base manually
+    let shard_path = std::env::current_dir().unwrap().join("test_integrity/shard_1.bin");
+    if shard_path.exists() {
+        std::fs::write(&shard_path, b"CORRUPTED DATA").unwrap();
+    }
+
+    // 4. Integrity Check should fail
+    match &mind.state {
+        engine::LifecycleState::Forge(mem, _) => {
+            assert!(!memory::CorruptionRecovery::check_integrity(&mem.storage));
+        }
+        _ => {}
+    }
+
+    // 5. Repair attempt
+    memory::SnapshotManager::repair(&base_snap_path).unwrap();
+
+    // 6. Restore from repaired base
+    let mut mind2 = engine::OmniMind::new_forge("./test_integrity");
+    mind2.load("base").unwrap();
+
+    let res = mind2.ask("core knowledge");
+    println!("Restored Response: {}", res.answer);
+
+    let _ = std::fs::remove_dir_all("./test_integrity");
+    let _ = std::fs::remove_dir_all("./test_integrity_restored");
+}
+
+#[test]
 fn test_multilingual_cross_link() {
     let mut mind = engine::OmniMind::new_forge("./test_multilingual");
 
@@ -316,4 +367,31 @@ fn test_multilingual_cross_link() {
     assert!(response.answer.to_lowercase().contains("animal") || response.answer.contains("Logic:"));
 
     let _ = std::fs::remove_dir_all("./test_multilingual");
+}
+
+#[test]
+fn test_runtime_reasoning_depth() {
+    let mut mind = engine::OmniMind::new_forge("./test_reasoning_depth");
+
+    // 1. Multi-hop knowledge
+    mind.learn("Part_A constitutes Machine_X.");
+    mind.learn("Machine_X occupies Sector_7.");
+    mind.learn("Sector_7 requires Maintenance.");
+
+    // Query: Where is Part_A? (Expect path: Part_A -> Machine_X -> Sector_7)
+    let res1 = mind.ask("Where is Part_A?");
+    println!("Multi-hop Response:\n{}", res1.answer);
+    assert!(res1.answer.to_lowercase().contains("sector_7") || res1.answer.to_lowercase().contains("machine_x"));
+    assert!(res1.answer.contains("REPORT")); // Verify industrial report format
+
+    // 2. Causal Reasoning depth
+    mind.learn("High_Temperature causes Valve_Failure.");
+    mind.learn("Valve_Failure inhibits Flow.");
+    mind.learn("Flow is necessary for Cooling.");
+
+    let res2 = mind.ask("What does High_Temperature cause?");
+    println!("Causal Response:\n{}", res2.answer);
+    assert!(res2.answer.to_lowercase().contains("valve_failure"));
+
+    let _ = std::fs::remove_dir_all("./test_reasoning_depth");
 }

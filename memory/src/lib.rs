@@ -1,6 +1,6 @@
 #![deny(warnings)]
 use core_vsa::HyperVector;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::fs;
 use tracing::{info, debug};
@@ -35,7 +35,7 @@ pub struct MemoryManager {
     pub semantic_index: LSHIndex,
     pub storage: ShardedStorage,
     pub root_dir: PathBuf,
-    pub metadata: HashMap<String, MemoryEntry>,
+    pub metadata: BTreeMap<String, MemoryEntry>,
     pub low_memory_mode: bool,
     pub encoder: EpisodicEncoder,
     pub vsa_precision: usize,
@@ -53,7 +53,7 @@ impl MemoryManager {
             semantic_index: LSHIndex::with_dimension(dim),
             storage: ShardedStorage::new(root_dir),
             root_dir: root_dir.to_path_buf(),
-            metadata: HashMap::new(),
+            metadata: BTreeMap::new(),
             low_memory_mode: false,
             encoder: EpisodicEncoder::new(),
             vsa_precision: dim,
@@ -78,12 +78,13 @@ impl MemoryManager {
 
     pub fn load_snapshot(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
         let snapshot_path = self.root_dir.join(format!("{}.snap", name));
-        let snapshot = SnapshotManager::load(&snapshot_path)?;
+        let snapshot = SnapshotManager::load_ext(&snapshot_path, Some(&self.root_dir))?;
 
         if snapshot.header.is_delta {
             SnapshotManager::apply_delta(self, &snapshot);
         } else {
             self.storage = snapshot.storage;
+            self.storage.root_dir = self.root_dir.clone();
             self.episodic_index = snapshot.episodic_index;
             self.semantic_index = snapshot.semantic_index;
             self.metadata = snapshot.metadata;
@@ -93,7 +94,7 @@ impl MemoryManager {
 
     pub fn save_delta(&self, name: &str, base_name: &str) -> Result<(), Box<dyn Error>> {
         let base_path = self.root_dir.join(format!("{}.snap", base_name));
-        let base_snapshot = SnapshotManager::load(&base_path)?;
+        let base_snapshot = SnapshotManager::load_ext(&base_path, Some(&self.root_dir))?;
         let delta_path = self.root_dir.join(format!("{}.snap", name));
         SnapshotManager::save_delta(self, &delta_path, &base_snapshot)
     }
@@ -101,14 +102,17 @@ impl MemoryManager {
     pub fn export_mindpack(&self, path: &Path, encryption_key: Option<&str>) -> Result<(), Box<dyn Error>> {
         self.save_snapshot("main")?;
         let snapshot_path = self.root_dir.join("main.snap");
-        let snapshot = SnapshotManager::load(&snapshot_path)?;
+        let snapshot = SnapshotManager::load_ext(&snapshot_path, Some(&self.root_dir))?;
 
-        let mut integrity_hashes = HashMap::new();
+        let mut integrity_hashes = BTreeMap::new();
         integrity_hashes.insert("main.snap".to_string(), snapshot.header.checksum.clone());
+        for (id, hash) in &snapshot.storage.shard_hashes {
+            integrity_hashes.insert(format!("shard_{}.bin", id), hash.clone());
+        }
 
         let pack = MindPack {
             snapshots: vec![snapshot],
-            manifest: HashMap::from([
+            manifest: BTreeMap::from([
                 ("engine_version".to_string(), "1.0".to_string()),
                 ("vsa_dimension".to_string(), self.vsa_precision.to_string()),
                 ("hardware_mode".to_string(), if self.low_memory_mode { "low-memory" } else { "standard" }.to_string()),
@@ -137,6 +141,7 @@ impl MemoryManager {
                 SnapshotManager::apply_delta(self, &snap);
             } else {
                 self.storage = snap.storage;
+                self.storage.root_dir = self.root_dir.clone();
                 self.episodic_index = snap.episodic_index;
                 self.semantic_index = snap.semantic_index;
                 self.metadata = snap.metadata;

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use core_vsa::HyperVector;
 use tracing::info;
 use memory::MemoryEntry;
@@ -47,7 +47,7 @@ impl ConsolidationEngine {
     }
 
     pub fn decay_and_prune(
-        items: &mut HashMap<String, MemoryEntry>,
+        items: &mut BTreeMap<String, MemoryEntry>,
         decay_rate: f32,
         prune_threshold: f32
     ) {

@@ -1,6 +1,6 @@
 #![deny(warnings)]
 use core_vsa::SymbolGraph;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use serde::{Serialize, Deserialize};
 
 pub mod sequence;
@@ -49,7 +49,7 @@ pub struct ReasoningTrace {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CognitionCore {
-    pub relation_graph: HashMap<String, Vec<Relation>>,
+    pub relation_graph: BTreeMap<String, Vec<Relation>>,
     pub trace_log: Vec<ReasoningTrace>,
     pub knowledge_graph: knowledge::KnowledgeGraph,
 }
@@ -57,7 +57,7 @@ pub struct CognitionCore {
 impl CognitionCore {
     pub fn new() -> Self {
         Self {
-            relation_graph: HashMap::new(),
+            relation_graph: BTreeMap::new(),
             trace_log: Vec::new(),
             knowledge_graph: knowledge::KnowledgeGraph::new(),
         }

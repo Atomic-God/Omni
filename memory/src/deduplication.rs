@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use crate::hierarchy::MemoryEntry;
 use tracing::info;
 
@@ -6,7 +6,7 @@ pub struct Deduplicator;
 
 impl Deduplicator {
     /// Merges near-identical memories (similarity > threshold).
-    pub fn merge_similar(entries: &mut HashMap<String, MemoryEntry>, threshold: f32) -> usize {
+    pub fn merge_similar(entries: &mut BTreeMap<String, MemoryEntry>, threshold: f32) -> usize {
         let mut merged_count = 0;
         let keys: Vec<String> = entries.keys().cloned().collect();
         let mut to_remove = Vec::new();

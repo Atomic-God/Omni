@@ -3,6 +3,7 @@ target/
 *.snap
 *.omf
 test_industrial/
+test_integrity/
 industrial_mind_export/
 industrial_snapshots/
 test_industrial_runtime/

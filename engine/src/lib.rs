@@ -337,16 +337,42 @@ impl OmniMind {
             LifecycleState::Runtime(_, _, c) => c,
         };
 
-        // 1. Industrial Deep Reasoning: Check for Causal Chains
+        // 1. Multi-Hop reasoning across Knowledge Graph: Find unknown endpoints
+        for s in &words {
+            if s == "what" || s == "where" || s == "is" || s == "who" || s == "how" || s == "means" || s == "causes" || s == "inhibits" { continue; }
+
+            // Try to find any significant multi-hop connection to something NOT in query
+            for fact in cog.knowledge_graph.facts.values() {
+                if let Some(ref t) = fact.triple {
+                    let e = &t.object;
+                    if words.contains(e) { continue; }
+
+                    if let Some((path, conf)) = cognition::knowledge::ReasoningEngine::multi_hop_reason(&cog.knowledge_graph, s, e, 4) {
+                        if path.len() > 2 && conf > 0.1 {
+                            let trace = Some(ReasoningTrace { steps: path, final_confidence: conf });
+                            let report = crate::explanation::ExplanationEngine::generate_industrial_report(cog, &text, &format!("Industrial Inference: Derived that {} is connected to {} via a {}-hop chain.", s, e, trace.as_ref().unwrap().steps.len()-1), trace.as_ref());
+                            return QueryResponse {
+                                answer: report,
+                                trace,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Industrial Deep Reasoning: Check for Causal Chains
         for candidate in &words {
             if candidate == "what" || candidate == "is" || candidate == "who" || candidate == "how" || candidate == "means" || candidate == "causes" || candidate == "inhibits" { continue; }
             let causes = cog.identify_causal_chains(candidate);
             if !causes.is_empty() {
                 let (top_cause, conf) = &causes[0];
-                let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(*conf, 0.9, 0.1);
+                let _uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(*conf, 0.9, 0.1);
+                let trace = cog.find_path(top_cause.split(": ").last().unwrap_or(top_cause), candidate, 3);
+                let report = crate::explanation::ExplanationEngine::generate_industrial_report(cog, &text, &format!("Causal Reasoning: I've identified that '{}' is a significant factor for '{}'.", top_cause, candidate), trace.as_ref());
                 return QueryResponse {
-                    answer: format!("Causal Reasoning: I've identified that '{}' is a significant factor for '{}'. [Uncertainty: {:.2}]", top_cause, candidate, uncertainty),
-                    trace: cog.find_path(top_cause.split(": ").last().unwrap_or(top_cause), candidate, 3),
+                    answer: report,
+                    trace,
                 };
             }
         }
@@ -363,9 +389,9 @@ impl OmniMind {
                             if words.contains(&next_rel.target) {
                                 if ReasoningValidator::validate_inference(cog, s_candidate, &next_rel.target) {
                                     let trace = cog.find_path(s_candidate, &next_rel.target, 3);
-                                    let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(next_rel.confidence, rel.weight, 0.1);
+                                    let report = crate::explanation::ExplanationEngine::generate_industrial_report(cog, &text, &format!("Logic: Yes, {} related to {} (via {}).", s_candidate, next_rel.target, intermediate), trace.as_ref());
                                     let res = QueryResponse {
-                                        answer: format!("Logic: Yes, {} related to {} (via {}). [Uncertainty: {:.2}]", s_candidate, next_rel.target, intermediate, uncertainty),
+                                        answer: report,
                                         trace,
                                     };
                                     if best_logic_res.as_ref().map_or(true, |(_, conf)| next_rel.confidence > *conf) {
@@ -393,9 +419,9 @@ impl OmniMind {
                              .unwrap_or(rel.confidence);
 
                          let trace = cog.find_path(s_candidate, &rel.target, 2);
-                         let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(kg_conf, 1.0, 0.05);
+                         let report = crate::explanation::ExplanationEngine::generate_industrial_report(cog, &text, &format!("Logic: {} is related to {}.", s_candidate, rel.target), trace.as_ref());
                          let res = QueryResponse {
-                             answer: format!("Logic: {} is related to {}. [Uncertainty: {:.2}]", s_candidate, rel.target, uncertainty),
+                             answer: report,
                              trace,
                          };
                          if best_logic_res.as_ref().map_or(true, |(_, conf)| kg_conf > *conf) {
@@ -420,7 +446,7 @@ impl OmniMind {
                 if let Some(fact) = fact_opt {
                     if let Some(ref t) = fact.triple {
                         let composite_conf = fact.get_composite_confidence();
-                        let uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(composite_conf, 1.0, 0.05);
+                        let _uncertainty = UncertaintyScorer::calculate_industrial_uncertainty(composite_conf, 1.0, 0.05);
 
                         let history_str = if fact.history.len() > 1 {
                             format!(" (Previous values: {})", fact.history.iter().map(|h| h.value.clone()).collect::<Vec<_>>().join(", "))
@@ -428,12 +454,14 @@ impl OmniMind {
                             "".to_string()
                         };
 
-                        return QueryResponse {
-                            answer: format!("Recent Truth: {} {} is {}. [Uncertainty: {:.2}]{}", t.subject, t.predicate, t.object, uncertainty, history_str),
-                            trace: Some(ReasoningTrace {
+                        let trace = Some(ReasoningTrace {
                                 steps: vec![format!("Source: Fact ID {}", fact.id), format!("Composite Confidence: {:.2}", composite_conf)],
                                 final_confidence: composite_conf,
-                            }),
+                            });
+                         let report = crate::explanation::ExplanationEngine::generate_industrial_report(cog, &text, &format!("Recent Truth: {} {} is {}.{}", t.subject, t.predicate, t.object, history_str), trace.as_ref());
+                        return QueryResponse {
+                            answer: report,
+                            trace,
                         };
                     }
                 }

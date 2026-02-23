@@ -7,8 +7,8 @@ use sha2::{Sha256, Digest};
 use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
 use flate2::Compression;
-use std::collections::HashMap;
-use tracing::info;
+use std::collections::BTreeMap;
+use tracing::{info, warn};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SnapshotHeader {
@@ -27,24 +27,24 @@ pub struct MindSnapshot {
     pub episodic_index: LSHIndex,
     pub semantic_index: LSHIndex,
     pub storage: ShardedStorage,
-    pub metadata: HashMap<String, MemoryEntry>,
+    pub metadata: BTreeMap<String, MemoryEntry>,
     #[serde(default)]
-    pub shards: HashMap<usize, HashMap<String, HyperVector>>,
+    pub shards: BTreeMap<usize, BTreeMap<String, HyperVector>>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct MindPack {
     pub snapshots: Vec<MindSnapshot>,
-    pub manifest: HashMap<String, String>,
-    pub integrity_hashes: HashMap<String, String>,
+    pub manifest: BTreeMap<String, String>,
+    pub integrity_hashes: BTreeMap<String, String>,
 }
 
 impl MindPack {
     pub fn new() -> Self {
         Self {
             snapshots: Vec::new(),
-            manifest: HashMap::new(),
-            integrity_hashes: HashMap::new(),
+            manifest: BTreeMap::new(),
+            integrity_hashes: BTreeMap::new(),
         }
     }
 
@@ -108,16 +108,28 @@ impl SnapshotManager {
     pub fn save_delta(memory: &MemoryManager, path: &Path, base: &MindSnapshot) -> Result<(), Box<dyn std::error::Error>> {
         let base_hash = base.header.checksum.clone();
 
-        let mut delta_metadata = HashMap::new();
+        let mut delta_metadata = BTreeMap::new();
         let mut delta_keys = std::collections::HashSet::new();
         for (k, v) in &memory.metadata {
-            if !base.metadata.contains_key(k) || base.metadata[k].importance != v.importance || base.metadata[k].reinforcement_count != v.reinforcement_count {
+            let mut is_changed = false;
+            if let Some(base_v) = base.metadata.get(k) {
+                if base_v.importance != v.importance
+                   || base_v.reinforcement_count != v.reinforcement_count
+                   || base_v.last_access != v.last_access
+                   || memory.storage.location_map.get(k) != base.storage.location_map.get(k) {
+                    is_changed = true;
+                }
+            } else {
+                is_changed = true;
+            }
+
+            if is_changed {
                 delta_metadata.insert(k.clone(), v.clone());
                 delta_keys.insert(k.clone());
             }
         }
 
-        let mut shards = HashMap::new();
+        let mut shards = BTreeMap::new();
         // Delta Shards: Only include shards that don't exist in base
         for &shard_id in memory.storage.location_map.values() {
             if shard_id > 0 && !base.shards.contains_key(&shard_id) {
@@ -142,7 +154,7 @@ impl SnapshotManager {
     }
 
     fn save_ext(memory: &MemoryManager, path: &Path, is_delta: bool, base_snapshot: Option<String>, previous_hash: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-        let mut shards = HashMap::new();
+        let mut shards = BTreeMap::new();
         // Industrial: Collect all shard data for portability
         for &shard_id in memory.storage.location_map.values() {
             if shard_id > 0 {
@@ -230,6 +242,10 @@ impl SnapshotManager {
     }
 
     pub fn load(path: &Path) -> Result<MindSnapshot, Box<dyn std::error::Error>> {
+        Self::load_ext(path, None)
+    }
+
+    pub fn load_ext(path: &Path, rebase_root: Option<&Path>) -> Result<MindSnapshot, Box<dyn std::error::Error>> {
         let file = File::open(path)?;
         let mut decoder = GzDecoder::new(file);
 
@@ -255,8 +271,9 @@ impl SnapshotManager {
         }
 
         // Industrial: Extract shards back to storage root if missing
+        let root = rebase_root.unwrap_or(&container.body.storage.root_dir);
         for (&shard_id, data) in &container.body.shards {
-            let shard_path = container.body.storage.root_dir.join(format!("shard_{}.bin", shard_id));
+            let shard_path = root.join(format!("shard_{}.bin", shard_id));
             if !shard_path.exists() {
                 let file = File::create(shard_path)?;
                 let shard = crate::storage::ShardFile { id: shard_id, data: data.clone() };
@@ -292,12 +309,55 @@ impl SnapshotManager {
     }
 
     pub fn repair(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Industrial Snapshot: Attempting to repair {:?}", path);
         let file = File::open(path)?;
         let mut decoder = GzDecoder::new(file);
-        let container: MindSnapshotContainer = bincode::deserialize_from(&mut decoder)?;
+        let mut container: MindSnapshotContainer = bincode::deserialize_from(&mut decoder)?;
+
+        let mut healthy_keys = std::collections::HashSet::new();
+        let mut healthy_shards = BTreeMap::new();
+
+        let root = if container.body.storage.root_dir.as_os_str().is_empty() {
+            path.parent().unwrap_or(Path::new("."))
+        } else {
+            &container.body.storage.root_dir
+        };
+
+        for (&id, hash) in &container.body.storage.shard_hashes {
+             let shard_path = root.join(format!("shard_{}.bin", id));
+             if shard_path.exists() {
+                 let bytes = fs::read(&shard_path)?;
+                 let mut hasher = Sha256::new();
+                 hasher.update(&bytes);
+                 if hex::encode(hasher.finalize()) == *hash {
+                     let shard: crate::storage::ShardFile = bincode::deserialize(&bytes)?;
+                     for k in shard.data.keys() { healthy_keys.insert(k.clone()); }
+                     healthy_shards.insert(id, shard.data);
+                 } else {
+                     warn!("Repair: Shard {} corrupted and will be discarded.", id);
+                 }
+             }
+        }
+
+        // Reconstruct indices
+        container.body.episodic_index.sync_with_keys(&healthy_keys.iter().cloned().collect::<Vec<_>>());
+        container.body.semantic_index.sync_with_keys(&healthy_keys.iter().cloned().collect::<Vec<_>>());
+        container.body.shards = healthy_shards;
+
+        // Re-calculate checksum and sign
         let body_bytes = bincode::serialize(&container.body)?;
         let mut hasher = Sha256::new();
         hasher.update(&body_bytes);
+        container.header.checksum = hex::encode(hasher.finalize());
+        container.header.signature = Some(Self::compute_signature(&container.header.checksum));
+
+        // Save repaired version
+        let file = File::create(path)?;
+        let mut encoder = GzEncoder::new(file, Compression::best());
+        bincode::serialize_into(&mut encoder, &container)?;
+        encoder.finish()?;
+
+        info!("Industrial Snapshot: Repair complete for {:?}", path);
         Ok(())
     }
 }
@@ -307,9 +367,9 @@ struct MindSnapshotBody {
     episodic_index: LSHIndex,
     semantic_index: LSHIndex,
     storage: ShardedStorage,
-    metadata: HashMap<String, MemoryEntry>,
+    metadata: BTreeMap<String, MemoryEntry>,
     #[serde(default)]
-    shards: HashMap<usize, HashMap<String, HyperVector>>,
+    shards: BTreeMap<usize, BTreeMap<String, HyperVector>>,
 }
 
 #[derive(Serialize, Deserialize)]

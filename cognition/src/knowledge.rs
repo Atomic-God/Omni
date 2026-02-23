@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, BTreeMap, VecDeque};
 use serde::{Serialize, Deserialize};
 use tracing::{info, warn, debug};
 use core_vsa::FactTriple;
@@ -31,20 +31,20 @@ impl KnowledgeFact {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeGraph {
-    pub facts: HashMap<String, KnowledgeFact>,
+    pub facts: BTreeMap<String, KnowledgeFact>,
     pub contradictions: Vec<(String, String)>,
-    pub subject_index: HashMap<String, Vec<String>>,
-    pub source_trust: HashMap<String, f32>, // Step 34
+    pub subject_index: BTreeMap<String, Vec<String>>,
+    pub source_trust: BTreeMap<String, f32>, // Step 34
     pub exclusive_predicates: Vec<String>,
 }
 
 impl KnowledgeGraph {
     pub fn new() -> Self {
         Self {
-            facts: HashMap::new(),
+            facts: BTreeMap::new(),
             contradictions: Vec::new(),
-            subject_index: HashMap::new(),
-            source_trust: HashMap::new(),
+            subject_index: BTreeMap::new(),
+            source_trust: BTreeMap::new(),
             exclusive_predicates: vec!["taxonomy".to_string(), "is_a".to_string(), "is_at".to_string(), "color".to_string()],
         }
     }
@@ -346,5 +346,41 @@ impl ReasoningEngine {
             }
         }
         (true, 1.0)
+    }
+
+    /// Performs a multi-hop reasoning query across the knowledge graph.
+    /// Supports complex paths and confidence propagation.
+    pub fn multi_hop_reason(graph: &KnowledgeGraph, start: &str, end: &str, max_hops: usize) -> Option<(Vec<String>, f32)> {
+        let mut queue = VecDeque::new();
+        queue.push_back((start.to_string(), vec![start.to_string()], 1.0));
+
+        let mut visited = HashMap::new();
+
+        while let Some((curr, path, conf)) = queue.pop_front() {
+            if curr == end {
+                return Some((path, conf));
+            }
+
+            if path.len() > max_hops { // max_hops nodes means max_hops-1 edges
+                continue;
+            }
+
+            if let Some(fact_ids) = graph.subject_index.get(&curr) {
+                for id in fact_ids {
+                    if let Some(fact) = graph.facts.get(id) {
+                        if let Some(ref triple) = fact.triple {
+                            let new_conf = conf * fact.get_composite_confidence();
+                            if !visited.contains_key(&triple.object) || visited[&triple.object] < new_conf {
+                                visited.insert(triple.object.clone(), new_conf);
+                                let mut next_path = path.clone();
+                                next_path.push(triple.object.clone());
+                                queue.push_back((triple.object.clone(), next_path, new_conf));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }

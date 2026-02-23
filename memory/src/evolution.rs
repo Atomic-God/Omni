@@ -41,7 +41,7 @@ pub struct ForgettingEngine;
 
 impl ForgettingEngine {
     /// Applies Ebbinghaus forgetting curve and importance-based pruning.
-    pub fn prune_fading_memories(entries: &mut std::collections::HashMap<String, MemoryEntry>, base_decay: f32) {
+    pub fn prune_fading_memories(entries: &mut std::collections::BTreeMap<String, MemoryEntry>, base_decay: f32) {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         let mut to_remove = Vec::new();
 
@@ -66,7 +66,7 @@ impl ForgettingEngine {
     }
 
     /// Prunes entries with low industrial utility (low access + low reinforcement).
-    pub fn prune_by_utility(entries: &mut std::collections::HashMap<String, MemoryEntry>, threshold: f32) {
+    pub fn prune_by_utility(entries: &mut std::collections::BTreeMap<String, MemoryEntry>, threshold: f32) {
         let mut to_remove = Vec::new();
         for (id, entry) in entries.iter() {
             if entry.layer == "semantic" { continue; }
@@ -83,7 +83,7 @@ impl ForgettingEngine {
     }
 
     /// Accelerated decay for semantically redundant memories to maintain diversity.
-    pub fn apply_semantic_overlap_decay(entries: &mut std::collections::HashMap<String, MemoryEntry>, threshold: f32) {
+    pub fn apply_semantic_overlap_decay(entries: &mut std::collections::BTreeMap<String, MemoryEntry>, threshold: f32) {
         let keys: Vec<String> = entries.keys().cloned().collect();
         let mut decay_targets = Vec::new();
 

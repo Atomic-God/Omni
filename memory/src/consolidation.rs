@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use core_vsa::HyperVector;
 use tracing::info;
 use crate::hierarchy::MemoryEntry;
@@ -9,7 +9,7 @@ impl PrototypeConsolidator {
     /// Merges highly similar memories into abstracted 'Prototypes'.
     /// Returns a list of (PrototypeKey, PrototypeVector, Members) to be updated and linked in KG.
     pub fn generate_prototypes(
-        metadata: &HashMap<String, MemoryEntry>,
+        metadata: &BTreeMap<String, MemoryEntry>,
         similarity_threshold: f32
     ) -> Vec<(String, HyperVector, Vec<String>)> {
         let mut prototypes = Vec::new();

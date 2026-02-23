@@ -9,7 +9,7 @@ pub struct CorruptionRecovery;
 
 impl CorruptionRecovery {
     pub fn check_integrity(storage: &ShardedStorage) -> bool {
-        for id in 1..storage.current_shard_id {
+        for (&id, expected_hash) in &storage.shard_hashes {
             let path = storage.root_dir.join(format!("shard_{}.bin", id));
             if !path.exists() {
                 error!("Missing shard {}", id);
@@ -21,8 +21,16 @@ impl CorruptionRecovery {
                 let mut buffer = Vec::new();
                 if file.read_to_end(&mut buffer).is_ok() {
                     hasher.update(&buffer);
-                    let _hash = hex::encode(hasher.finalize());
+                    let actual_hash = hex::encode(hasher.finalize());
+                    if actual_hash != *expected_hash {
+                        error!("Shard {} hash mismatch! Expected {}, found {}", id, expected_hash, actual_hash);
+                        return false;
+                    }
+                } else {
+                    return false;
                 }
+            } else {
+                return false;
             }
         }
         true
