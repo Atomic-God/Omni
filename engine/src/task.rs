@@ -56,6 +56,25 @@ impl TaskLoop {
         }
     }
 
+    pub fn get_context_vector(&self) -> core_vsa::HyperVector {
+        if let Some(goal) = self.goals.front() {
+            // Encode the goal description as context
+            let words: Vec<_> = goal.description.split_whitespace().map(|w| w.to_lowercase()).collect();
+            let mut result = None;
+            for word in words {
+                let h = seahash::hash(word.as_bytes());
+                let v = core_vsa::HyperVector::deterministic(h);
+                match result {
+                    None => result = Some(v),
+                    Some(r) => result = Some(r.bundle(&v)),
+                }
+            }
+            result.unwrap_or(core_vsa::HyperVector::deterministic(0))
+        } else {
+            core_vsa::HyperVector::deterministic(0)
+        }
+    }
+
     pub fn add_goal(&mut self, description: &str, priority: Priority) {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         let goal = Goal {

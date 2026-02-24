@@ -81,6 +81,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/ingest", post(ingest_file))
         .route("/telemetry", get(get_telemetry))
         .route("/task/step", post(task_step))
+        .route("/kg/entities", get(get_kg_entities))
+        .route("/kg/relations/:entity", get(get_kg_relations))
+        .route("/kg/causal/:observation", get(get_kg_causal))
         .route("/snapshot/:name", post(save_snapshot))
         .route("/snapshot/:name", get(load_snapshot))
         .with_state(state.clone());
@@ -199,6 +202,42 @@ async fn task_step(State(state): State<AppState>) -> Result<Json<String>, ApiErr
     let mut mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
     let result = mind.execute_task_step().unwrap_or_else(|| "No active goals".to_string());
     Ok(Json(result))
+}
+
+async fn get_kg_entities(State(state): State<AppState>) -> Result<Json<Vec<String>>, ApiError> {
+    let mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
+    let cog = match &mind.state {
+        engine::LifecycleState::Forge(_, c) => c,
+        engine::LifecycleState::Runtime(_, _, c) => c,
+    };
+    use cognition::knowledge::IndustrialGraph;
+    Ok(Json(cog.knowledge_graph.get_entities()))
+}
+
+async fn get_kg_relations(
+    State(state): State<AppState>,
+    AxumPath(entity): AxumPath<String>
+) -> Result<Json<Vec<(String, String, f32)>>, ApiError> {
+    let mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
+    let cog = match &mind.state {
+        engine::LifecycleState::Forge(_, c) => c,
+        engine::LifecycleState::Runtime(_, _, c) => c,
+    };
+    use cognition::knowledge::IndustrialGraph;
+    Ok(Json(cog.knowledge_graph.get_relations(&entity)))
+}
+
+async fn get_kg_causal(
+    State(state): State<AppState>,
+    AxumPath(observation): AxumPath<String>
+) -> Result<Json<Vec<(String, f32)>>, ApiError> {
+    let mind = state.mind.lock().map_err(|_| ApiError::Internal("Lock poisoned".to_string()))?;
+    let cog = match &mind.state {
+        engine::LifecycleState::Forge(_, c) => c,
+        engine::LifecycleState::Runtime(_, _, c) => c,
+    };
+    use cognition::knowledge::IndustrialGraph;
+    Ok(Json(cog.knowledge_graph.get_causal_influence(&observation)))
 }
 
 async fn query_stream(

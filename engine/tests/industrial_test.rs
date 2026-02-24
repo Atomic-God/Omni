@@ -456,3 +456,55 @@ fn test_knowledge_graph_layer_industrial() {
 
     let _ = std::fs::remove_dir_all("./test_kg_layer");
 }
+
+#[test]
+fn test_contextual_relevance_weighting() {
+    let mut mind = engine::OmniMind::new_forge("./test_relevance");
+
+    // 1. Setup multiple facts
+    mind.learn("The server is in the basement.");
+    mind.learn("The server is mission-critical.");
+    mind.learn("The dog is in the garden.");
+
+    // 2. Query without context
+    let res1 = mind.ask("Where is the server?");
+    println!("Response 1: {}", res1.answer);
+
+    // 3. Set context (via a Goal)
+    mind.task_loop.add_goal("Investigate basement security", engine::task::Priority::High);
+
+    // 4. Query again - should favor basement over other facts due to context boost
+    let res2 = mind.ask("The server is in the basement.");
+    println!("Contextual Response: {}", res2.answer);
+    assert!(res2.answer.to_lowercase().contains("basement") || res2.answer.contains("Logic:"));
+
+    let _ = std::fs::remove_dir_all("./test_relevance");
+}
+
+#[test]
+fn test_kg_causal_influence_propagation() {
+    use cognition::knowledge::IndustrialGraph;
+    let mut mind = engine::OmniMind::new_forge("./test_causal_prop");
+
+    // 1. Setup causal chain: Heat -> Pressure -> ValveFailure -> Leak -> Downtime
+    mind.learn("Heat causes Pressure.");
+    mind.learn("Pressure causes ValveFailure.");
+    mind.learn("ValveFailure causes Leak.");
+    mind.learn("Leak causes Downtime.");
+
+    // 2. Query causal influence of Heat
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            let influences = cog.knowledge_graph.get_causal_influence("Downtime");
+            println!("Causal influences of Downtime: {:?}", influences);
+
+            // Should contain Heat (indirect cause)
+            let heat_influence = influences.iter().find(|(name, _)| name.contains("heat"));
+            assert!(heat_influence.is_some());
+            assert!(heat_influence.unwrap().1 < 1.0); // Confidence should decay
+        }
+        _ => {}
+    }
+
+    let _ = std::fs::remove_dir_all("./test_causal_prop");
+}

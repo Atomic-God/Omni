@@ -35,6 +35,7 @@ pub trait IndustrialGraph {
     fn detect_contradictions(&self, fact_id: &str) -> Vec<String>;
     fn validate_fact(&self, triple: &FactTriple) -> (bool, f32);
     fn tag_causal_link(&mut self, fact_id: &str, causal_type: &str);
+    fn get_causal_influence(&self, observation: &str) -> Vec<(String, f32)>; // (Effect/Cause, Influence)
     fn get_entities(&self) -> Vec<String>;
     fn get_relations(&self, entity: &str) -> Vec<(String, String, f32)>; // (Predicate, Object, Confidence)
 }
@@ -103,6 +104,10 @@ impl IndustrialGraph for KnowledgeGraph {
         if let Some(fact) = self.facts.get_mut(fact_id) {
             fact.tags.push(format!("causal:{}", causal_type));
         }
+    }
+
+    fn get_causal_influence(&self, observation: &str) -> Vec<(String, f32)> {
+        ReasoningEngine::infer_causal_chain(self, &observation.to_lowercase(), 5)
     }
 }
 

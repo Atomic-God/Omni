@@ -213,16 +213,22 @@ impl OmniMind {
     }
 
     pub fn query(&self, concept: &HyperVector) -> Vec<(String, f32)> {
-        match &self.state {
-            LifecycleState::Forge(mem, _) => mem.query_nearest(concept, 5),
+        let mut results = match &self.state {
+            LifecycleState::Forge(mem, _) => mem.query_nearest(concept, 10),
             LifecycleState::Runtime(base, delta, _) => {
-                let mut results = delta.query_nearest(concept, 5);
-                results.extend(base.query_nearest(concept, 5));
-                results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-                results.truncate(5);
-                results
+                let mut res = delta.query_nearest(concept, 10);
+                res.extend(base.query_nearest(concept, 10));
+                res.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                res
             }
-        }
+        };
+
+        // Industrial Relevance Weighting
+        let context = self.task_loop.get_context_vector();
+        crate::learning::ContinuousLearningEngine::weight_relevance(self, &mut results, &context);
+
+        results.truncate(5);
+        results
     }
 
     pub fn encode_text(&self, text: &str) -> HyperVector {
@@ -547,6 +553,11 @@ impl OmniMind {
         // Industrial: Perform live hardware adaptation during metric updates
         self.adapter.live_adjust();
 
+        if self.adapter.is_low_memory_mode() {
+            warn!("Industrial Recovery: Emergency Low Memory detected. Triggering urgent consolidation.");
+            self.sleep_cycle();
+        }
+
         // Point 5: Local Adaptation Loop - Adjust cognitive parameters
         self.run_local_adaptation();
     }
@@ -618,6 +629,9 @@ impl OmniMind {
         cog_ref.resolve_contradictions();
         cog_ref.apply_knowledge_decay(0.98);
 
+        // Continuous Learning: Autonomous Reinforcement
+        crate::learning::ContinuousLearningEngine::autonomous_reinforcement(self);
+
         // Industrial Self-Consistency Verification
         crate::governance::ConsistencyAuditor::audit_cross_source(self);
         crate::governance::SelfVerificationLoop::global_verification(self);
@@ -683,5 +697,19 @@ impl OmniMind {
             }
         }
         Ok(())
+    }
+
+    pub fn state_memory(&self) -> &MemoryManager {
+        match &self.state {
+            LifecycleState::Forge(mem, _) => mem,
+            LifecycleState::Runtime(_, delta, _) => delta,
+        }
+    }
+
+    pub fn state_memory_mut(&mut self) -> &mut MemoryManager {
+        match &mut self.state {
+            LifecycleState::Forge(mem, _) => mem,
+            LifecycleState::Runtime(_, delta, _) => delta,
+        }
     }
 }
