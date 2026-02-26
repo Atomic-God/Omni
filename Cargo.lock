@@ -151,6 +151,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "cognition",
  "config",
  "engine",
  "env_logger",
@@ -948,6 +949,7 @@ dependencies = [
  "ingestion",
  "learning",
  "memory",
+ "multimodal",
  "perception",
  "rand 0.8.5",
  "runtime",
@@ -1555,6 +1557,7 @@ dependencies = [
  "lofty",
  "lopdf",
  "mp4",
+ "multimodal",
  "once_cell",
  "rayon",
  "regex",
@@ -2029,6 +2032,19 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "multimodal"
+version = "0.1.0"
+dependencies = [
+ "cognition",
+ "core-vsa",
+ "image",
+ "once_cell",
+ "seahash",
+ "serde",
+ "tracing",
 ]
 
 [[package]]

@@ -23,6 +23,8 @@ runtime = { path = "../runtime" }
 hte = { path = "../hte" }
 perception = { path = "../perception" }
 learning = { path = "../learning" }
+multimodal = { path = "../multimodal" }
+image = "0.24"
 
 [dev-dependencies]
 image = "0.24"

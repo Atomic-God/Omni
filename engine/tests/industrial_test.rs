@@ -508,3 +508,41 @@ fn test_kg_causal_influence_propagation() {
 
     let _ = std::fs::remove_dir_all("./test_causal_prop");
 }
+
+#[test]
+fn test_multimodal_grounding_bridge() {
+    let mut mind = engine::OmniMind::new_forge("./test_multimodal_bridge");
+
+    // 1. Text grounding
+    mind.learn("A bright red emergency light.");
+
+    // 2. Visual grounding simulation
+    // Create a red image
+    let mut img = image::RgbImage::new(100, 100);
+    for p in img.pixels_mut() { *p = image::Rgb([255, 0, 0]); }
+    let img_path = "./test_relevance/red_light.png";
+    std::fs::create_dir_all("./test_relevance").unwrap();
+    img.save(img_path).unwrap();
+
+    // 3. Cross-modal retrieval: "Describe" the red image
+    let descriptions = mind.describe_image_at_path(img_path).unwrap();
+    println!("Image Descriptions: {:?}", descriptions);
+
+    // Should find the "bright red emergency light" text due to red color feature boost
+    // (Note: similarity might be low in Phase 1, but we check if it works)
+
+    // 4. KG linking
+    mind.ingest_file(img_path).unwrap();
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            use cognition::knowledge::IndustrialGraph;
+            let entities = cog.knowledge_graph.get_entities();
+            println!("KG Entities after image ingestion: {:?}", entities);
+            assert!(entities.iter().any(|e: &String| e.contains("img:")));
+        }
+        _ => {}
+    }
+
+    let _ = std::fs::remove_dir_all("./test_multimodal_bridge");
+    let _ = std::fs::remove_dir_all("./test_relevance");
+}

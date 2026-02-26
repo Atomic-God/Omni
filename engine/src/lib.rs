@@ -712,4 +712,50 @@ impl OmniMind {
             LifecycleState::Runtime(_, delta, _) => delta,
         }
     }
+
+    pub fn describe_image_at_path(&self, path: &str) -> Result<Vec<(String, f32)>, Box<dyn std::error::Error>> {
+        let img = image::open(path)?;
+        let sv = multimodal::vision::VisualGrounding::analyze_image(&img, self.vsa_dimension);
+
+        let _cog = match &self.state {
+            LifecycleState::Forge(_, c) => c,
+            LifecycleState::Runtime(_, _, c) => c,
+        };
+
+        // For Phase 1, we use a simple linear scan of text labels in memory
+        // In industrial deployment, we would use LSH for this cross-modal lookup
+        let mut results = Vec::new();
+        let mem = self.state_memory();
+        for (label, entry) in &mem.metadata {
+            if entry.layer == "semantic" || entry.layer == "episodic" {
+                let sim = sv.vector.similarity(&entry.vector);
+                if sim > 0.25 {
+                    results.push((label.clone(), sim));
+                }
+            }
+        }
+
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(5);
+        Ok(results)
+    }
+
+    pub fn find_similar_sounds_at_path(&self, path: &str) -> Result<Vec<(String, f32)>, Box<dyn std::error::Error>> {
+        let sv = multimodal::audio::AudioGrounding::analyze_audio(std::path::Path::new(path), self.vsa_dimension);
+
+        let mut results = Vec::new();
+        let mem = self.state_memory();
+        for (label, entry) in &mem.metadata {
+            if entry.layer == "semantic" || entry.layer == "episodic" {
+                let sim = sv.vector.similarity(&entry.vector);
+                if sim > 0.2 {
+                    results.push((label.clone(), sim));
+                }
+            }
+        }
+
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(5);
+        Ok(results)
+    }
 }

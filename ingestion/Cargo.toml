@@ -31,3 +31,4 @@ lopdf = "0.31" # Pure Rust PDF parsing
 ignore = "0.4" # For .gitignore support in recursive walks
 rayon = "1.8" # Parallel ingestion
 unicode-normalization = "0.1"
+multimodal = { path = "../multimodal" }

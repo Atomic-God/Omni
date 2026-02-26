@@ -20,11 +20,9 @@ use crate::metadata::NormalizedMetadata;
 use crate::layout::SemanticLayoutExtractor;
 use crate::ocr::SymbolicOCR;
 use crate::video::VideoIngestor;
-use crate::vision::VisionSemanticExtractor;
 use crate::nlp::SymbolicNLP;
 use crate::code_analysis::CodeAnalyzer;
 use crate::data_meaning::DataMeaningExtractor;
-use crate::audio_meaning::AudioMeaningExtractor;
 
 pub type SymbolMapper = Arc<dyn Fn(&str) -> String + Send + Sync>;
 
@@ -377,7 +375,10 @@ impl UniversalIngestor {
     fn process_image(&self, path: &Path, graph: &Arc<Mutex<SymbolGraph>>, seen: &Arc<Mutex<DuplicateRegistry>>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let img = image::open(path).map_err(|e| e.to_string())?;
         let ocr_text = self.ocr.extract_text(&img);
-        let (semantic_vec, meaning_desc, vision_meta) = VisionSemanticExtractor::extract_deep_meaning(&img, self.vsa_dimension);
+
+        let sv = multimodal::vision::VisualGrounding::analyze_image(&img, self.vsa_dimension);
+        let semantic_vec = sv.vector;
+        let meaning_desc = sv.label;
 
         {
             let mut s = seen.lock().unwrap();
@@ -398,10 +399,22 @@ impl UniversalIngestor {
         meta.hash = file_hash;
         meta.insert("ocr_content", ocr_text);
         meta.insert("deep_semantic_meaning", meaning_desc);
-        for (k, v) in vision_meta { meta.insert(&k, v); }
+
+        let objects = multimodal::vision::VisualGrounding::detect_objects(&img);
+        if !objects.is_empty() {
+            meta.insert("detected_objects", objects.join(", "));
+        }
 
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, semantic_vec, meta.to_map(), 1.0);
+
+        // Industrial: Add existence fact to KG
+        g.add_edge_with_confidence(&node_id, "image", "is_a", 1.0, 1.0);
+
+        // Link objects in KG
+        for obj in objects {
+            g.add_edge_with_confidence(&node_id, &obj.to_lowercase(), "contains", 1.0, 0.8);
+        }
         Ok(())
     }
 
@@ -447,11 +460,15 @@ impl UniversalIngestor {
         }
 
         // Extract deep symbolic meaning from audio (even if metadata failed)
-        let (content_vec, content_desc) = AudioMeaningExtractor::extract_signature(path, self.vsa_dimension);
+        let sv = multimodal::audio::AudioGrounding::analyze_audio(path, self.vsa_dimension);
+        let content_vec = sv.vector;
+        let content_desc = sv.label;
+
         meta.insert("acoustic_signature", content_desc);
 
         let mut g = graph.lock().unwrap();
         g.add_node_with_confidence(&node_id, content_vec, meta.to_map(), 1.0);
+        g.add_edge_with_confidence(&node_id, "audio", "is_a", 1.0, 1.0);
         Ok(())
     }
 

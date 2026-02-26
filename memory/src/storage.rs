@@ -6,7 +6,7 @@ use tracing::info;
 use serde::{Serialize, Deserialize};
 use std::cell::RefCell;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub struct ShardedStorage {
     #[serde(skip)]
     pub root_dir: PathBuf,
@@ -28,6 +28,19 @@ fn default_buffer() -> RefCell<BTreeMap<String, HyperVector>> {
 pub struct ShardFile {
     pub id: usize,
     pub data: BTreeMap<String, HyperVector>,
+}
+
+impl Clone for ShardedStorage {
+    fn clone(&self) -> Self {
+        Self {
+            root_dir: self.root_dir.clone(),
+            current_shard_id: self.current_shard_id,
+            shard_capacity: self.shard_capacity,
+            current_shard_buffer: RefCell::new(self.current_shard_buffer.borrow().clone()),
+            location_map: self.location_map.clone(),
+            shard_hashes: self.shard_hashes.clone(),
+        }
+    }
 }
 
 impl ShardedStorage {
