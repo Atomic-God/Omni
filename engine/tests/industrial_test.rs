@@ -482,6 +482,42 @@ fn test_contextual_relevance_weighting() {
 }
 
 #[test]
+fn test_transitive_contradiction_detection() {
+    let mut mind = engine::OmniMind::new_forge("./test_transitive");
+
+    // 1. Setup transitive chain: SensorA -> HardwareDevice -> IndustrialAsset
+    mind.learn("SensorA is HardwareDevice.");
+    mind.learn("HardwareDevice is IndustrialAsset.");
+
+    // 2. Add contradictory fact: SensorA contradicts IndustrialAsset
+    // This is a transitive contradiction because SensorA is-a IndustrialAsset (via HardwareDevice)
+    mind.learn("SensorA contradicts IndustrialAsset.");
+
+    // 3. Trigger consistency check (Sleep Cycle)
+    mind.sleep_cycle();
+
+    match &mind.state {
+        engine::LifecycleState::Forge(_, cog) => {
+            for (k, v) in &cog.knowledge_graph.facts {
+                println!("KG Fact: {} -> {:?}", k, v.triple);
+            }
+            // Fact ID is system:subject-predicate-object (all lowercase)
+            let f_trans = cog.knowledge_graph.facts.get("system:sensora-taxonomy-hardwaredevice").expect("Fact 1 missing");
+            let f_contra = cog.knowledge_graph.facts.get("system:sensora-contradicts-industrialasset").expect("Fact 2 missing");
+
+            println!("Fact 1 confidence: {}", f_trans.confidence);
+            println!("Fact 2 confidence: {}", f_contra.confidence);
+
+            // One of them should be dampened if they were detected as a transitive contradiction
+            assert!(f_trans.confidence < 1.0 || f_contra.confidence < 1.0);
+        }
+        _ => {}
+    }
+
+    let _ = std::fs::remove_dir_all("./test_transitive");
+}
+
+#[test]
 fn test_kg_causal_influence_propagation() {
     use cognition::knowledge::IndustrialGraph;
     let mut mind = engine::OmniMind::new_forge("./test_causal_prop");

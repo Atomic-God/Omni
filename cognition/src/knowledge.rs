@@ -89,7 +89,9 @@ impl IndustrialGraph for KnowledgeGraph {
 
     fn validate_fact(&self, triple: &FactTriple) -> (bool, f32) {
         let (valid, conf) = ReasoningEngine::verify_fact(self, triple);
-        if !valid { return (false, conf); }
+        if !valid {
+            return (false, conf);
+        }
 
         // Multi-source validation: If multiple sources provide this fact, boost validity
         let count = self.facts.values()
@@ -164,9 +166,9 @@ impl KnowledgeGraph {
         let fact = self.facts.entry(id.to_string()).or_insert(KnowledgeFact {
             id: id.to_string(),
             triple: triple.clone(),
-            confidence: 0.5,
+            confidence: 1.0, // Default to high confidence for direct learning
             source_reliability: reliability,
-            reinforcement_count: 0,
+            reinforcement_count: 1, // Start with 1 to avoid /0 in confidence calculation
             timestamp: now,
             history: Vec::new(),
             tags: Vec::new(),
@@ -189,9 +191,8 @@ impl KnowledgeGraph {
         let weighted_reliability = reliability * trust;
 
         let prior = fact.confidence;
-        let n = fact.reinforcement_count as f32;
+        let n = (fact.reinforcement_count - 1) as f32; // -1 because we just initialized it to 1
         fact.confidence = (prior * n + weighted_reliability) / (n + 1.0);
-        fact.reinforcement_count += 1;
         fact.timestamp = now;
 
         fact.get_composite_confidence()
@@ -310,23 +311,45 @@ impl ContradictionEngine {
         let subjects: Vec<String> = graph.subject_index.keys().cloned().collect();
 
         for s in subjects {
-            // 1. Taxonomic mismatch
-            if let Some(inferred) = ReasoningEngine::infer_transitive(graph, &s, "taxonomy", 3) {
-                 for fact in graph.facts.values() {
-                     if let Some(ref t) = fact.triple {
-                         if t.subject == s && t.predicate == "taxonomy" && t.object != inferred.0 {
-                             if fact.confidence > 0.8 && inferred.1 > 0.8 {
-                                 inconsistencies.push((fact.id.clone(), format!("Inferred taxonomy mismatch with {}", inferred.0)));
+            // 1. Transitive Contradiction: A is-a B, B is-a C, but A contradicts C
+            if let Some(inferred) = ReasoningEngine::infer_transitive(graph, &s, "taxonomy", 5) {
+                // Check if any known fact explicitly contradicts this inference
+                let mut conflict_found = None;
+                for fact in graph.facts.values() {
+                    if let Some(ref t) = fact.triple {
+                        if t.subject == s && t.predicate == "contradicts" && t.object == inferred.0 {
+                            conflict_found = Some(fact.id.clone());
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(contra_id) = conflict_found {
+                    // Find the fact that supports the inference directly or indirectly
+                    // For simplicity, we'll find any fact that links s to taxonomy
+                    for f in graph.facts.values() {
+                         if let Some(ref t) = f.triple {
+                             if t.subject == s && t.predicate == "taxonomy" {
+                                 inconsistencies.push((f.id.clone(), contra_id.clone()));
                              }
                          }
-                     }
-                 }
+                    }
+                }
             }
 
             // 2. Structural loops (e.g. A part_of B, B part_of A)
             if let Some(parts) = ReasoningEngine::infer_transitive(graph, &s, "part_of", 5) {
                 if parts.0 == s {
                      inconsistencies.push((format!("loop:{}", s), format!("Structural circularity detected for {}", s)));
+                }
+            }
+
+            // 3. Causal Contradiction: If A causes B, but there exists fact B inhibits A (Structural conflict)
+            if let Some(causes) = ReasoningEngine::infer_transitive(graph, &s, "causes", 3) {
+                if let Some(inhibits) = ReasoningEngine::infer_transitive(graph, &causes.0, "inhibits", 3) {
+                    if inhibits.0 == s {
+                        inconsistencies.push((format!("causal_loop:{}", s), format!("Causal contradiction: {} causes {}, but {} inhibits {}", s, causes.0, causes.0, s)));
+                    }
                 }
             }
         }
@@ -413,6 +436,9 @@ impl ReasoningEngine {
     }
 
     pub fn verify_fact(graph: &KnowledgeGraph, triple: &FactTriple) -> (bool, f32) {
+        let is_exclusive = graph.exclusive_predicates.contains(&triple.predicate);
+        if !is_exclusive { return (true, 1.0); }
+
         for fact in graph.facts.values() {
             if let Some(ref ft) = fact.triple {
                 if ft.subject == triple.subject && ft.predicate == triple.predicate && ft.object != triple.object {
