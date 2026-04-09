@@ -1,7 +1,6 @@
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Mul};
 use rayon::prelude::*;
 use rand::prelude::*;
-use std::fmt;
 
 #[derive(Clone, Debug)]
 pub struct Tensor {

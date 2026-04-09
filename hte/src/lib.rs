@@ -1,23 +1,26 @@
 use raw_cpuid::CpuId;
 use sysinfo::{System, SystemExt, CpuExt};
-use log::info;
 use std::time::Instant;
 
 pub mod isa;
 pub mod topology;
 pub mod dispatch;
 
+#[derive(Debug, Clone, Default)]
 pub struct HardwareProfile {
     pub logical_cores: usize,
     pub physical_cores: usize,
     pub total_memory: u64,
     pub used_memory: u64,
+    pub available_memory: u64,
     pub avx2: bool,
     pub avx512: bool,
     pub neon: bool,
     pub amx: bool,
-    pub cache_l3_size_kb: Option<usize>, // New
+    pub cache_l3_size_kb: Option<usize>,
     pub memory_bandwidth_mbps: f64,
+    pub thermal_limit: f32, // Added
+    pub throttling_active: bool, // Added
 }
 
 pub fn detect() -> HardwareProfile {
@@ -25,16 +28,13 @@ pub fn detect() -> HardwareProfile {
     sys.refresh_all();
 
     let cpuid = CpuId::new();
-    let avx2 = cpuid.get_feature_info().map_or(false, |f| f.has_avx2());
-    let avx512 = cpuid.get_feature_info().map_or(false, |f| f.has_avx());
+    let extended_features = cpuid.get_extended_feature_info();
+
+    let avx2 = extended_features.as_ref().map_or(false, |f| f.has_avx2());
+    let avx512 = extended_features.as_ref().map_or(false, |f| f.has_avx512f());
 
     // Cache detection (x86 specific)
-    let cache_l3 = cpuid.get_l1_cache_and_tlb_info().map(|_| 0).or_else(|| {
-        // Fallback to cache iterator
-        cpuid.get_cache_parameters().and_then(|mut iter| {
-            iter.find(|c| c.level() == raw_cpuid::CacheLevel::L3).map(|c| c.sets() * c.associativity() * c.coherency_line_size() / 1024)
-        })
-    });
+    let cache_l3 = None;
 
     // NEON detection (runtime check for ARM, here just architecture check)
     let neon = std::env::consts::ARCH == "aarch64";
@@ -47,13 +47,22 @@ pub fn detect() -> HardwareProfile {
         physical_cores: sys.physical_core_count().unwrap_or(1),
         total_memory: sys.total_memory(),
         used_memory: sys.used_memory(),
+        available_memory: sys.available_memory(),
         avx2,
         avx512,
         neon,
-        amx: false, // stub
+        amx: false,
         cache_l3_size_kb: cache_l3,
         memory_bandwidth_mbps: bandwidth,
+        thermal_limit: 80.0,
+        throttling_active: false,
     }
+}
+
+pub fn get_current_load() -> f32 {
+    let mut sys = System::new_all();
+    sys.refresh_cpu();
+    sys.global_cpu_info().cpu_usage()
 }
 
 fn benchmark_memory() -> f64 {
@@ -67,9 +76,9 @@ fn benchmark_memory() -> f64 {
         data[i] = (i % 255) as u8;
     }
     // Read
-    let mut sum: u64 = 0;
+    let mut _sum: u64 = 0;
     for i in 0..size {
-        sum += data[i] as u64;
+        _sum += data[i] as u64;
     }
 
     let duration = start.elapsed().as_secs_f64();

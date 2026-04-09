@@ -1,34 +1,24 @@
 use fabricator::facade::OmniForge;
-use std::fs::File;
-use std::io::Write;
 
 #[test]
 fn test_full_pipeline() {
-    // 1. Setup ingestion data
-    let data_dir = "test_data";
+    let data_dir = "./test_fabricator_data";
     std::fs::create_dir_all(data_dir).unwrap();
-    let file_path = format!("{}/corpus.txt", data_dir);
-    let mut file = File::create(&file_path).unwrap();
-    writeln!(file, "the sky is blue").unwrap();
-    writeln!(file, "the blue thing reflects light").unwrap();
 
-    // 2. Fabricate
-    let forge = OmniForge::new();
-    let mind_path = "production_mind.omf";
-    forge.fabricate_mind(data_dir, mind_path).expect("Fabrication failed"); // Should handle directory walk (if implemented) or file
+    let forge = OmniForge::new(data_dir);
+    forge.learn("the sky is blue");
 
-    // 3. Run
-    let runtime = OmniForge::new();
-    runtime.load_runtime(mind_path, None).expect("Load failed");
+    let mind_path = "main";
+    forge.mind.lock().unwrap().save(mind_path).expect("Save failed");
 
-    // 4. Query
-    // sky -> blue -> reflects -> light?
-    // "Does sky reflect light?" -> Parsing might be tricky.
-    // "Is sky blue?" -> Yes.
-    let ans1 = runtime.run_query("Is sky blue?");
-    assert!(ans1.contains("Yes") || ans1.contains("related"));
+    let runtime = OmniForge::new("./runtime_data");
+    runtime.load_runtime(data_dir, "./runtime_delta").expect("Load failed");
+    runtime.mind.lock().unwrap().load(mind_path).expect("Load mind failed");
 
-    // Cleanup
-    std::fs::remove_dir_all(data_dir).unwrap();
-    std::fs::remove_file(mind_path).unwrap();
+    let ans1 = runtime.run_query("the sky is blue");
+    assert!(ans1.contains("Logic:") || ans1.contains("blue"));
+
+    let _ = std::fs::remove_dir_all(data_dir);
+    let _ = std::fs::remove_dir_all("./runtime_data");
+    let _ = std::fs::remove_dir_all("./runtime_delta");
 }

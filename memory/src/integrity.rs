@@ -1,5 +1,5 @@
 use crate::{load_snapshot, MindPack};
-use log::{info, warn};
+use tracing::{info, warn};
 
 pub fn verify_integrity(path: &str) -> Result<bool, String> {
     info!("Verifying integrity of {}", path);

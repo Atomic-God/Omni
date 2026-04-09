@@ -1,19 +1,13 @@
 use core_vsa::{HyperVector, traits::MemoryStore};
 use memory::MemoryManager;
-use cognition::Intent;
 use std::collections::VecDeque;
-use log::{info, warn};
+use tracing::{info, warn};
+use runtime::Goal;
 
-/// Manages the active working context of the agent.
 pub struct ContextManager {
-    // Short-term sliding window of recent observations
     pub working_context: VecDeque<HyperVector>,
     pub max_working_size: usize,
-
-    // Active Goals
-    pub active_goals: Vec<crate::governance::Goal>, // Assuming existing Goal struct
-
-    // Episodic Recall Buffer (retrieved memories relevant to current context)
+    pub active_goals: Vec<Goal>,
     pub episodic_buffer: Vec<HyperVector>,
 }
 
@@ -27,7 +21,28 @@ impl ContextManager {
         }
     }
 
-    /// Update context with new observation
+    pub fn add_goal(&mut self, goal: Goal) {
+        info!("Arbitration: New goal added - {} (Priority: {})", goal.description, goal.priority);
+        self.active_goals.push(goal);
+        self.prioritize_goals();
+    }
+
+    fn prioritize_goals(&mut self) {
+        // Sort by priority descending, then by creation time
+        self.active_goals.sort_by(|a, b| {
+            b.priority.cmp(&a.priority).then(a.created_at.cmp(&b.created_at))
+        });
+    }
+
+    pub fn resolve_conflicts(&mut self) {
+        // If two goals have high similarity but different intents, reduce priority of the newer one
+        // For Phase 1, we use simple priority-based preemption
+        if self.active_goals.len() > 5 {
+            warn!("Goal overload detected. Pruning lowest priority goals.");
+            self.active_goals.truncate(5);
+        }
+    }
+
     pub fn update(&mut self, observation: &HyperVector) {
         if self.working_context.len() >= self.max_working_size {
             self.working_context.pop_front();
@@ -35,12 +50,8 @@ impl ContextManager {
         self.working_context.push_back(observation.clone());
     }
 
-    /// Retrieve relevant episodes from memory based on current working context
     pub fn recall_episodes(&mut self, memory: &MemoryManager) {
-        // Form query vector from working context (e.g. bundle or last item)
         if let Some(current) = self.working_context.back() {
-            // Query memory
-            // Phase 6: We use `query_nearest` from MemoryStore trait
             let results = memory.query_nearest(current, 5);
             self.episodic_buffer.clear();
             for (id, _score) in results {
@@ -52,7 +63,6 @@ impl ContextManager {
         }
     }
 
-    /// Rank relevance of an item against current context
     pub fn rank_relevance(&self, item: &HyperVector) -> f32 {
         if let Some(current) = self.working_context.back() {
             current.similarity(item)
@@ -61,12 +71,9 @@ impl ContextManager {
         }
     }
 
-    /// Compress context into a single summary vector
     pub fn compress_context(&self) -> HyperVector {
-        // Bundle all working context vectors?
-        // Simple superposition.
         if self.working_context.is_empty() {
-            return HyperVector::deterministic(0); // Zero-like
+            return HyperVector::deterministic(0);
         }
 
         let mut summary = self.working_context[0].clone();

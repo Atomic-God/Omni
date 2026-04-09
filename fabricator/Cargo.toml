@@ -12,6 +12,6 @@ cognition = { path = "../cognition" }
 memory = { path = "../memory" }
 ingestion = { path = "../ingestion" }
 learning = { path = "../learning" }
-log = "0.4"
+tracing = "0.1"
 notify = "8.2.0"
 serde_json = "1.0.149"

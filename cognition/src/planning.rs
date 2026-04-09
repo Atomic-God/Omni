@@ -1,6 +1,5 @@
-use core_vsa::HyperVector;
-use std::collections::{HashMap, VecDeque};
-use log::{info, warn};
+use std::collections::VecDeque;
+use tracing::{info, warn};
 
 #[derive(Clone, Debug)]
 pub struct Plan {

@@ -1,5 +1,4 @@
 use core_vsa::HyperVector;
-use std::collections::HashMap;
 
 /// Resolves user intent from a natural language vector (or string).
 pub struct IntentResolver;
@@ -15,7 +14,7 @@ pub enum Intent {
 impl IntentResolver {
     /// Maps a perception vector to an Intent.
     /// In Phase 1, this uses simple heuristic or similarity to prototypes.
-    pub fn resolve(vector: &HyperVector, text_hint: Option<&str>) -> Intent {
+    pub fn resolve(_vector: &HyperVector, text_hint: Option<&str>) -> Intent {
         // If text hint is available (e.g. from tokenizer), use rule-based for 100% accuracy on basic commands
         if let Some(text) = text_hint {
             if text.ends_with('?') || text.starts_with("what") || text.starts_with("who") {

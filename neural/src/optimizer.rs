@@ -8,7 +8,7 @@ pub trait Optimizer: Send + Sync {
 pub struct SGD {
     pub learning_rate: f32,
     pub momentum: f32,
-    pub velocities: Vec<Tensor>, // Momentum buffer
+    pub velocities: Vec<Tensor>,
 }
 
 impl SGD {
@@ -23,26 +23,17 @@ impl SGD {
 
 impl Optimizer for SGD {
     fn step(&mut self, layer: &mut dyn Layer) {
-        let params = layer.parameters();
-        let grads = layer.gradients();
+        let (mut params, grads) = layer.params_and_grads();
 
-        // Ensure velocity buffer is initialized
         if self.velocities.is_empty() {
              for p in &params {
                  self.velocities.push(Tensor::zeros(p.shape.clone()));
              }
         }
 
-        // Update
         for i in 0..params.len() {
             let param = &mut params[i];
             let grad = &grads[i];
-
-            // v = m * v - lr * g
-            // p = p + v
-
-            // Simple SGD w/o momentum for Phase 1 to ensure correctness first
-            // p = p - lr * g
 
             let update = &**grad * self.learning_rate;
             let mut new_data = Vec::with_capacity(param.data.len());
@@ -50,7 +41,6 @@ impl Optimizer for SGD {
                 new_data.push(p_val - u_val);
             }
 
-            // Assign back
             param.data = new_data;
         }
     }
@@ -82,8 +72,7 @@ impl Adam {
 
 impl Optimizer for Adam {
     fn step(&mut self, layer: &mut dyn Layer) {
-        let params = layer.parameters();
-        let grads = layer.gradients();
+        let (mut params, grads) = layer.params_and_grads();
 
         self.t += 1;
 
@@ -98,19 +87,10 @@ impl Optimizer for Adam {
             let param = &mut params[i];
             let grad = &grads[i];
 
-            // m = b1*m + (1-b1)*g
-            // v = b2*v + (1-b2)*g^2
-            // m_hat = m / (1-b1^t)
-            // v_hat = v / (1-b2^t)
-            // p = p - lr * m_hat / (sqrt(v_hat) + eps)
-
-            // Simplified CPU loop
             for j in 0..param.data.len() {
                 let g = grad.data[j];
 
-                // Update m
                 self.m[i].data[j] = self.beta1 * self.m[i].data[j] + (1.0 - self.beta1) * g;
-                // Update v
                 self.v[i].data[j] = self.beta2 * self.v[i].data[j] + (1.0 - self.beta2) * g * g;
 
                 let m_hat = self.m[i].data[j] / (1.0 - self.beta1.powi(self.t as i32));

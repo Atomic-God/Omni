@@ -7,4 +7,4 @@ edition = "2021"
 core-vsa = { path = "../core-vsa" }
 memory = { path = "../memory" }
 ingestion = { path = "../ingestion" }
-log = "0.4"
+tracing = "0.1"

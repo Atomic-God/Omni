@@ -2,7 +2,7 @@ use crate::traits::ModalitySlot;
 use core_vsa::HyperVector;
 use std::any::Any;
 use std::collections::HashMap;
-use log::info;
+use tracing::info;
 
 // --- Concrete Implementations ---
 

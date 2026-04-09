@@ -1,23 +1,25 @@
 use core_vsa::HyperVector;
-use std::collections::HashMap;
 use std::error::Error;
 
-/// Defines the layers of memory in the cognitive architecture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MemoryLayer {
-    Working,   // High-speed, low-capacity, transient
-    Episodic,  // Event-based, medium-capacity
-    Invariant, // Fact-based, high-capacity, immutable/slow-decay
+    Working,
+    Episodic,
+    Semantic, // Renamed from Invariant
 }
 
-/// A structured memory entry with importance metrics.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MemoryEntry {
     pub vector: HyperVector,
     pub timestamp: u64,
     pub access_count: u32,
     pub last_access: u64,
-    pub layer: String, // "working", "episodic", "invariant"
-    pub importance: f32, // Computed score
+    pub layer: String,
+    pub importance: f32,
+    pub confidence: f32,
+    pub source_reliability: f32,
+    pub reinforcement_count: u32,
+    pub stability: f32, // Step 40
 }
 
 impl MemoryEntry {
@@ -26,7 +28,7 @@ impl MemoryEntry {
         let layer_str = match layer {
             MemoryLayer::Working => "working",
             MemoryLayer::Episodic => "episodic",
-            MemoryLayer::Invariant => "invariant",
+            MemoryLayer::Semantic => "semantic",
         };
         Self {
             vector,
@@ -35,6 +37,10 @@ impl MemoryEntry {
             last_access: now,
             layer: layer_str.to_string(),
             importance: 1.0,
+            confidence: 0.5,
+            source_reliability: 1.0,
+            reinforcement_count: 1,
+            stability: 1.0,
         }
     }
 
@@ -42,12 +48,26 @@ impl MemoryEntry {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         self.access_count += 1;
         self.last_access = now;
-        // Simple importance boost
         self.importance += 0.1;
+    }
+
+    pub fn reinforce(&mut self, reliability: f32) {
+        let n = self.reinforcement_count as f32;
+        self.confidence = (self.confidence * n + reliability) / (n + 1.0);
+        self.reinforcement_count += 1;
+        self.importance += 0.5;
+
+        // Industrial Spaced Repetition: Stability growth is non-linear
+        // Stability increases more for high-confidence reinforcement.
+        let growth_factor = 1.0 + (self.confidence * 1.5).min(2.5);
+        self.stability *= growth_factor;
     }
 
     pub fn decay(&mut self, rate: f32) {
         self.importance *= rate;
+        if self.reinforcement_count < 2 {
+            self.confidence *= rate;
+        }
     }
 }
 

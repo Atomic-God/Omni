@@ -1,6 +1,6 @@
 use crate::{IngestionAdapter, SemanticChunk, ChunkMetadata};
 use std::path::Path;
-use log::warn;
+use tracing::warn;
 use image::GenericImageView;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::fs::File;

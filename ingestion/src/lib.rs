@@ -1,8 +1,8 @@
+#![deny(warnings)]
 use core_vsa::traits::Ingestor;
-use core_vsa::{SymbolGraph, HyperVector};
+use core_vsa::SymbolGraph;
 use std::path::Path;
 use std::error::Error;
-use log::info;
 
 pub mod adapters;
 pub mod adapters_extended;
@@ -10,27 +10,65 @@ pub mod media_adapters;
 pub mod fallback;
 pub mod registry;
 pub mod universal;
+pub mod metadata;
+pub mod layout;
+pub mod ocr;
+pub mod video;
+pub mod vision;
+pub mod nlp;
+pub mod code_analysis;
+pub mod data_meaning;
+pub mod audio_meaning;
 
 pub use registry::DataIngestionRegistry;
 pub use universal::UniversalIngestor;
-pub use universal::UniversalAdapter; // Legacy support
+pub use universal::UniversalAdapter;
 
-// Re-export specific structs if needed for tests
 pub use adapters::JsonAdapter;
 pub use fallback::SymbolExtractor;
 
 // Main entry point for Universal Ingestion
 pub fn ingest_graph(path: &Path) -> Result<SymbolGraph, Box<dyn Error + Send + Sync>> {
-    let ingestor = UniversalIngestor;
+    let ingestor = UniversalIngestor::new();
     ingestor.ingest(path)
 }
 
-// Legacy functions kept for backward compatibility (wrapped)
-pub use universal::process_single_file; // Helper exposed? No, implementation detail.
+pub fn chunk_content(content: &str, type_hint: &str, path: &Path) -> Vec<SemanticChunk> {
+    vec![SemanticChunk {
+        source: path.to_string_lossy().to_string(),
+        content: content.to_string(),
+        metadata: ChunkMetadata {
+            hash: compute_hash(content),
+            timestamp: 0,
+            file_type: type_hint.to_string(),
+            language: "unknown".to_string(),
+            structure_type: "text".to_string(),
+        }
+    }]
+}
 
-use std::path::PathBuf;
+pub fn chunk_content_with_structure(content: &str, type_hint: &str, path: &Path, structure: &str) -> Vec<SemanticChunk> {
+    vec![SemanticChunk {
+        source: path.to_string_lossy().to_string(),
+        content: content.to_string(),
+        metadata: ChunkMetadata {
+            hash: compute_hash(content),
+            timestamp: 0,
+            file_type: type_hint.to_string(),
+            language: "unknown".to_string(),
+            structure_type: structure.to_string(),
+        }
+    }]
+}
+
+pub fn compute_hash(s: &str) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 use serde::{Serialize, Deserialize};
-use std::collections::HashSet;
 
 pub trait IngestionAdapter: Send + Sync {
     fn can_handle(&self, path: &std::path::Path) -> bool;
@@ -46,6 +84,18 @@ pub struct ChunkMetadata {
     pub structure_type: String,
 }
 
+impl ChunkMetadata {
+    pub fn to_map(&self) -> std::collections::HashMap<String, String> {
+        let mut map = std::collections::HashMap::new();
+        map.insert("hash".to_string(), self.hash.clone());
+        map.insert("timestamp".to_string(), self.timestamp.to_string());
+        map.insert("file_type".to_string(), self.file_type.clone());
+        map.insert("language".to_string(), self.language.clone());
+        map.insert("structure_type".to_string(), self.structure_type.clone());
+        map
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticChunk {
     pub source: String,
@@ -53,12 +103,7 @@ pub struct SemanticChunk {
     pub metadata: ChunkMetadata,
 }
 
-// ... helper functions for legacy adapters ...
-// (We keep generic_read_file etc. for `adapters` crate usage)
-
 pub fn generic_read_file(path: &std::path::Path, type_hint: &str) -> Vec<SemanticChunk> {
-    // Stub implementation to satisfy legacy code linking
-    // Real implementation would read file.
     use std::fs::File;
     use std::io::Read;
 
@@ -70,7 +115,7 @@ pub fn generic_read_file(path: &std::path::Path, type_hint: &str) -> Vec<Semanti
         source: path.to_string_lossy().to_string(),
         content: buffer.clone(),
         metadata: ChunkMetadata {
-            hash: "stub".to_string(),
+            hash: compute_hash(&buffer),
             timestamp: 0,
             file_type: type_hint.to_string(),
             language: "unknown".to_string(),

@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use core_vsa::{HyperVector, DIMENSION};
+use core_vsa::HyperVector;
 use cognition::sequence::SequenceResonator;
 use memory::lsh::LSHIndex;
 

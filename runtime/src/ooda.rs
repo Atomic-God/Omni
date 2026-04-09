@@ -1,11 +1,11 @@
-use core_vsa::{HyperVector, DIMENSION};
+use core_vsa::HyperVector;
 use cognition::abductive::AbductiveReasoner;
 use cognition::sequence::SequenceResonator;
 use cognition::{IntentResolver, Intent};
 use std::collections::{BinaryHeap, VecDeque};
 use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-use log::{info, warn, debug};
+use tracing::{info, warn, debug};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Goal {

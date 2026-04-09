@@ -1,4 +1,3 @@
-use hte::HardwareProfile;
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,7 +35,7 @@ impl RuntimeAdapter {
     pub fn new() -> Self {
         let hte_profile = hte::detect();
 
-        let simd_width = if hte_profile.avx512_f { 512 }
+        let simd_width = if hte_profile.avx512 { 512 }
         else if hte_profile.avx2 { 256 }
         else if hte_profile.neon { 128 }
         else { 0 };

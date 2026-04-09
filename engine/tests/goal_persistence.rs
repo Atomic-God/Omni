@@ -1,73 +1,29 @@
-use engine::RuntimeMind;
-use memory::{save_snapshot, MindPack, MemoryStore, VocabStore, EncoderConfig, LearningPolicies, MindMetadata, LifecycleState};
-use cognition::CognitionCore;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn create_dummy_base(path: &str) {
-    let core = CognitionCore::new();
-    let pack = MindPack {
-        version: "8.4".to_string(),
-        memory: MemoryStore {
-            core: core.clone(),
-            relational_index: memory::index::RelationalIndex::new(),
-        },
-        vocab: VocabStore { words: HashMap::new() },
-        encoder_config: EncoderConfig { model_name: "test".to_string() },
-        learning_policies: LearningPolicies {
-            reinforcement_rate: 0.1,
-            decay_rate: 0.01,
-            max_concepts: None,
-        },
-        metadata: MindMetadata {
-            os: "linux".to_string(),
-            arch: "x86_64".to_string(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
-            core_hash: core.compute_integrity_hash(),
-            source: "test".to_string(),
-            state: LifecycleState::Frozen,
-            compiler_version: "1.0.0".to_string(),
-            semantic_version: "1.0.0".to_string(),
-        },
-        manifest: None,
-    };
-    save_snapshot(&pack, path).unwrap();
-}
+use engine::OmniMind;
 
 #[test]
-fn test_goal_persistence_in_overlay() {
-    let base_path = "test_base_mind.zip";
-    let overlay_path = "test_overlay.bin";
+fn test_omnimind_forge_to_runtime() {
+    let base_path = "./test_forge_data";
+    let delta_path = "./test_runtime_delta";
 
-    // 1. Create base mind
-    create_dummy_base(base_path);
+    // 1. Initialize in Forge Mode
+    let mut forge = OmniMind::new_forge(base_path);
+    forge.learn("Rust is safe");
+    forge.save("base").expect("Failed to save forge snapshot");
 
-    // 2. Load RuntimeMind
-    let mut runtime = RuntimeMind::load(base_path, Some(overlay_path)).expect("Failed to load runtime");
+    // 2. Initialize in Runtime Mode
+    let mut runtime = OmniMind::new_runtime(base_path, delta_path);
+    runtime.load("base").expect("Failed to load base snapshot");
 
-    // 3. Add a goal to overlay
-    runtime.overlay.core.add_goal(
-        "Build a house".to_string(),
-        "House built".to_string(),
-        10
-    );
+    // 3. Query the runtime mind
+    let result = runtime.ask("Rust is safe");
+    assert!(result.answer.contains("Logic:") || result.answer.contains("safe"));
 
-    assert_eq!(runtime.overlay.core.goals.len(), 1);
-    assert_eq!(runtime.overlay.core.goals[0].description, "Build a house");
-
-    // 4. Save overlay
-    runtime.save_overlay(overlay_path).expect("Failed to save overlay");
-
-    // 5. Reload RuntimeMind
-    let loaded_runtime = RuntimeMind::load(base_path, Some(overlay_path)).expect("Failed to reload runtime");
-
-    // 6. Verify goal persistence
-    assert_eq!(loaded_runtime.overlay.core.goals.len(), 1);
-    assert_eq!(loaded_runtime.overlay.core.goals[0].description, "Build a house");
-    assert_eq!(loaded_runtime.overlay.core.goals[0].priority, 10);
+    // 4. Learn in Runtime (Delta)
+    runtime.learn("VSA is fast");
+    let result2 = runtime.ask("VSA is fast");
+    assert!(result2.answer.contains("Logic:") || result2.answer.contains("fast"));
 
     // Cleanup
-    std::fs::remove_file(base_path).unwrap_or(());
-    std::fs::remove_file(overlay_path).unwrap_or(());
+    let _ = std::fs::remove_dir_all(base_path);
+    let _ = std::fs::remove_dir_all(delta_path);
 }

@@ -1,36 +1,46 @@
-use core_vsa::{HyperVector, DIMENSION};
-use std::collections::HashMap;
+use core_vsa::HyperVector;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::fs::{self, File};
-use std::io::{Read, Write};
-use log::{info, warn};
+use tracing::info;
 use serde::{Serialize, Deserialize};
 use std::cell::RefCell;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub struct ShardedStorage {
+    #[serde(skip)]
     pub root_dir: PathBuf,
     pub current_shard_id: usize,
     pub shard_capacity: usize,
     // RefCell for interior mutability during 'retrieve' (caching)
-    // But Cache should be transient?
-    // Serializing RefCell is tricky if we want to save cache state.
-    // Usually we don't save cache.
-    // We mark it skip?
     #[serde(skip, default = "default_buffer")]
-    pub current_shard_buffer: RefCell<HashMap<String, HyperVector>>,
+    pub current_shard_buffer: RefCell<BTreeMap<String, HyperVector>>,
 
-    pub location_map: HashMap<String, usize>,
+    pub location_map: BTreeMap<String, usize>,
+    pub shard_hashes: BTreeMap<usize, String>,
 }
 
-fn default_buffer() -> RefCell<HashMap<String, HyperVector>> {
-    RefCell::new(HashMap::new())
+fn default_buffer() -> RefCell<BTreeMap<String, HyperVector>> {
+    RefCell::new(BTreeMap::new())
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct ShardFile {
     pub id: usize,
-    pub data: HashMap<String, HyperVector>,
+    pub data: BTreeMap<String, HyperVector>,
+}
+
+impl Clone for ShardedStorage {
+    fn clone(&self) -> Self {
+        Self {
+            root_dir: self.root_dir.clone(),
+            current_shard_id: self.current_shard_id,
+            shard_capacity: self.shard_capacity,
+            current_shard_buffer: RefCell::new(self.current_shard_buffer.borrow().clone()),
+            location_map: self.location_map.clone(),
+            shard_hashes: self.shard_hashes.clone(),
+        }
+    }
 }
 
 impl ShardedStorage {
@@ -43,8 +53,9 @@ impl ShardedStorage {
             root_dir: root_dir.to_path_buf(),
             current_shard_id: 1,
             shard_capacity: 1000,
-            current_shard_buffer: RefCell::new(HashMap::new()),
-            location_map: HashMap::new(),
+            current_shard_buffer: RefCell::new(BTreeMap::new()),
+            location_map: BTreeMap::new(),
+            shard_hashes: BTreeMap::new(),
         }
     }
 
@@ -76,6 +87,7 @@ impl ShardedStorage {
     }
 
     fn flush_shard(&mut self) {
+        use sha2::{Sha256, Digest};
         let shard_id = self.current_shard_id;
         let shard_path = self.root_dir.join(format!("shard_{}.bin", shard_id));
 
@@ -87,8 +99,13 @@ impl ShardedStorage {
             data: buffer.clone(),
         };
 
-        let file = File::create(&shard_path).unwrap();
-        bincode::serialize_into(file, &shard_data).unwrap();
+        let bytes = bincode::serialize(&shard_data).unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let hash = hex::encode(hasher.finalize());
+
+        fs::write(&shard_path, &bytes).unwrap();
+        self.shard_hashes.insert(shard_id, hash);
 
         // Update locations
         for k in buffer.keys() {

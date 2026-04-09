@@ -1,6 +1,6 @@
 use crate::{IngestionAdapter, SemanticChunk, chunk_content_with_structure};
 use std::path::Path;
-use log::warn;
+use tracing::warn;
 use csv::ReaderBuilder;
 
 // --- Spreadsheet Adapter ---
@@ -38,7 +38,7 @@ impl IngestionAdapter for PresentationAdapter {
     fn can_handle(&self, path: &Path) -> bool {
         matches!(path.extension().and_then(|s| s.to_str()), Some("pptx" | "ppt"))
     }
-    fn ingest(&self, path: &Path) -> Vec<SemanticChunk> {
+    fn ingest(&self, _path: &Path) -> Vec<SemanticChunk> {
         warn!("Presentation ingestion (PPTX) is a stub. Requires zip+xml parsing similar to DOCX.");
         vec![]
     }

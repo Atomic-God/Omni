@@ -1,73 +1,106 @@
-use core_vsa::{HyperVector, traits::MemoryStore};
+#![deny(warnings)]
 use memory::{MemoryManager, MemoryLayer, HierarchicalMemory};
-use ingestion::{UniversalIngestor, ingest_graph};
+use ingestion::UniversalIngestor;
 use core_vsa::traits::Ingestor;
 use std::path::Path;
-use log::{info, warn};
+use tracing::info;
 use crate::consolidation::ConsolidationEngine;
 
 pub mod consolidation;
+
+pub struct ConfidenceTuner {
+    pub learning_rate: f32,
+    pub stability_count: u32,
+}
+
+impl ConfidenceTuner {
+    pub fn new() -> Self {
+        Self {
+            learning_rate: 0.1,
+            stability_count: 0,
+        }
+    }
+
+    pub fn adjust(&mut self, success: bool) {
+        if success {
+            self.learning_rate *= 0.95; // Become more conservative as we succeed
+            self.stability_count += 1;
+        } else {
+            self.learning_rate *= 1.2; // Become more radical as we fail
+            self.stability_count = 0;
+        }
+        self.learning_rate = self.learning_rate.clamp(0.01, 1.0);
+    }
+}
+
+pub struct ReinforcementScorer;
+
+impl ReinforcementScorer {
+    /// Adjusts memory importance based on reward/penalty feedback.
+    pub fn score_memory(entry: &mut memory::MemoryEntry, reward: f32) {
+        // Point 3: Reinforcement scoring
+        let current = entry.importance;
+        // Exponential growth for rewards, dampening for penalties
+        if reward > 0.0 {
+            entry.importance = (current + reward * 0.2).clamp(0.0, 5.0);
+            entry.stability *= 1.2;
+        } else {
+            entry.importance = (current + reward * 0.5).clamp(0.0, 5.0);
+            entry.stability *= 0.8;
+        }
+    }
+}
 
 pub struct RuntimeLearner {
     pub memory: MemoryManager,
     pub ingestor: UniversalIngestor,
     pub decay_rate: f32,
     pub similarity_threshold: f32,
+    pub tuner: ConfidenceTuner,
+    pub reward_history: Vec<f32>,
 }
 
 impl RuntimeLearner {
     pub fn new(memory_path: &Path) -> Self {
         Self {
             memory: MemoryManager::new(memory_path),
-            ingestor: UniversalIngestor,
+            ingestor: UniversalIngestor::new(),
             decay_rate: 0.99,
             similarity_threshold: 0.85,
+            tuner: ConfidenceTuner::new(),
+            reward_history: Vec::new(),
         }
     }
 
     pub fn process_input(&mut self, input_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         info!("Learning from {:?}", input_path);
-        let graph = self.ingestor.ingest(input_path)?;
+        let graph = self.ingestor.ingest(input_path).map_err(|e| e.to_string())?;
 
         for node in graph.nodes {
-            self.memory.store_in_layer(&node.id, node.vector, MemoryLayer::Working)?;
+            let _ = self.memory.store_in_layer(&node.id, node.vector, MemoryLayer::Working);
         }
 
         self.run_consolidation_cycle();
         Ok(())
     }
 
-    pub fn run_consolidation_cycle(&mut self) {
-        info!("Running consolidation cycle...");
+    pub fn feedback_loop(&mut self, success: bool, target_key: Option<&str>) {
+        self.tuner.adjust(success);
+        let reward = if success { 1.0 } else { -1.0 };
+        self.reward_history.push(reward);
 
-        // 1. Decay & Prune Metadata
-        ConsolidationEngine::decay_and_prune(&mut self.memory.metadata, self.decay_rate, 0.1);
-
-        // 2. Consolidate Vectors (Clustering) - Requires extracting vectors from storage?
-        // MemoryManager keeps storage separate.
-        // We can only consolidate what's in 'metadata' if it stores vectors?
-        // Yes, MemoryEntry stores vector.
-
-        // Extract map for consolidation
-        let mut vector_map = std::collections::HashMap::new();
-        for (k, v) in &self.memory.metadata {
-            vector_map.insert(k.clone(), v.vector.clone());
-        }
-
-        let merged = ConsolidationEngine::consolidate(&mut vector_map, self.similarity_threshold);
-
-        // Write back merged vectors
-        for (k, v) in merged {
-            // Update vector in memory entry
-            if let Some(entry) = self.memory.metadata.get_mut(&k) {
-                entry.vector = v;
-                // Boost importance of merged concept
-                entry.importance += 1.0;
-                info!("Merged concept updated: {}", k);
+        if let Some(key) = target_key {
+            if let Some(entry) = self.memory.metadata.get_mut(key) {
+                ReinforcementScorer::score_memory(entry, reward);
             }
         }
 
-        // 3. Promote Layers
+        info!("Confidence Tuner: Learning Rate now {:.4}", self.tuner.learning_rate);
+    }
+
+    pub fn run_consolidation_cycle(&mut self) {
+        info!("Running consolidation cycle...");
+        ConsolidationEngine::decay_and_prune(&mut self.memory.metadata, self.decay_rate, 0.1);
         self.memory.consolidate_layers();
     }
 }

@@ -1,10 +1,9 @@
-#[cfg(feature = "fabrication")]
 mod tests {
     use engine::OmniMind;
 
     #[test]
     fn test_omni_mind_learning_and_inference() {
-        let mut mind = OmniMind::new();
+        let mut mind = OmniMind::new_forge("./test_data");
 
         // Test Learning and Inference
         mind.learn("dog is animal");
@@ -12,28 +11,28 @@ mod tests {
 
         // "Is dog animal?" -> Yes
         let response = mind.ask("Is dog animal?");
-        println!("Response: {}", response);
-        assert!(response.contains("Yes") || response.contains("Logic:") || response.contains("related"));
+        println!("Response: {}", response.answer);
+        assert!(response.answer.contains("Yes") || response.answer.contains("Logic:") || response.answer.contains("related"));
 
         // "Does dog breathes?" -> Yes (Transitive)
         let response_transitive = mind.ask("Does dog breathes?");
-        println!("Transitive: {}", response_transitive);
-        assert!(response_transitive.contains("Yes") || response_transitive.contains("Logic:") || response_transitive.contains("related"));
+        println!("Transitive: {}", response_transitive.answer);
+        assert!(response_transitive.answer.contains("Yes") || response_transitive.answer.contains("Logic:") || response_transitive.answer.contains("related"));
     }
 
     #[test]
     fn test_svo_query() {
-        let mut mind = OmniMind::new();
+        let mut mind = OmniMind::new_forge("./test_data");
         mind.learn("cat eats fish");
         mind.learn("cat eat fish");
         let response = mind.ask("What does cat eat?");
-        assert!(response.contains("fish"));
+        assert!(response.answer.contains("fish"));
     }
 
     #[test]
     fn test_persistence() {
-        let path = "test_memory.omf";
-        let mut mind = OmniMind::new();
+        let _path = "test_memory.omf";
+        let mut mind = OmniMind::new_forge("./test_data");
 
         // Since test paths are relative to Cargo.toml, "test_memory.omf" is in the cwd.
         // PermissionBoundary defaults to allowing cwd.
@@ -44,7 +43,7 @@ mod tests {
         // If it still fails, it might be that tests run in a temp dir or target dir?
         // Let's print the error more clearly if it fails.
         // Or explicitly allow the test path in a configured mind.
-        // But OmniMind::new() uses default permissions (cwd).
+        // But OmniMind::new_forge("./test_data") uses default permissions (cwd).
 
         // Let's inspect the panic. "Invalid path or does not exist".
         // This comes from `canonicalize` failing on a non-existent file?
@@ -62,11 +61,11 @@ mod tests {
         }
 
         {
-            let mut mind = OmniMind::new();
+            let mut mind = OmniMind::new_forge("./test_data");
             mind.load(path).expect("Failed to load memory");
             let response = mind.ask("Does birds fly?");
-            println!("Response: {}", response);
-            assert!(response.contains("Yes") || response.contains("Logic:") || response.contains("related"));
+            println!("Response: {}", response.answer);
+            assert!(response.answer.contains("Yes") || response.answer.contains("Logic:") || response.answer.contains("related"));
         }
         std::fs::remove_file(path).unwrap_or(());
     }
